@@ -9,24 +9,40 @@ import type {
 import { weekId } from "./types";
 import { seedDatabase, createEmptyWeek } from "./seed";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, "db.json");
+/** Sur Vercel le FS du projet est en lecture seule → /tmp ; en local → data/ */
+function dbPath(): string {
+  if (process.env.VERCEL || process.env.KPI_DB_DIR) {
+    const dir = process.env.KPI_DB_DIR || "/tmp/kpi-it";
+    return path.join(dir, "db.json");
+  }
+  return path.join(process.cwd(), "data", "db.json");
+}
 
 async function ensureDb(): Promise<AppDatabase> {
+  const file = dbPath();
   try {
-    const raw = await fs.readFile(DB_PATH, "utf-8");
+    const raw = await fs.readFile(file, "utf-8");
     return JSON.parse(raw) as AppDatabase;
   } catch {
     const seeded = seedDatabase();
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    await fs.writeFile(DB_PATH, JSON.stringify(seeded, null, 2), "utf-8");
+    try {
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, JSON.stringify(seeded, null, 2), "utf-8");
+    } catch {
+      // Lecture seule : on sert le seed en mémoire
+    }
     return seeded;
   }
 }
 
 async function writeDb(db: AppDatabase): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(DB_PATH, JSON.stringify(db, null, 2), "utf-8");
+  const file = dbPath();
+  try {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, JSON.stringify(db, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("Persistance KPI indisponible:", err);
+  }
 }
 
 /** Force re-seed from Excel JSON (dev / import) */
