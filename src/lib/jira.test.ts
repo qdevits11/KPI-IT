@@ -90,4 +90,12 @@ describe("mockJiraWeekStats", () => {
     expect(r.jql.created).toContain("project = CSD");
     expect(r.jql.open).toContain("Partenaire");
   });
+
+  it("expose les 4 KPI hebdo dans le patch", () => {
+    const r = mockJiraWeekStats(2026, 12);
+    expect(typeof r.patch.demandesItHebdo).toBe("number");
+    expect(typeof r.patch.demandesNonResoluesHebdo).toBe("number");
+    expect(typeof r.patch.ticketsHorsSlaCloture).toBe("number");
+    expect(typeof r.patch.ticketsHorsSlaPriseEnCharge).toBe("number");
+  });
 });
