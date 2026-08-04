@@ -29,6 +29,7 @@ interface JqlPreview {
   start: string;
   endExclusive: string;
   endInclusive: string;
+  usedRelativeWeekFunctions?: boolean;
 }
 
 const DEFAULT_FORM = {
@@ -322,7 +323,10 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
       {jql && (
         <section className="space-y-3">
           <h2 className="font-[family-name:var(--font-display)] text-lg">
-            JQL ({jql.start} → {jql.endExclusive} exclu)
+            JQL{" "}
+            {jql.usedRelativeWeekFunctions
+              ? "(startOfWeek(-1) → startOfWeek(), comme n8n)"
+              : `(${jql.start} → ${jql.endExclusive} exclu)`}
           </h2>
           <JqlBlock label="Demandes IT (créés)" jql={jql.created} />
           <JqlBlock label="Non résolues (snapshot ouvert)" jql={jql.open} />

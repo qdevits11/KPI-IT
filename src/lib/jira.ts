@@ -25,8 +25,8 @@ interface JiraIssue {
 
 /**
  * Bornes semaine ISO lundi 00:00 → lundi suivant 00:00 (exclus).
- * Équivalent Jira: created >= startOfWeek(N) AND created < endOfWeek(N)
- * (n8n utilise startOfWeek(-1) / endOfWeek(-1) pour la semaine précédente).
+ * Équivalent Jira n8n :
+ *   created >= startOfWeek(-1) AND created < startOfWeek()
  */
 export function isoWeekDateRange(
   year: number,
@@ -52,6 +52,23 @@ export function isoWeekDateRange(
   };
 }
 
+/** Semaine ISO courante (année + numéro), UTC. */
+export function currentIsoWeek(date = new Date()): { year: number; week: number } {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return { year: d.getUTCFullYear(), week };
+}
+
+/** Semaine ISO précédente (celle que n8n extrait avec startOfWeek(-1)). */
+export function previousIsoWeek(date = new Date()): { year: number; week: number } {
+  const d = new Date(date);
+  d.setUTCDate(d.getUTCDate() - 7);
+  return currentIsoWeek(d);
+}
+
 export interface WeekJqlBundle {
   /** Demandes IT — tickets créés dans la semaine */
   created: string;
@@ -64,6 +81,8 @@ export interface WeekJqlBundle {
   start: string;
   endExclusive: string;
   endInclusive: string;
+  /** true si JQL relatif startOfWeek(-1) / startOfWeek() */
+  usedRelativeWeekFunctions: boolean;
 }
 
 function escapeJqlString(s: string): string {
@@ -73,26 +92,44 @@ function escapeJqlString(s: string): string {
 /**
  * JQL calqués sur le workflow n8n Coverseal.
  *
- * | KPI | n8n |
- * |-----|-----|
- * | Demandes IT | project=CSD AND createdDate >= startOfWeek(-1) AND < endOfWeek(-1) |
- * | Non résolues | project=CSD AND status NOT IN (Partenaire, Canceled, Done) |
- * | Hors SLA prise en charge | Date Prise en Charge ∈ semaine + heures ouvrées > 24h |
- * | Hors SLA clôture | resolutiondate ∈ semaine + heures ouvrées created→resolved > 48h |
+ * Demandes IT (n8n) :
+ *   project = CSD
+ *   AND created >= startOfWeek(-1)
+ *   AND created < startOfWeek()
+ *
+ * Pour la semaine précédente → fonctions relatives Jira (fuseau Jira = n8n).
+ * Pour une autre semaine → dates absolues équivalentes [lundi, lundi+7).
  */
 export function buildWeekJql(
   conn: JiraConnection,
   year: number,
   week: number,
+  now = new Date(),
 ): WeekJqlBundle {
   const { start, endExclusive, endInclusive } = isoWeekDateRange(year, week);
   const base = `(${conn.jqlBase})`;
   const pec = escapeJqlString(conn.datePriseEnChargeJql);
+  const prev = previousIsoWeek(now);
+  const useRelative = prev.year === year && prev.week === week;
+
+  if (useRelative) {
+    return {
+      start,
+      endExclusive,
+      endInclusive,
+      usedRelativeWeekFunctions: true,
+      created: `${base} AND created >= startOfWeek(-1) AND created < startOfWeek()`,
+      open: `${base} AND ${conn.openStatusJql}`,
+      priseEnCharge: `${base} AND "${pec}" >= startOfWeek(-1) AND "${pec}" < startOfWeek()`,
+      resolved: `${base} AND resolutiondate >= startOfWeek(-1) AND resolutiondate < startOfWeek()`,
+    };
+  }
 
   return {
     start,
     endExclusive,
     endInclusive,
+    usedRelativeWeekFunctions: false,
     created: `${base} AND created >= "${start}" AND created < "${endExclusive}"`,
     open: `${base} AND ${conn.openStatusJql}`,
     priseEnCharge: `${base} AND "${pec}" >= "${start}" AND "${pec}" < "${endExclusive}"`,

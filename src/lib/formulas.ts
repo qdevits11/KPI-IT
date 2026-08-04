@@ -130,8 +130,9 @@ export const FORMULAS: FormulaDefinition[] = [
     category: "ticketing",
     name: "Demandes IT (hebdo)",
     description:
-      "Tickets créés dans la semaine (n8n: createdDate >= startOfWeek(-1) AND < endOfWeek(-1), project = CSD).",
-    formula: 'JQL: project = CSD AND created >= "lundi" AND created < "lundi+7"',
+      "Tickets créés dans la semaine (n8n: created >= startOfWeek(-1) AND created < startOfWeek(), project = CSD).",
+    formula:
+      "JQL: project = CSD AND created >= startOfWeek(-1) AND created < startOfWeek()",
     inputs: [
       {
         name: "demandesItHebdo",
