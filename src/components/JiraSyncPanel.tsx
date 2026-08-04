@@ -113,6 +113,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     setSource(connect.source);
     setConnection(connect.connection);
     setJql(sync.previewJql);
+    setDateRange(sync.dateRange ?? null);
     setWeeks(kpis.weeks);
     setWeekId(composedWeekId);
 
@@ -208,6 +209,12 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
       }
 
       setJql(json.jql);
+      if (json.jql) {
+        setDateRange({
+          start: json.jql.start,
+          endExclusive: json.jql.endExclusive,
+        });
+      }
       setWarnings(json.warnings ?? []);
       setProbe(json.probe ?? null);
       setDiagnostics(json.diagnostics ?? null);
@@ -403,10 +410,10 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           </label>
           <p className="pb-2 text-sm text-[var(--muted)]">
             → <span className="font-medium text-[var(--ink)]">{composedWeekId}</span>
-            {jql ? (
+            {dateRange ? (
               <>
                 {" "}
-                ({jql.start} → {jql.endExclusive})
+                ({dateRange.start} → {dateRange.endExclusive})
               </>
             ) : null}
           </p>
