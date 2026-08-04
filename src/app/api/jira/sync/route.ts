@@ -64,6 +64,8 @@ export async function POST(request: Request) {
         dashboard: buildWeekDashboard(db, row),
         jql: result.jql,
         warnings: result.warnings,
+        probe: result.probe,
+        diagnostics: result.diagnostics,
       });
     }
 
@@ -95,6 +97,8 @@ export async function POST(request: Request) {
       dashboard: buildWeekDashboard(db, row),
       jql: result.jql,
       warnings: result.warnings,
+      probe: result.probe,
+      diagnostics: result.diagnostics,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Erreur Jira";

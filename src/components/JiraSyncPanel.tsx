@@ -53,6 +53,19 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
   const [connection, setConnection] = useState<ConnectionView | null>(null);
   const [jql, setJql] = useState<JqlPreview | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [diagnostics, setDiagnostics] = useState<{
+    createdCount: number;
+    openCount: number;
+    pecCandidates: number;
+    resolvedCandidates: number;
+    sampleCreatedKeys: string[];
+  } | null>(null);
+  const [probe, setProbe] = useState<{
+    ok: boolean;
+    count: number;
+    sampleKeys: string[];
+    error?: string;
+  } | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -134,6 +147,8 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     setResult(null);
     setError(null);
     setWarnings([]);
+    setDiagnostics(null);
+    setProbe(null);
     startTransition(async () => {
       const res = await fetch("/api/jira/sync", {
         method: "POST",
@@ -148,6 +163,8 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
       const w = json.dashboard.week;
       setJql(json.jql);
       setWarnings(json.warnings ?? []);
+      setProbe(json.probe ?? null);
+      setDiagnostics(json.diagnostics ?? null);
       setResult(
         `Sync ${json.mode} OK — ${w.demandesItHebdo} demandes, ${w.demandesNonResoluesHebdo} non résolues, ${w.ticketsHorsSlaCloture} hors SLA clôture (48h), ${w.ticketsHorsSlaPriseEnCharge} hors SLA prise en charge (24h).`,
       );
@@ -311,6 +328,28 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         </div>
         {result && <p className="text-sm text-[var(--ok)]">{result}</p>}
         {error && <p className="text-sm text-[var(--crit)]">{error}</p>}
+        {probe && (
+          <p className="text-xs text-[var(--muted)]">
+            Sonde projet :{" "}
+            {probe.ok
+              ? `~${probe.count} ticket(s)`
+              : `échec${probe.error ? ` — ${probe.error}` : ""}`}
+            {probe.sampleKeys?.length
+              ? ` — ex. ${probe.sampleKeys.join(", ")}`
+              : ""}
+          </p>
+        )}
+        {diagnostics && (
+          <p className="text-xs text-[var(--muted)]">
+            Détail sync : créés={diagnostics.createdCount}, ouverts=
+            {diagnostics.openCount}, candidats PEC=
+            {diagnostics.pecCandidates}, candidats clôture=
+            {diagnostics.resolvedCandidates}
+            {diagnostics.sampleCreatedKeys.length
+              ? ` — clés: ${diagnostics.sampleCreatedKeys.join(", ")}`
+              : ""}
+          </p>
+        )}
         {warnings.length > 0 && (
           <ul className="space-y-1 text-xs text-[var(--warn)]">
             {warnings.map((w) => (

@@ -89,6 +89,10 @@ function escapeJqlString(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+function stripOrderBy(jql: string): string {
+  return jql.replace(/\s+ORDER BY\s+.+$/i, "").trim();
+}
+
 /**
  * JQL calqués sur le workflow n8n Coverseal.
  *
@@ -96,9 +100,6 @@ function escapeJqlString(s: string): string {
  *   project = CSD
  *   AND created >= startOfWeek(-1)
  *   AND created < startOfWeek()
- *
- * Pour la semaine précédente → fonctions relatives Jira (fuseau Jira = n8n).
- * Pour une autre semaine → dates absolues équivalentes [lundi, lundi+7).
  */
 export function buildWeekJql(
   conn: JiraConnection,
@@ -107,7 +108,7 @@ export function buildWeekJql(
   now = new Date(),
 ): WeekJqlBundle {
   const { start, endExclusive, endInclusive } = isoWeekDateRange(year, week);
-  const base = `(${conn.jqlBase})`;
+  const base = conn.jqlBase.trim();
   const pec = escapeJqlString(conn.datePriseEnChargeJql);
   const prev = previousIsoWeek(now);
   const useRelative = prev.year === year && prev.week === week;
@@ -118,10 +119,10 @@ export function buildWeekJql(
       endExclusive,
       endInclusive,
       usedRelativeWeekFunctions: true,
-      created: `${base} AND created >= startOfWeek(-1) AND created < startOfWeek()`,
-      open: `${base} AND ${conn.openStatusJql}`,
-      priseEnCharge: `${base} AND "${pec}" >= startOfWeek(-1) AND "${pec}" < startOfWeek()`,
-      resolved: `${base} AND resolutiondate >= startOfWeek(-1) AND resolutiondate < startOfWeek()`,
+      created: `${base} AND created >= startOfWeek(-1) AND created < startOfWeek() ORDER BY created ASC`,
+      open: `${base} AND ${conn.openStatusJql} ORDER BY created ASC`,
+      priseEnCharge: `${base} AND "${pec}" >= startOfWeek(-1) AND "${pec}" < startOfWeek() ORDER BY created ASC`,
+      resolved: `${base} AND resolutiondate >= startOfWeek(-1) AND resolutiondate < startOfWeek() ORDER BY resolutiondate ASC`,
     };
   }
 
@@ -130,10 +131,10 @@ export function buildWeekJql(
     endExclusive,
     endInclusive,
     usedRelativeWeekFunctions: false,
-    created: `${base} AND created >= "${start}" AND created < "${endExclusive}"`,
-    open: `${base} AND ${conn.openStatusJql}`,
-    priseEnCharge: `${base} AND "${pec}" >= "${start}" AND "${pec}" < "${endExclusive}"`,
-    resolved: `${base} AND resolutiondate >= "${start}" AND resolutiondate < "${endExclusive}"`,
+    created: `${base} AND created >= "${start}" AND created < "${endExclusive}" ORDER BY created ASC`,
+    open: `${base} AND ${conn.openStatusJql} ORDER BY created ASC`,
+    priseEnCharge: `${base} AND "${pec}" >= "${start}" AND "${pec}" < "${endExclusive}" ORDER BY created ASC`,
+    resolved: `${base} AND resolutiondate >= "${start}" AND resolutiondate < "${endExclusive}" ORDER BY resolutiondate ASC`,
   };
 }
 
@@ -155,22 +156,65 @@ async function jiraFetch(
 }
 
 interface SearchJqlResponse {
-  issues?: JiraIssue[];
-  nextPageToken?: string;
+  issues?: unknown[];
+  nextPageToken?: string | null;
   isLast?: boolean;
 }
 
-/**
- * Nouvelle API Jira Cloud (CHANGE-2046) :
- * POST /rest/api/3/search/jql — pagination par nextPageToken (plus de startAt/total).
- */
-async function searchJqlPage(
+function asRecord(v: unknown): Record<string, unknown> | null {
+  return v !== null && typeof v === "object" ? (v as Record<string, unknown>) : null;
+}
+
+function normalizeIssues(raw: unknown[] | undefined): JiraIssue[] {
+  if (!raw?.length) return [];
+  const out: JiraIssue[] = [];
+
+  for (const item of raw) {
+    if (typeof item === "string") {
+      out.push({
+        key: item,
+        fields: { created: "", resolutiondate: null },
+      });
+      continue;
+    }
+
+    const obj = asRecord(item);
+    if (!obj) continue;
+
+    const fieldsObj = asRecord(obj.fields) ?? {};
+    const key =
+      (typeof obj.key === "string" && obj.key) ||
+      (typeof obj.id === "string" && obj.id) ||
+      (typeof fieldsObj.key === "string" && fieldsObj.key) ||
+      "";
+
+    out.push({
+      key,
+      fields: {
+        created: typeof fieldsObj.created === "string" ? fieldsObj.created : "",
+        resolutiondate:
+          typeof fieldsObj.resolutiondate === "string"
+            ? fieldsObj.resolutiondate
+            : null,
+        issuetype: fieldsObj.issuetype as JiraIssue["fields"]["issuetype"],
+        assignee: fieldsObj.assignee as JiraIssue["fields"]["assignee"],
+        labels: fieldsObj.labels as string[] | undefined,
+        components: fieldsObj.components as { name: string }[] | undefined,
+        ...fieldsObj,
+      },
+    });
+  }
+
+  return out;
+}
+
+async function searchJqlPost(
   conn: JiraConnection,
   jql: string,
   fields: string[],
-  nextPageToken?: string,
-  maxResults = 100,
-): Promise<SearchJqlResponse> {
+  nextPageToken: string | undefined,
+  maxResults: number,
+): Promise<{ issues: JiraIssue[]; nextPageToken?: string; status: number }> {
   const body: Record<string, unknown> = {
     jql,
     maxResults,
@@ -183,33 +227,167 @@ async function searchJqlPage(
     body: JSON.stringify(body),
   });
 
+  const text = await res.text();
   if (!res.ok) {
-    throw new Error(
-      `Jira search ${res.status}: ${(await res.text()).slice(0, 400)}`,
+    throw new Error(`Jira search ${res.status}: ${text.slice(0, 400)}`);
+  }
+
+  let data: SearchJqlResponse;
+  try {
+    data = JSON.parse(text) as SearchJqlResponse;
+  } catch {
+    throw new Error(`Jira search: réponse non-JSON: ${text.slice(0, 200)}`);
+  }
+
+  const issues = normalizeIssues(data.issues);
+  const token =
+    data.isLast === true
+      ? undefined
+      : data.nextPageToken
+        ? String(data.nextPageToken)
+        : undefined;
+
+  return { issues, nextPageToken: token, status: res.status };
+}
+
+async function searchJqlGet(
+  conn: JiraConnection,
+  jql: string,
+  fields: string[],
+  maxResults: number,
+): Promise<{ issues: JiraIssue[]; nextPageToken?: string }> {
+  const params = new URLSearchParams();
+  params.set("jql", jql);
+  params.set("maxResults", String(maxResults));
+  if (fields.length > 0) params.set("fields", fields.join(","));
+
+  const res = await jiraFetch(
+    conn,
+    `/rest/api/3/search/jql?${params.toString()}`,
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Jira search GET ${res.status}: ${text.slice(0, 400)}`);
+  }
+
+  const data = JSON.parse(text) as SearchJqlResponse;
+  const issues = normalizeIssues(data.issues);
+  const token =
+    data.isLast === true
+      ? undefined
+      : data.nextPageToken
+        ? String(data.nextPageToken)
+        : undefined;
+  return { issues, nextPageToken: token };
+}
+
+/**
+ * Nouvelle API Jira Cloud (CHANGE-2046) :
+ * POST /rest/api/3/search/jql — body JSON + pagination nextPageToken.
+ * Fallbacks : sans ORDER BY, puis GET, si la 1re page revient vide.
+ */
+async function searchJqlPage(
+  conn: JiraConnection,
+  jql: string,
+  fields: string[],
+  nextPageToken?: string,
+  maxResults = 100,
+): Promise<{ issues: JiraIssue[]; nextPageToken?: string }> {
+  // Ne pas demander "key" dans fields — toujours renvoyé ; certains sites le rejettent
+  const safeFields = fields.filter((f) => f !== "key");
+
+  let page = await searchJqlPost(
+    conn,
+    jql,
+    safeFields,
+    nextPageToken,
+    maxResults,
+  );
+
+  // Si 1re page vide, retenter sans ORDER BY (certains tenants)
+  if (!nextPageToken && page.issues.length === 0 && /\bORDER BY\b/i.test(jql)) {
+    page = await searchJqlPost(
+      conn,
+      stripOrderBy(jql),
+      safeFields,
+      undefined,
+      maxResults,
     );
   }
 
-  return (await res.json()) as SearchJqlResponse;
+  // Retenter avec *all (format documenté Atlassian / langchain fix)
+  if (!nextPageToken && page.issues.length === 0) {
+    try {
+      page = await searchJqlPost(
+        conn,
+        stripOrderBy(jql),
+        ["*all"],
+        undefined,
+        maxResults,
+      );
+    } catch {
+      // garder le résultat précédent
+    }
+  }
+
+  // Dernier recours : GET
+  if (!nextPageToken && page.issues.length === 0) {
+    try {
+      const getPage = await searchJqlGet(
+        conn,
+        stripOrderBy(jql),
+        safeFields,
+        maxResults,
+      );
+      if (getPage.issues.length > 0) return getPage;
+    } catch {
+      // garder le résultat POST
+    }
+  }
+
+  return { issues: page.issues, nextPageToken: page.nextPageToken };
 }
 
-/** Compte exact en paginant les IDs (l'ancien ?maxResults=0&total a disparu). */
+/** Compte via approximate-count, sinon pagination exacte sur /search/jql. */
 export async function countJql(
   conn: JiraConnection,
   jql: string,
 ): Promise<number> {
-  let count = 0;
-  let nextPageToken: string | undefined;
-  const maxResults = 100;
+  const jqlForCount = stripOrderBy(jql);
 
-  for (;;) {
-    // fields vide / absent → IDs seuls par défaut sur /search/jql
-    const page = await searchJqlPage(conn, jql, [], nextPageToken, maxResults);
-    const batch = page.issues?.length ?? 0;
-    count += batch;
-    if (page.isLast || !page.nextPageToken || batch === 0) break;
-    nextPageToken = page.nextPageToken;
+  try {
+    const res = await jiraFetch(conn, "/rest/api/3/search/approximate-count", {
+      method: "POST",
+      body: JSON.stringify({ jql: jqlForCount }),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { count?: number };
+      if (typeof data.count === "number" && data.count > 0) return data.count;
+      // count === 0 : on vérifie quand même via search (approx peut être faux)
+      if (typeof data.count === "number" && data.count === 0) {
+        // fall through to exact
+      } else if (typeof data.count === "number") {
+        return data.count;
+      }
+    }
+  } catch {
+    // fallback ci-dessous
   }
 
+  let count = 0;
+  let nextPageToken: string | undefined;
+  for (;;) {
+    const page = await searchJqlPage(
+      conn,
+      jqlForCount,
+      ["id"],
+      nextPageToken,
+      100,
+    );
+    count += page.issues.length;
+    if (!page.nextPageToken || page.issues.length === 0) break;
+    nextPageToken = page.nextPageToken;
+  }
   return count;
 }
 
@@ -218,29 +396,71 @@ async function searchAll(
   jql: string,
   fields: string,
 ): Promise<JiraIssue[]> {
-  const fieldList = fields
-    .split(",")
-    .map((f) => f.trim())
-    .filter(Boolean);
+  const fieldList = [
+    "summary",
+    ...fields
+      .split(",")
+      .map((f) => f.trim())
+      .filter(Boolean),
+  ];
+  const fieldsUnique = [...new Set(fieldList)].filter((f) => f !== "key");
+
   const issues: JiraIssue[] = [];
   let nextPageToken: string | undefined;
-  const maxResults = 100;
 
   for (;;) {
     const page = await searchJqlPage(
       conn,
       jql,
-      fieldList,
+      fieldsUnique,
       nextPageToken,
-      maxResults,
+      100,
     );
-    const batch = page.issues ?? [];
-    issues.push(...batch);
-    if (page.isLast || !page.nextPageToken || batch.length === 0) break;
+    issues.push(...page.issues);
+    if (!page.nextPageToken || page.issues.length === 0) break;
     nextPageToken = page.nextPageToken;
   }
 
   return issues;
+}
+
+export interface JiraProbeResult {
+  ok: boolean;
+  jql: string;
+  count: number;
+  sampleKeys: string[];
+  error?: string;
+}
+
+/** Sonde : le projet renvoie-t-il des tickets ? */
+export async function probeJiraProject(
+  conn: JiraConnection,
+): Promise<JiraProbeResult> {
+  const jql = `${conn.jqlBase.trim()} ORDER BY created DESC`;
+  try {
+    const page = await searchJqlPage(
+      conn,
+      jql,
+      ["summary", "created"],
+      undefined,
+      5,
+    );
+    const count = await countJql(conn, conn.jqlBase.trim());
+    return {
+      ok: page.issues.length > 0 || count > 0,
+      jql,
+      count: Math.max(count, page.issues.length),
+      sampleKeys: page.issues.map((i) => i.key).filter(Boolean).slice(0, 5),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      jql,
+      count: 0,
+      sampleKeys: [],
+      error: err instanceof Error ? err.message : "probe failed",
+    };
+  }
 }
 
 export async function testJiraConnection(conn: JiraConnection): Promise<{
@@ -307,6 +527,14 @@ export interface JiraWeekSyncResult {
   byAssignee: Record<string, number>;
   jql: WeekJqlBundle;
   warnings: string[];
+  probe: JiraProbeResult;
+  diagnostics: {
+    createdCount: number;
+    openCount: number;
+    pecCandidates: number;
+    resolvedCandidates: number;
+    sampleCreatedKeys: string[];
+  };
 }
 
 /**
@@ -328,33 +556,91 @@ export async function fetchJiraWeekStats(
   const warnings: string[] = [];
   const pecField = connection.datePriseEnChargeFieldId;
 
-  const [createdIssues, openCount, pecIssues, resolvedIssues] =
+  // Sonde d'abord : si le projet est vide côté API, le problème n'est pas la semaine
+  const probe = await probeJiraProject(connection);
+  if (!probe.ok) {
+    warnings.push(
+      probe.error
+        ? `Sonde projet échouée: ${probe.error}`
+        : `Aucun ticket trouvé pour « ${connection.jqlBase} ». Vérifiez le projet (ex. project = CSD) et reconnectez-vous.`,
+    );
+  } else {
+    warnings.push(
+      `Sonde OK: ~${probe.count} ticket(s) pour « ${connection.jqlBase} »` +
+        (probe.sampleKeys.length
+          ? ` (ex. ${probe.sampleKeys.join(", ")})`
+          : ""),
+    );
+  }
+
+  // Compteurs d'abord (approximate-count) — plus fiable que search/jql
+  // qui renvoie parfois issues:[] (bug connu Atlassian / mauvais format).
+  const [createdCountApprox, openCount, createdIssues, pecIssues, resolvedIssues] =
     await Promise.all([
+      countJql(connection, jql.created),
+      countJql(connection, jql.open),
       searchAll(
         connection,
         jql.created,
         "created,resolutiondate,assignee,labels,components,issuetype",
+      ).catch((err: Error) => {
+        warnings.push(`Search créés: ${err.message.slice(0, 160)}`);
+        return [] as JiraIssue[];
+      }),
+      searchAll(connection, jql.priseEnCharge, `created,${pecField}`).catch(
+        (err: Error) => {
+          warnings.push(
+            `JQL Date Prise en Charge: ${err.message.slice(0, 160)}`,
+          );
+          return [] as JiraIssue[];
+        },
       ),
-      countJql(connection, jql.open),
-      searchAll(
-        connection,
-        jql.priseEnCharge,
-        `created,${pecField}`,
-      ).catch((err: Error) => {
-        warnings.push(
-          `JQL Date Prise en Charge: ${err.message.slice(0, 160)}`,
-        );
-        return [] as JiraIssue[];
-      }),
-      searchAll(
-        connection,
-        jql.resolved,
-        "created,resolutiondate",
-      ).catch((err: Error) => {
-        warnings.push(`JQL resolutiondate: ${err.message.slice(0, 160)}`);
-        return [] as JiraIssue[];
-      }),
+      searchAll(connection, jql.resolved, "created,resolutiondate").catch(
+        (err: Error) => {
+          warnings.push(`JQL resolutiondate: ${err.message.slice(0, 160)}`);
+          return [] as JiraIssue[];
+        },
+      ),
     ]);
+
+  // Si search renvoie des issues, préférer le count exact ; sinon approx
+  const createdCount =
+    createdIssues.length > 0
+      ? createdIssues.length
+      : createdCountApprox;
+
+  if (createdIssues.length === 0 && createdCountApprox > 0) {
+    warnings.push(
+      `Search/jql a renvoyé 0 issue mais approximate-count = ${createdCountApprox}. Compteur KPI utilisé ; répartition type/assigné indisponible.`,
+    );
+  }
+
+  if (probe.ok && createdCount === 0) {
+    warnings.push(
+      `Le projet répond (~${probe.count} tickets) mais 0 créé sur la semaine ${year}-S${String(week).padStart(2, "0")} (${jql.start} → ${jql.endExclusive}). JQL: ${stripOrderBy(jql.created)}`,
+    );
+  }
+
+  if (pecIssues.length === 0) {
+    const pecCount = await countJql(connection, jql.priseEnCharge).catch(
+      () => 0,
+    );
+    if (pecCount > 0) {
+      warnings.push(
+        `${pecCount} ticket(s) avec Date Prise en Charge cette semaine, mais détails absents — SLA prise en charge non calculable.`,
+      );
+    }
+  }
+  if (resolvedIssues.length === 0) {
+    const resolvedCount = await countJql(connection, jql.resolved).catch(
+      () => 0,
+    );
+    if (resolvedCount > 0) {
+      warnings.push(
+        `${resolvedCount} ticket(s) résolus cette semaine, mais détails absents — SLA clôture non calculable.`,
+      );
+    }
+  }
 
   const slaPriseEnCharge = countOverBusinessSla(
     pecIssues.map((i) => ({
@@ -387,7 +673,7 @@ export async function fetchJiraWeekStats(
 
   return {
     patch: {
-      demandesItHebdo: createdIssues.length,
+      demandesItHebdo: createdCount,
       demandesNonResoluesHebdo: openCount,
       ticketsHorsSlaPriseEnCharge: slaPriseEnCharge,
       ticketsHorsSlaCloture: slaCloture,
@@ -397,6 +683,17 @@ export async function fetchJiraWeekStats(
     byAssignee,
     jql,
     warnings,
+    probe,
+    diagnostics: {
+      createdCount,
+      openCount,
+      pecCandidates: pecIssues.length,
+      resolvedCandidates: resolvedIssues.length,
+      sampleCreatedKeys: createdIssues
+        .map((i) => i.key)
+        .filter(Boolean)
+        .slice(0, 8),
+    },
   };
 }
 
@@ -443,6 +740,19 @@ export function mockJiraWeekStats(
     },
     jql,
     warnings: ["Mode démo — données fictives"],
+    probe: {
+      ok: true,
+      jql: "project = CSD",
+      count: 999,
+      sampleKeys: ["CSD-1", "CSD-2"],
+    },
+    diagnostics: {
+      createdCount: created,
+      openCount: open,
+      pecCandidates: seed % 10,
+      resolvedCandidates: seed % 12,
+      sampleCreatedKeys: ["CSD-100", "CSD-101"],
+    },
   };
 }
 

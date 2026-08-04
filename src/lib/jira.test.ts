@@ -34,8 +34,9 @@ describe("buildWeekJql (aligné n8n)", () => {
 
     const jql = buildWeekJql(conn, 2026, 31, now);
     expect(jql.usedRelativeWeekFunctions).toBe(true);
-    expect(jql.created).toBe(
-      "(project = CSD) AND created >= startOfWeek(-1) AND created < startOfWeek()",
+    expect(jql.created).toContain("project = CSD");
+    expect(jql.created).toContain(
+      "created >= startOfWeek(-1) AND created < startOfWeek()",
     );
     expect(jql.priseEnCharge).toContain(
       '"Date Prise en Charge" >= startOfWeek(-1)',
