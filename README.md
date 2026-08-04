@@ -43,7 +43,7 @@ Dans l'UI **Sync Jira** : URL du site + email Atlassian + [API token](https://id
 
 | KPI | Règle (comme n8n) |
 |-----|-------------------|
-| Demandes IT | `project = CSD` créés dans la semaine |
+| Demandes IT | `project = CSD AND created >= startOfWeek(-1) AND created < startOfWeek()` |
 | Non résolues | `status NOT IN (Partenaire, Canceled, Done)` (snapshot) |
 | Hors SLA prise en charge | `Date Prise en Charge` ∈ semaine + **> 24 h ouvrées** |
 | Hors SLA clôture | `resolutiondate` ∈ semaine + **> 48 h ouvrées** |
