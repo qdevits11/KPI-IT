@@ -154,28 +154,63 @@ async function jiraFetch(
   });
 }
 
+interface SearchJqlResponse {
+  issues?: JiraIssue[];
+  nextPageToken?: string;
+  isLast?: boolean;
+}
+
+/**
+ * Nouvelle API Jira Cloud (CHANGE-2046) :
+ * POST /rest/api/3/search/jql — pagination par nextPageToken (plus de startAt/total).
+ */
+async function searchJqlPage(
+  conn: JiraConnection,
+  jql: string,
+  fields: string[],
+  nextPageToken?: string,
+  maxResults = 100,
+): Promise<SearchJqlResponse> {
+  const body: Record<string, unknown> = {
+    jql,
+    maxResults,
+  };
+  if (fields.length > 0) body.fields = fields;
+  if (nextPageToken) body.nextPageToken = nextPageToken;
+
+  const res = await jiraFetch(conn, "/rest/api/3/search/jql", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    throw new Error(
+      `Jira search ${res.status}: ${(await res.text()).slice(0, 400)}`,
+    );
+  }
+
+  return (await res.json()) as SearchJqlResponse;
+}
+
+/** Compte exact en paginant les IDs (l'ancien ?maxResults=0&total a disparu). */
 export async function countJql(
   conn: JiraConnection,
   jql: string,
 ): Promise<number> {
-  const url = new URL(`${conn.baseUrl}/rest/api/3/search`);
-  url.searchParams.set("jql", jql);
-  url.searchParams.set("maxResults", "0");
-  url.searchParams.set("fields", "summary");
+  let count = 0;
+  let nextPageToken: string | undefined;
+  const maxResults = 100;
 
-  const res = await fetch(url.toString(), {
-    headers: {
-      Authorization: authHeader(conn),
-      Accept: "application/json",
-    },
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    throw new Error(`Jira count ${res.status}: ${(await res.text()).slice(0, 400)}`);
+  for (;;) {
+    // fields vide / absent → IDs seuls par défaut sur /search/jql
+    const page = await searchJqlPage(conn, jql, [], nextPageToken, maxResults);
+    const batch = page.issues?.length ?? 0;
+    count += batch;
+    if (page.isLast || !page.nextPageToken || batch === 0) break;
+    nextPageToken = page.nextPageToken;
   }
-  const data = (await res.json()) as { total: number };
-  return data.total;
+
+  return count;
 }
 
 async function searchAll(
@@ -183,35 +218,26 @@ async function searchAll(
   jql: string,
   fields: string,
 ): Promise<JiraIssue[]> {
+  const fieldList = fields
+    .split(",")
+    .map((f) => f.trim())
+    .filter(Boolean);
   const issues: JiraIssue[] = [];
-  let startAt = 0;
+  let nextPageToken: string | undefined;
   const maxResults = 100;
 
   for (;;) {
-    const url = new URL(`${conn.baseUrl}/rest/api/3/search`);
-    url.searchParams.set("jql", jql);
-    url.searchParams.set("startAt", String(startAt));
-    url.searchParams.set("maxResults", String(maxResults));
-    url.searchParams.set("fields", fields);
-
-    const res = await fetch(url.toString(), {
-      headers: {
-        Authorization: authHeader(conn),
-        Accept: "application/json",
-      },
-      cache: "no-store",
-    });
-
-    if (!res.ok) {
-      throw new Error(
-        `Jira search ${res.status}: ${(await res.text()).slice(0, 400)}`,
-      );
-    }
-
-    const data = (await res.json()) as { issues: JiraIssue[]; total: number };
-    issues.push(...data.issues);
-    startAt += data.issues.length;
-    if (startAt >= data.total || data.issues.length === 0) break;
+    const page = await searchJqlPage(
+      conn,
+      jql,
+      fieldList,
+      nextPageToken,
+      maxResults,
+    );
+    const batch = page.issues ?? [];
+    issues.push(...batch);
+    if (page.isLast || !page.nextPageToken || batch.length === 0) break;
+    nextPageToken = page.nextPageToken;
   }
 
   return issues;
