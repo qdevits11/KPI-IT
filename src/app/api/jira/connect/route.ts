@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   clearJiraConnection,
+  DEFAULT_JIRA_SETTINGS,
   readJiraConnection,
   resolveJiraConnection,
   sanitizeConnection,
@@ -16,6 +17,7 @@ export async function GET() {
     connected: Boolean(resolved),
     source: cookie ? "account" : resolved ? "env" : null,
     connection: resolved ? sanitizeConnection(resolved) : null,
+    defaults: DEFAULT_JIRA_SETTINGS,
   });
 }
 
@@ -40,7 +42,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!/^https:\/\/.+\.atlassian\.net$/i.test(baseUrl) && !baseUrl.startsWith("https://")) {
+  if (!baseUrl.startsWith("https://")) {
     return NextResponse.json(
       { ok: false, error: "URL Jira invalide (https://xxx.atlassian.net)" },
       { status: 400 },
@@ -51,11 +53,21 @@ export async function POST(request: Request) {
     baseUrl,
     email,
     apiToken,
-    jqlBase: body.jqlBase?.trim() || "project is not EMPTY",
-    slaResolution: body.slaResolution?.trim() || "Time to resolution",
-    slaFirstResponse:
-      body.slaFirstResponse?.trim() || "Time to first response",
-    categoryField: body.categoryField || "component",
+    jqlBase: body.jqlBase?.trim() || DEFAULT_JIRA_SETTINGS.jqlBase,
+    openStatusJql:
+      body.openStatusJql?.trim() || DEFAULT_JIRA_SETTINGS.openStatusJql,
+    datePriseEnChargeJql:
+      body.datePriseEnChargeJql?.trim() ||
+      DEFAULT_JIRA_SETTINGS.datePriseEnChargeJql,
+    datePriseEnChargeFieldId:
+      body.datePriseEnChargeFieldId?.trim() ||
+      DEFAULT_JIRA_SETTINGS.datePriseEnChargeFieldId,
+    slaPriseEnChargeHours:
+      Number(body.slaPriseEnChargeHours) ||
+      DEFAULT_JIRA_SETTINGS.slaPriseEnChargeHours,
+    slaClotureHours:
+      Number(body.slaClotureHours) || DEFAULT_JIRA_SETTINGS.slaClotureHours,
+    categoryField: body.categoryField || DEFAULT_JIRA_SETTINGS.categoryField,
     connectedAt: new Date().toISOString(),
   };
 

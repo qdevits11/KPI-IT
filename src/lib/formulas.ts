@@ -25,17 +25,17 @@ export const FORMULAS: FormulaDefinition[] = [
     category: "sla",
     name: "Tickets hors SLA clôture",
     description:
-      "Tickets résolus hors délai SLA sur la semaine (User experience / IT Team).",
+      "Tickets résolus dans la semaine dont le délai créé→résolu dépasse 48 h ouvrées (week-ends + jours fériés BE exclus). Identique au nœud n8n « Hors SLA 48h ».",
     formula:
-      'JQL: resolved ∈ semaine AND "Time to resolution" = breached() — ou saisie manuelle',
+      'JQL: resolutiondate ∈ semaine ; puis COUNT si getBusinessHours(created, resolutiondate) > 48',
     inputs: [
       {
-        name: "ticketsHorsSlaCloture",
+        name: "resolutiondate + created",
         source: "jira",
-        description: "Sync Jira (SLA JSM) ou colonne E feuille année",
+        description: "project = CSD ; calcul heures ouvrées côté app",
       },
     ],
-    example: "Semaine 31 : 7 tickets hors SLA clôture",
+    example: "Semaine 31 : N tickets > 48h ouvrées",
     excelSheet: "2026",
   },
   {
@@ -43,17 +43,17 @@ export const FORMULAS: FormulaDefinition[] = [
     category: "sla",
     name: "Tickets hors SLA prise en charge",
     description:
-      "Tickets créés dans la semaine dont la prise en charge a dépassé le SLA.",
+      "Tickets dont la Date Prise en Charge tombe dans la semaine et créé→prise en charge > 24 h ouvrées. Identique au nœud n8n « Hors SLA 24h » (customfield_10284).",
     formula:
-      'JQL: created ∈ semaine AND "Time to first response" = breached() — ou saisie manuelle',
+      'JQL: "Date Prise en Charge" ∈ semaine ; puis COUNT si getBusinessHours(created, datePEC) > 24',
     inputs: [
       {
-        name: "ticketsHorsSlaPriseEnCharge",
+        name: "customfield_10284 (Date Prise en Charge)",
         source: "jira",
-        description: "Sync Jira (SLA JSM) ou colonne F feuille année",
+        description: "Champ custom Jira Coverseal",
       },
     ],
-    example: "Semaine 31 : 1 ticket hors SLA prise en charge",
+    example: "Semaine 31 : N tickets > 24h ouvrées",
     excelSheet: "2026",
   },
   {
@@ -129,13 +129,14 @@ export const FORMULAS: FormulaDefinition[] = [
     id: "demandes_it_hebdo",
     category: "ticketing",
     name: "Demandes IT (hebdo)",
-    description: "Nombre de demandes / tickets IT sur la semaine.",
-    formula: "COUNT(tickets créés semaine) — saisie ou Jira",
+    description:
+      "Tickets créés dans la semaine (n8n: createdDate >= startOfWeek(-1) AND < endOfWeek(-1), project = CSD).",
+    formula: 'JQL: project = CSD AND created >= "lundi" AND created < "lundi+7"',
     inputs: [
       {
         name: "demandesItHebdo",
         source: "jira",
-        description: "Colonne K feuille année / sync Jira",
+        description: "COUNT issues créées dans l'intervalle",
       },
     ],
     example: "Semaine 31 : 15",
@@ -162,13 +163,15 @@ export const FORMULAS: FormulaDefinition[] = [
     id: "demandes_non_resolues_hebdo",
     category: "ticketing",
     name: "Demandes non résolues (hebdo)",
-    description: "Stock de demandes non résolues en fin de semaine.",
-    formula: "valeur saisie / snapshot Jira open",
+    description:
+      "Snapshot des tickets encore ouverts au moment de la sync (n8n: status NOT IN (Partenaire, Canceled, Done)). Pas un historique de fin de semaine.",
+    formula:
+      "JQL: project = CSD AND status NOT IN (Partenaire, Canceled, Done)",
     inputs: [
       {
         name: "demandesNonResoluesHebdo",
         source: "jira",
-        description: "Colonne M feuille année",
+        description: "COUNT issues ouvertes (snapshot)",
       },
     ],
     example: "Semaine 31 : 48",

@@ -1,7 +1,8 @@
 import type { WeeklyRow } from "./types";
 import { weekId } from "./types";
 import type { JiraConnection } from "./jira-auth";
-import { resolveJiraConnection } from "./jira-auth";
+import { DEFAULT_JIRA_SETTINGS, resolveJiraConnection } from "./jira-auth";
+import { countOverBusinessSla } from "./business-hours";
 
 export type { JiraConnection };
 
@@ -18,68 +19,85 @@ interface JiraIssue {
     assignee?: { displayName: string } | null;
     labels?: string[];
     components?: { name: string }[];
+    [custom: string]: unknown;
   };
 }
 
-/** Bornes lundi–dimanche d'une semaine ISO */
+/**
+ * Bornes semaine ISO lundi 00:00 → lundi suivant 00:00 (exclus).
+ * Équivalent Jira: created >= startOfWeek(N) AND created < endOfWeek(N)
+ * (n8n utilise startOfWeek(-1) / endOfWeek(-1) pour la semaine précédente).
+ */
 export function isoWeekDateRange(
   year: number,
   week: number,
-): { start: string; end: string } {
+): { start: string; endExclusive: string; endInclusive: string } {
   const simple = new Date(Date.UTC(year, 0, 1 + (week - 1) * 7));
   const dow = simple.getUTCDay();
-  const ISOweekStart = simple;
+  const monday = simple;
   if (dow <= 4) {
-    ISOweekStart.setUTCDate(simple.getUTCDate() - simple.getUTCDay() + 1);
+    monday.setUTCDate(simple.getUTCDate() - simple.getUTCDay() + 1);
   } else {
-    ISOweekStart.setUTCDate(simple.getUTCDate() + 8 - simple.getUTCDay());
+    monday.setUTCDate(simple.getUTCDate() + 8 - simple.getUTCDay());
   }
-  const start = ISOweekStart;
-  const end = new Date(start);
-  end.setUTCDate(start.getUTCDate() + 6);
+  const nextMonday = new Date(monday);
+  nextMonday.setUTCDate(monday.getUTCDate() + 7);
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  return { start: fmt(start), end: fmt(end) };
+  return {
+    start: fmt(monday),
+    endExclusive: fmt(nextMonday),
+    endInclusive: fmt(sunday),
+  };
 }
 
 export interface WeekJqlBundle {
+  /** Demandes IT — tickets créés dans la semaine */
   created: string;
-  openAtWeekEnd: string;
-  slaResolutionBreached: string;
-  slaFirstResponseBreached: string;
+  /** Demandes non résolues — snapshot ouvert (comme n8n) */
+  open: string;
+  /** Candidats SLA prise en charge (Date Prise en Charge ∈ semaine) */
+  priseEnCharge: string;
+  /** Candidats SLA clôture (resolutiondate ∈ semaine) */
+  resolved: string;
   start: string;
-  end: string;
+  endExclusive: string;
+  endInclusive: string;
+}
+
+function escapeJqlString(s: string): string {
+  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 /**
- * JQL alignés sur KPI.xlsx pour une semaine ISO.
+ * JQL calqués sur le workflow n8n Coverseal.
  *
- * - Demandes IT : tickets créés dans [lundi, dimanche]
- * - Non résolues : créés ≤ fin de semaine ET (non résolus OU résolus après la semaine)
- * - Hors SLA clôture : résolus dans la semaine avec SLA résolution breached
- * - Hors SLA prise en charge : créés dans la semaine avec SLA 1ère réponse breached
+ * | KPI | n8n |
+ * |-----|-----|
+ * | Demandes IT | project=CSD AND createdDate >= startOfWeek(-1) AND < endOfWeek(-1) |
+ * | Non résolues | project=CSD AND status NOT IN (Partenaire, Canceled, Done) |
+ * | Hors SLA prise en charge | Date Prise en Charge ∈ semaine + heures ouvrées > 24h |
+ * | Hors SLA clôture | resolutiondate ∈ semaine + heures ouvrées created→resolved > 48h |
  */
 export function buildWeekJql(
   conn: JiraConnection,
   year: number,
   week: number,
 ): WeekJqlBundle {
-  const { start, end } = isoWeekDateRange(year, week);
+  const { start, endExclusive, endInclusive } = isoWeekDateRange(year, week);
   const base = `(${conn.jqlBase})`;
-  const slaRes = escapeJqlString(conn.slaResolution);
-  const slaFr = escapeJqlString(conn.slaFirstResponse);
+  const pec = escapeJqlString(conn.datePriseEnChargeJql);
 
   return {
     start,
-    end,
-    created: `${base} AND created >= "${start}" AND created <= "${end} 23:59"`,
-    openAtWeekEnd: `${base} AND created <= "${end} 23:59" AND (resolution is EMPTY OR resolved > "${end} 23:59")`,
-    slaResolutionBreached: `${base} AND resolved >= "${start}" AND resolved <= "${end} 23:59" AND "${slaRes}" = breached()`,
-    slaFirstResponseBreached: `${base} AND created >= "${start}" AND created <= "${end} 23:59" AND "${slaFr}" = breached()`,
+    endExclusive,
+    endInclusive,
+    created: `${base} AND created >= "${start}" AND created < "${endExclusive}"`,
+    open: `${base} AND ${conn.openStatusJql}`,
+    priseEnCharge: `${base} AND "${pec}" >= "${start}" AND "${pec}" < "${endExclusive}"`,
+    resolved: `${base} AND resolutiondate >= "${start}" AND resolutiondate < "${endExclusive}"`,
   };
-}
-
-function escapeJqlString(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 async function jiraFetch(
@@ -99,7 +117,6 @@ async function jiraFetch(
   });
 }
 
-/** Compte total via search (maxResults=0) — rapide */
 export async function countJql(
   conn: JiraConnection,
   jql: string,
@@ -118,8 +135,7 @@ export async function countJql(
   });
 
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Jira count ${res.status}: ${body.slice(0, 400)}`);
+    throw new Error(`Jira count ${res.status}: ${(await res.text()).slice(0, 400)}`);
   }
   const data = (await res.json()) as { total: number };
   return data.total;
@@ -178,7 +194,10 @@ export async function testJiraConnection(conn: JiraConnection): Promise<{
         error: `Auth échouée (${me.status}). Vérifiez email + API token.`,
       };
     }
-    const profile = (await me.json()) as { displayName?: string; emailAddress?: string };
+    const profile = (await me.json()) as {
+      displayName?: string;
+      emailAddress?: string;
+    };
     return {
       ok: true,
       displayName: profile.displayName ?? profile.emailAddress,
@@ -205,6 +224,20 @@ function categoryOf(
   return issue.fields.components?.[0]?.name ?? "Non catégorisé";
 }
 
+function customFieldValue(
+  issue: JiraIssue,
+  fieldId: string,
+): string | null {
+  const raw = issue.fields[fieldId];
+  if (raw == null) return null;
+  if (typeof raw === "string") return raw;
+  if (typeof raw === "object" && raw !== null && "value" in raw) {
+    const v = (raw as { value: unknown }).value;
+    return typeof v === "string" ? v : null;
+  }
+  return String(raw);
+}
+
 export interface JiraWeekSyncResult {
   patch: Partial<WeeklyRow>;
   byType: Record<string, number>;
@@ -214,8 +247,7 @@ export interface JiraWeekSyncResult {
 }
 
 /**
- * Sync hebdo complète via JQL.
- * Les compteurs SLA tentent les champs JSM ; en cas d'échec JQL SLA → warning + null laissé.
+ * Sync hebdo — mêmes règles que le workflow n8n Coverseal.
  */
 export async function fetchJiraWeekStats(
   year: number,
@@ -231,56 +263,54 @@ export async function fetchJiraWeekStats(
 
   const jql = buildWeekJql(connection, year, week);
   const warnings: string[] = [];
+  const pecField = connection.datePriseEnChargeFieldId;
 
-  const createdIssues = await searchAll(
-    connection,
-    jql.created,
-    "created,resolutiondate,assignee,labels,components,issuetype",
+  const [createdIssues, openCount, pecIssues, resolvedIssues] =
+    await Promise.all([
+      searchAll(
+        connection,
+        jql.created,
+        "created,resolutiondate,assignee,labels,components,issuetype",
+      ),
+      countJql(connection, jql.open),
+      searchAll(
+        connection,
+        jql.priseEnCharge,
+        `created,${pecField}`,
+      ).catch((err: Error) => {
+        warnings.push(
+          `JQL Date Prise en Charge: ${err.message.slice(0, 160)}`,
+        );
+        return [] as JiraIssue[];
+      }),
+      searchAll(
+        connection,
+        jql.resolved,
+        "created,resolutiondate",
+      ).catch((err: Error) => {
+        warnings.push(`JQL resolutiondate: ${err.message.slice(0, 160)}`);
+        return [] as JiraIssue[];
+      }),
+    ]);
+
+  const slaPriseEnCharge = countOverBusinessSla(
+    pecIssues.map((i) => ({
+      created: i.fields.created,
+      eventDate: customFieldValue(i, pecField),
+    })),
+    connection.slaPriseEnChargeHours,
   );
 
-  let openCount: number;
-  try {
-    openCount = await countJql(connection, jql.openAtWeekEnd);
-  } catch (err) {
-    warnings.push(
-      `JQL non résolues: ${err instanceof Error ? err.message : "erreur"}`,
-    );
-    openCount = await countJql(
-      connection,
-      `(${connection.jqlBase}) AND statusCategory != Done`,
-    );
-    warnings.push("Fallback: stock ouvert actuel (statusCategory != Done).");
-  }
-
-  let slaCloture: number | null = null;
-  let slaPriseEnCharge: number | null = null;
-
-  try {
-    slaCloture = await countJql(connection, jql.slaResolutionBreached);
-  } catch (err) {
-    warnings.push(
-      `SLA clôture (« ${connection.slaResolution} ») indisponible: ${
-        err instanceof Error ? err.message.slice(0, 120) : "erreur"
-      }. Vérifiez le nom du SLA JSM.`,
-    );
-  }
-
-  try {
-    slaPriseEnCharge = await countJql(
-      connection,
-      jql.slaFirstResponseBreached,
-    );
-  } catch (err) {
-    warnings.push(
-      `SLA prise en charge (« ${connection.slaFirstResponse} ») indisponible: ${
-        err instanceof Error ? err.message.slice(0, 120) : "erreur"
-      }.`,
-    );
-  }
+  const slaCloture = countOverBusinessSla(
+    resolvedIssues.map((i) => ({
+      created: i.fields.created,
+      eventDate: i.fields.resolutiondate,
+    })),
+    connection.slaClotureHours,
+  );
 
   const byType: Record<string, number> = {};
   const byAssignee: Record<string, number> = {};
-
   for (const issue of createdIssues) {
     const cat = categoryOf(issue, connection.categoryField);
     byType[cat] = (byType[cat] ?? 0) + 1;
@@ -288,18 +318,23 @@ export async function fetchJiraWeekStats(
     byAssignee[who] = (byAssignee[who] ?? 0) + 1;
   }
 
-  const patch: Partial<WeeklyRow> = {
-    demandesItHebdo: createdIssues.length,
-    demandesNonResoluesHebdo: openCount,
-    jiraSyncedAt: new Date().toISOString(),
+  warnings.push(
+    "Non résolues = snapshot actuel (comme n8n), pas un historique de fin de semaine.",
+  );
+
+  return {
+    patch: {
+      demandesItHebdo: createdIssues.length,
+      demandesNonResoluesHebdo: openCount,
+      ticketsHorsSlaPriseEnCharge: slaPriseEnCharge,
+      ticketsHorsSlaCloture: slaCloture,
+      jiraSyncedAt: new Date().toISOString(),
+    },
+    byType,
+    byAssignee,
+    jql,
+    warnings,
   };
-
-  if (slaCloture !== null) patch.ticketsHorsSlaCloture = slaCloture;
-  if (slaPriseEnCharge !== null) {
-    patch.ticketsHorsSlaPriseEnCharge = slaPriseEnCharge;
-  }
-
-  return { patch, byType, byAssignee, jql, warnings };
 }
 
 export function mockJiraWeekStats(
@@ -314,10 +349,7 @@ export function mockJiraWeekStats(
       baseUrl: "https://example.atlassian.net",
       email: "demo@example.com",
       apiToken: "x",
-      jqlBase: "project = IT",
-      slaResolution: "Time to resolution",
-      slaFirstResponse: "Time to first response",
-      categoryField: "component",
+      ...DEFAULT_JIRA_SETTINGS,
       connectedAt: new Date().toISOString(),
     },
     year,
@@ -355,7 +387,6 @@ export function weekKey(year: number, week: number): string {
   return weekId({ year, month: 1, week });
 }
 
-/** @deprecated use resolveJiraConnection */
 export async function getJiraConfig(): Promise<JiraConnection | null> {
   return resolveJiraConnection();
 }

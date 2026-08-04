@@ -7,16 +7,37 @@ export interface JiraConnection {
   baseUrl: string;
   email: string;
   apiToken: string;
-  /** Filtre JQL de base, ex. project = IT OR project = SUPPORT */
+  /** Filtre JQL de base — n8n: project = CSD */
   jqlBase: string;
-  /** Nom du SLA Jira Service Management pour la clôture */
-  slaResolution: string;
-  /** Nom du SLA pour la prise en charge */
-  slaFirstResponse: string;
-  /** Champ catégorie : component | label | issuetype */
+  /**
+   * JQL pour les tickets « ouverts » / non résolus.
+   * n8n: status NOT IN (Partenaire, Canceled, Done)
+   */
+  openStatusJql: string;
+  /**
+   * Nom JQL du champ Date Prise en Charge.
+   * n8n: "Date Prise en Charge" → customfield_10284
+   */
+  datePriseEnChargeJql: string;
+  /** ID API du champ (pour fields=) */
+  datePriseEnChargeFieldId: string;
+  /** Seuil SLA prise en charge (heures ouvrées) — n8n: 24 */
+  slaPriseEnChargeHours: number;
+  /** Seuil SLA clôture (heures ouvrées) — n8n: 48 */
+  slaClotureHours: number;
   categoryField: "component" | "label" | "issuetype";
   connectedAt: string;
 }
+
+export const DEFAULT_JIRA_SETTINGS = {
+  jqlBase: "project = CSD",
+  openStatusJql: "status NOT IN (Partenaire, Canceled, Done)",
+  datePriseEnChargeJql: "Date Prise en Charge",
+  datePriseEnChargeFieldId: "customfield_10284",
+  slaPriseEnChargeHours: 24,
+  slaClotureHours: 48,
+  categoryField: "component" as const,
+};
 
 function secretKey(): Buffer {
   const raw =
@@ -45,10 +66,41 @@ export function decryptConnection(token: string): JiraConnection | null {
     const decipher = createDecipheriv("aes-256-gcm", secretKey(), iv);
     decipher.setAuthTag(tag);
     const dec = Buffer.concat([decipher.update(data), decipher.final()]);
-    return JSON.parse(dec.toString("utf-8")) as JiraConnection;
+    const parsed = JSON.parse(dec.toString("utf-8")) as Partial<JiraConnection>;
+    return normalizeConnection(parsed);
   } catch {
     return null;
   }
+}
+
+/** Migre d'anciennes sessions (champs SLA JSM) vers le modèle n8n */
+function normalizeConnection(
+  partial: Partial<JiraConnection> & {
+    slaResolution?: string;
+    slaFirstResponse?: string;
+  },
+): JiraConnection | null {
+  if (!partial.baseUrl || !partial.email || !partial.apiToken) return null;
+  return {
+    baseUrl: partial.baseUrl.replace(/\/$/, ""),
+    email: partial.email,
+    apiToken: partial.apiToken,
+    jqlBase: partial.jqlBase || DEFAULT_JIRA_SETTINGS.jqlBase,
+    openStatusJql: partial.openStatusJql || DEFAULT_JIRA_SETTINGS.openStatusJql,
+    datePriseEnChargeJql:
+      partial.datePriseEnChargeJql ||
+      DEFAULT_JIRA_SETTINGS.datePriseEnChargeJql,
+    datePriseEnChargeFieldId:
+      partial.datePriseEnChargeFieldId ||
+      DEFAULT_JIRA_SETTINGS.datePriseEnChargeFieldId,
+    slaPriseEnChargeHours:
+      partial.slaPriseEnChargeHours ??
+      DEFAULT_JIRA_SETTINGS.slaPriseEnChargeHours,
+    slaClotureHours:
+      partial.slaClotureHours ?? DEFAULT_JIRA_SETTINGS.slaClotureHours,
+    categoryField: partial.categoryField || DEFAULT_JIRA_SETTINGS.categoryField,
+    connectedAt: partial.connectedAt || new Date().toISOString(),
+  };
 }
 
 export async function readJiraConnection(): Promise<JiraConnection | null> {
@@ -65,7 +117,7 @@ export async function writeJiraConnection(conn: JiraConnection): Promise<void> {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 24 * 90, // 90 jours
+    maxAge: 60 * 60 * 24 * 90,
   });
 }
 
@@ -74,7 +126,6 @@ export async function clearJiraConnection(): Promise<void> {
   jar.delete(JIRA_COOKIE);
 }
 
-/** Config effective : cookie utilisateur prioritaire, sinon variables d'env */
 export async function resolveJiraConnection(): Promise<JiraConnection | null> {
   const fromCookie = await readJiraConnection();
   if (fromCookie) return fromCookie;
@@ -84,19 +135,32 @@ export async function resolveJiraConnection(): Promise<JiraConnection | null> {
   const apiToken = process.env.JIRA_API_TOKEN;
   if (!baseUrl || !email || !apiToken) return null;
 
-  return {
+  return normalizeConnection({
     baseUrl,
     email,
     apiToken,
-    jqlBase: process.env.JIRA_JQL_BASE ?? "project is not EMPTY",
-    slaResolution: process.env.JIRA_SLA_RESOLUTION ?? "Time to resolution",
-    slaFirstResponse:
-      process.env.JIRA_SLA_FIRST_RESPONSE ?? "Time to first response",
+    jqlBase: process.env.JIRA_JQL_BASE ?? DEFAULT_JIRA_SETTINGS.jqlBase,
+    openStatusJql:
+      process.env.JIRA_OPEN_STATUS_JQL ?? DEFAULT_JIRA_SETTINGS.openStatusJql,
+    datePriseEnChargeJql:
+      process.env.JIRA_DATE_PRISE_EN_CHARGE_JQL ??
+      DEFAULT_JIRA_SETTINGS.datePriseEnChargeJql,
+    datePriseEnChargeFieldId:
+      process.env.JIRA_DATE_PRISE_EN_CHARGE_FIELD ??
+      DEFAULT_JIRA_SETTINGS.datePriseEnChargeFieldId,
+    slaPriseEnChargeHours: Number(
+      process.env.JIRA_SLA_PRISE_EN_CHARGE_HOURS ??
+        DEFAULT_JIRA_SETTINGS.slaPriseEnChargeHours,
+    ),
+    slaClotureHours: Number(
+      process.env.JIRA_SLA_CLOTURE_HOURS ??
+        DEFAULT_JIRA_SETTINGS.slaClotureHours,
+    ),
     categoryField:
       (process.env.JIRA_CATEGORY_FIELD as JiraConnection["categoryField"]) ||
-      "component",
+      DEFAULT_JIRA_SETTINGS.categoryField,
     connectedAt: "env",
-  };
+  });
 }
 
 export function sanitizeConnection(
@@ -106,8 +170,11 @@ export function sanitizeConnection(
     baseUrl: conn.baseUrl,
     email: conn.email,
     jqlBase: conn.jqlBase,
-    slaResolution: conn.slaResolution,
-    slaFirstResponse: conn.slaFirstResponse,
+    openStatusJql: conn.openStatusJql,
+    datePriseEnChargeJql: conn.datePriseEnChargeJql,
+    datePriseEnChargeFieldId: conn.datePriseEnChargeFieldId,
+    slaPriseEnChargeHours: conn.slaPriseEnChargeHours,
+    slaClotureHours: conn.slaClotureHours,
     categoryField: conn.categoryField,
     connectedAt: conn.connectedAt,
     hasToken: true,

@@ -12,20 +12,37 @@ interface ConnectionView {
   baseUrl: string;
   email: string;
   jqlBase: string;
-  slaResolution: string;
-  slaFirstResponse: string;
+  openStatusJql: string;
+  datePriseEnChargeJql: string;
+  datePriseEnChargeFieldId: string;
+  slaPriseEnChargeHours: number;
+  slaClotureHours: number;
   categoryField: string;
   hasToken: boolean;
 }
 
 interface JqlPreview {
   created: string;
-  openAtWeekEnd: string;
-  slaResolutionBreached: string;
-  slaFirstResponseBreached: string;
+  open: string;
+  priseEnCharge: string;
+  resolved: string;
   start: string;
-  end: string;
+  endExclusive: string;
+  endInclusive: string;
 }
+
+const DEFAULT_FORM = {
+  baseUrl: "https://coverseal.atlassian.net",
+  email: "",
+  apiToken: "",
+  jqlBase: "project = CSD",
+  openStatusJql: "status NOT IN (Partenaire, Canceled, Done)",
+  datePriseEnChargeJql: "Date Prise en Charge",
+  datePriseEnChargeFieldId: "customfield_10284",
+  slaPriseEnChargeHours: 24,
+  slaClotureHours: 48,
+  categoryField: "component" as "component" | "label" | "issuetype",
+};
 
 export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
   const [weekId, setWeekId] = useState(initialWeek);
@@ -38,16 +55,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-
-  const [form, setForm] = useState({
-    baseUrl: "https://.atlassian.net",
-    email: "",
-    apiToken: "",
-    jqlBase: "project = IT",
-    slaResolution: "Time to resolution",
-    slaFirstResponse: "Time to first response",
-    categoryField: "component" as "component" | "label" | "issuetype",
-  });
+  const [form, setForm] = useState(DEFAULT_FORM);
 
   const loadMeta = useCallback(async () => {
     const [connectRes, syncRes, kpisRes] = await Promise.all([
@@ -71,8 +79,11 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         baseUrl: connect.connection.baseUrl,
         email: connect.connection.email,
         jqlBase: connect.connection.jqlBase,
-        slaResolution: connect.connection.slaResolution,
-        slaFirstResponse: connect.connection.slaFirstResponse,
+        openStatusJql: connect.connection.openStatusJql,
+        datePriseEnChargeJql: connect.connection.datePriseEnChargeJql,
+        datePriseEnChargeFieldId: connect.connection.datePriseEnChargeFieldId,
+        slaPriseEnChargeHours: connect.connection.slaPriseEnChargeHours,
+        slaClotureHours: connect.connection.slaClotureHours,
         categoryField: connect.connection.categoryField,
         apiToken: "",
       }));
@@ -137,14 +148,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
       setJql(json.jql);
       setWarnings(json.warnings ?? []);
       setResult(
-        `Sync ${json.mode} OK — ${w.demandesItHebdo} demandes, ${w.demandesNonResoluesHebdo} non résolues` +
-          (w.ticketsHorsSlaCloture != null
-            ? `, ${w.ticketsHorsSlaCloture} hors SLA clôture`
-            : "") +
-          (w.ticketsHorsSlaPriseEnCharge != null
-            ? `, ${w.ticketsHorsSlaPriseEnCharge} hors SLA prise en charge`
-            : "") +
-          ".",
+        `Sync ${json.mode} OK — ${w.demandesItHebdo} demandes, ${w.demandesNonResoluesHebdo} non résolues, ${w.ticketsHorsSlaCloture} hors SLA clôture (48h), ${w.ticketsHorsSlaPriseEnCharge} hors SLA prise en charge (24h).`,
       );
     });
   }
@@ -157,8 +161,8 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
             Connexion & sync Jira
           </h1>
           <p className="mt-2 max-w-xl text-sm text-[var(--muted)]">
-            Connectez votre compte Atlassian, puis synchronisez une semaine via
-            JQL (créés, non résolus, SLA, ventilations).
+            Calculs alignés sur le workflow n8n : projet CSD, SLA 24h / 48h en
+            heures ouvrées (week-ends + jours fériés BE exclus).
           </p>
         </div>
         {weeks.length > 0 && (
@@ -168,14 +172,14 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
 
       <section className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-[family-name:var(--font-display)] text-xl text-[var(--ink)]">
+          <h2 className="font-[family-name:var(--font-display)] text-xl">
             Compte Jira
           </h2>
           <p className="text-sm">
             {connected ? (
               <span className="text-[var(--ok)]">
                 Connecté
-                {source === "env" ? " (variables d&apos;environnement)" : ""}
+                {source === "env" ? " (env)" : ""}
                 {connection ? ` — ${connection.email}` : ""}
               </span>
             ) : (
@@ -185,7 +189,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         </div>
 
         <p className="text-xs text-[var(--muted)]">
-          Créez un token sur{" "}
+          Token API :{" "}
           <a
             className="text-[var(--accent)] underline"
             href="https://id.atlassian.com/manage-profile/security/api-tokens"
@@ -193,8 +197,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
             rel="noreferrer"
           >
             id.atlassian.com
-          </a>{" "}
-          (email Atlassian + token API).
+          </a>
         </p>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -202,54 +205,56 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
             label="URL du site"
             value={form.baseUrl}
             onChange={(v) => setForm({ ...form, baseUrl: v })}
-            placeholder="https://votre-domaine.atlassian.net"
           />
           <Field
-            label="Email du compte"
+            label="Email"
             value={form.email}
             onChange={(v) => setForm({ ...form, email: v })}
-            placeholder="it@coverseal.com"
           />
           <Field
             label="API token"
+            type="password"
             value={form.apiToken}
             onChange={(v) => setForm({ ...form, apiToken: v })}
-            placeholder={connected ? "•••• (inchangé si vide → reconnecter)" : "Token Atlassian"}
-            type="password"
+            placeholder={connected ? "••••" : "Token Atlassian"}
           />
           <Field
             label="Filtre JQL de base"
             value={form.jqlBase}
             onChange={(v) => setForm({ ...form, jqlBase: v })}
-            placeholder="project = IT"
           />
           <Field
-            label="SLA clôture (nom JSM)"
-            value={form.slaResolution}
-            onChange={(v) => setForm({ ...form, slaResolution: v })}
+            label="JQL tickets ouverts"
+            value={form.openStatusJql}
+            onChange={(v) => setForm({ ...form, openStatusJql: v })}
+            wide
           />
           <Field
-            label="SLA prise en charge (nom JSM)"
-            value={form.slaFirstResponse}
-            onChange={(v) => setForm({ ...form, slaFirstResponse: v })}
+            label='Nom JQL « Date Prise en Charge »'
+            value={form.datePriseEnChargeJql}
+            onChange={(v) => setForm({ ...form, datePriseEnChargeJql: v })}
           />
-          <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-            <span className="text-[var(--muted)]">Catégorie ticket</span>
-            <select
-              value={form.categoryField}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  categoryField: e.target.value as typeof form.categoryField,
-                })
-              }
-              className="rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-2"
-            >
-              <option value="component">Composant Jira</option>
-              <option value="label">Premier label</option>
-              <option value="issuetype">Type de ticket</option>
-            </select>
-          </label>
+          <Field
+            label="ID champ (customfield_…)"
+            value={form.datePriseEnChargeFieldId}
+            onChange={(v) => setForm({ ...form, datePriseEnChargeFieldId: v })}
+          />
+          <Field
+            label="SLA prise en charge (h ouvrées)"
+            type="number"
+            value={String(form.slaPriseEnChargeHours)}
+            onChange={(v) =>
+              setForm({ ...form, slaPriseEnChargeHours: Number(v) || 24 })
+            }
+          />
+          <Field
+            label="SLA clôture (h ouvrées)"
+            type="number"
+            value={String(form.slaClotureHours)}
+            onChange={(v) =>
+              setForm({ ...form, slaClotureHours: Number(v) || 48 })
+            }
+          />
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -259,7 +264,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
             onClick={() => void connectAccount("test")}
             className="rounded-md border border-[var(--line)] px-4 py-2 text-sm hover:bg-[var(--wash)] disabled:opacity-50"
           >
-            Tester la connexion
+            Tester
           </button>
           <button
             type="button"
@@ -272,9 +277,8 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           {connected && source === "account" && (
             <button
               type="button"
-              disabled={pending}
               onClick={() => void disconnect()}
-              className="rounded-md border border-[var(--crit)]/40 px-4 py-2 text-sm text-[var(--crit)] hover:bg-[var(--crit)]/10"
+              className="rounded-md border border-[var(--crit)]/40 px-4 py-2 text-sm text-[var(--crit)]"
             >
               Déconnecter
             </button>
@@ -283,7 +287,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
       </section>
 
       <section className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
-        <h2 className="font-[family-name:var(--font-display)] text-xl text-[var(--ink)]">
+        <h2 className="font-[family-name:var(--font-display)] text-xl">
           Synchroniser la semaine
         </h2>
         <div className="flex flex-wrap gap-2">
@@ -291,7 +295,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
             type="button"
             disabled={pending || !connected}
             onClick={() => sync(false)}
-            className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-deep)] disabled:opacity-50"
+            className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             Synchroniser depuis Jira
           </button>
@@ -299,9 +303,9 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
             type="button"
             disabled={pending}
             onClick={() => sync(true)}
-            className="rounded-md border border-[var(--line)] px-4 py-2 text-sm hover:bg-[var(--wash)]"
+            className="rounded-md border border-[var(--line)] px-4 py-2 text-sm"
           >
-            Sync démo (mock)
+            Sync démo
           </button>
         </div>
         {result && <p className="text-sm text-[var(--ok)]">{result}</p>}
@@ -317,18 +321,18 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
 
       {jql && (
         <section className="space-y-3">
-          <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
-            JQL utilisés ({jql.start} → {jql.end})
+          <h2 className="font-[family-name:var(--font-display)] text-lg">
+            JQL ({jql.start} → {jql.endExclusive} exclu)
           </h2>
           <JqlBlock label="Demandes IT (créés)" jql={jql.created} />
-          <JqlBlock label="Non résolues (fin de semaine)" jql={jql.openAtWeekEnd} />
+          <JqlBlock label="Non résolues (snapshot ouvert)" jql={jql.open} />
           <JqlBlock
-            label="Hors SLA clôture"
-            jql={jql.slaResolutionBreached}
+            label="Candidats SLA prise en charge (24h ouvrées)"
+            jql={jql.priseEnCharge}
           />
           <JqlBlock
-            label="Hors SLA prise en charge"
-            jql={jql.slaFirstResponseBreached}
+            label="Candidats SLA clôture (48h ouvrées)"
+            jql={jql.resolved}
           />
         </section>
       )}
@@ -342,22 +346,26 @@ function Field({
   onChange,
   placeholder,
   type = "text",
+  wide,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   type?: string;
+  wide?: boolean;
 }) {
   return (
-    <label className="flex flex-col gap-1 text-sm">
+    <label
+      className={`flex flex-col gap-1 text-sm ${wide ? "sm:col-span-2" : ""}`}
+    >
       <span className="text-[var(--muted)]">{label}</span>
       <input
         type={type}
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-2 text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+        className="rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-2 outline-none focus:border-[var(--accent)]"
       />
     </label>
   );
@@ -369,7 +377,7 @@ function JqlBlock({ label, jql }: { label: string; jql: string }) {
       <p className="text-xs uppercase tracking-wider text-[var(--muted)]">
         {label}
       </p>
-      <pre className="mt-1 overflow-x-auto whitespace-pre-wrap font-mono text-xs text-[var(--ink)]">
+      <pre className="mt-1 overflow-x-auto whitespace-pre-wrap font-mono text-xs">
         {jql}
       </pre>
     </div>
