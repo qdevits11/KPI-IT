@@ -2,16 +2,7 @@ import type { KpiValue } from "@/lib/types";
 
 export function formatKpiValue(kpi: KpiValue): string {
   if (kpi.value === null) return "—";
-  switch (kpi.unit) {
-    case "percent":
-      return `${kpi.value.toLocaleString("fr-BE", { maximumFractionDigits: 1 })} %`;
-    case "hours":
-      return `${kpi.value.toLocaleString("fr-BE", { maximumFractionDigits: 1 })} h`;
-    case "minutes":
-      return `${kpi.value.toLocaleString("fr-BE")} min`;
-    default:
-      return kpi.value.toLocaleString("fr-BE");
-  }
+  return kpi.value.toLocaleString("fr-BE");
 }
 
 export function statusLabel(status: KpiValue["status"]): string {
@@ -24,5 +15,16 @@ export function statusLabel(status: KpiValue["status"]): string {
       return "Critique";
     default:
       return "N/A";
+  }
+}
+
+export function sourceLabel(source: KpiValue["source"]): string {
+  switch (source) {
+    case "jira":
+      return "Jira";
+    case "manuel":
+      return "Manuel";
+    case "calcule":
+      return "Calculé";
   }
 }

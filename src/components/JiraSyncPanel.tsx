@@ -1,12 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
-import type { Period } from "@/lib/types";
-import { PeriodSelector } from "./PeriodSelector";
+import { WeekSelector } from "./WeekSelector";
 
-export function JiraSyncPanel({ initialPeriod }: { initialPeriod: string }) {
-  const [periodId, setPeriodId] = useState(initialPeriod);
-  const [periods, setPeriods] = useState<Period[]>([]);
+interface WeekOption {
+  id: string;
+  label: string;
+}
+
+export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
+  const [weekId, setWeekId] = useState(initialWeek);
+  const [weeks, setWeeks] = useState<WeekOption[]>([]);
   const [configured, setConfigured] = useState(false);
   const [env, setEnv] = useState<Record<string, unknown> | null>(null);
   const [result, setResult] = useState<string | null>(null);
@@ -16,14 +20,14 @@ export function JiraSyncPanel({ initialPeriod }: { initialPeriod: string }) {
   const loadMeta = useCallback(async () => {
     const [statusRes, kpisRes] = await Promise.all([
       fetch("/api/jira/sync"),
-      fetch(`/api/kpis?period=${encodeURIComponent(periodId)}`),
+      fetch(`/api/kpis?week=${encodeURIComponent(weekId)}`),
     ]);
     const status = await statusRes.json();
     const kpis = await kpisRes.json();
     setConfigured(status.configured);
     setEnv(status.env);
-    setPeriods(kpis.periods);
-  }, [periodId]);
+    setWeeks(kpis.weeks);
+  }, [weekId]);
 
   useEffect(() => {
     startTransition(() => {
@@ -38,17 +42,33 @@ export function JiraSyncPanel({ initialPeriod }: { initialPeriod: string }) {
       const res = await fetch("/api/jira/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ periodId, useMock }),
+        body: JSON.stringify({ weekId, useMock }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) {
         setError(json.error ?? "Sync échouée");
         return;
       }
+      const w = json.dashboard.week;
       setResult(
-        `Sync ${json.mode} OK — ${json.period.jira.created} créés, ${json.period.jira.resolved} résolus, ${json.period.jira.open} ouverts.`,
+        `Sync ${json.mode} OK — ${w.demandesItHebdo} demandes IT, ${w.demandesNonResoluesHebdo} non résolues.`,
       );
     });
+  }
+
+  async function reimportExcel() {
+    setResult(null);
+    setError(null);
+    const res = await fetch("/api/formulas", { method: "POST" });
+    const json = await res.json();
+    if (!res.ok) {
+      setError("Réimport échoué");
+      return;
+    }
+    setResult(
+      `Base rechargée depuis KPI.xlsx — ${json.weeks} semaines, ${json.automationsMetier} automations métiers.`,
+    );
+    await loadMeta();
   }
 
   return (
@@ -59,24 +79,25 @@ export function JiraSyncPanel({ initialPeriod }: { initialPeriod: string }) {
             Synchronisation Jira
           </h1>
           <p className="mt-2 max-w-xl text-sm text-[var(--muted)]">
-            Agrège les tickets créés, résolus et ouverts pour la période, puis
-            calcule délai moyen et respect SLA.
+            Remplit Demandes IT (créés), Non résolues (ouverts), et les
+            ventilations par type / responsable. Les hors-SLA restent en saisie
+            manuelle.
           </p>
         </div>
-        {periods.length > 0 && (
-          <PeriodSelector
-            periods={periods}
-            value={periodId}
-            onChange={setPeriodId}
-          />
+        {weeks.length > 0 && (
+          <WeekSelector weeks={weeks} value={weekId} onChange={setWeekId} />
         )}
       </div>
 
-      <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5 space-y-3">
+      <div className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
         <p className="text-sm">
           Statut :{" "}
-          <strong className={configured ? "text-[var(--ok)]" : "text-[var(--warn)]"}>
-            {configured ? "Jira configuré" : "Jira non configuré (mode démo disponible)"}
+          <strong
+            className={configured ? "text-[var(--ok)]" : "text-[var(--warn)]"}
+          >
+            {configured
+              ? "Jira configuré"
+              : "Jira non configuré (mode démo disponible)"}
           </strong>
         </p>
         {env && (
@@ -85,7 +106,6 @@ export function JiraSyncPanel({ initialPeriod }: { initialPeriod: string }) {
             <li>JIRA_EMAIL : {env.hasEmail ? "oui" : "non"}</li>
             <li>JIRA_API_TOKEN : {env.hasToken ? "oui" : "non"}</li>
             <li>JQL : {String(env.jqlBase)}</li>
-            <li>SLA (h) : {String(env.slaHours)}</li>
           </ul>
         )}
         <div className="flex flex-wrap gap-2 pt-2">
@@ -101,27 +121,29 @@ export function JiraSyncPanel({ initialPeriod }: { initialPeriod: string }) {
             type="button"
             disabled={pending}
             onClick={() => sync(true)}
-            className="rounded-md border border-[var(--line)] px-4 py-2 text-sm text-[var(--ink)] hover:bg-[var(--wash)]"
+            className="rounded-md border border-[var(--line)] px-4 py-2 text-sm hover:bg-[var(--wash)]"
           >
             Sync démo (mock)
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => void reimportExcel()}
+            className="rounded-md border border-[var(--line)] px-4 py-2 text-sm hover:bg-[var(--wash)]"
+          >
+            Réimporter KPI.xlsx
           </button>
         </div>
         {result && <p className="text-sm text-[var(--ok)]">{result}</p>}
         {error && <p className="text-sm text-[var(--crit)]">{error}</p>}
       </div>
 
-      <section className="space-y-2 text-sm text-[var(--muted)]">
-        <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
-          Variables d&apos;environnement
-        </h2>
-        <pre className="overflow-x-auto rounded-lg border border-[var(--line)] bg-[var(--wash)] p-4 text-xs text-[var(--ink)]">
+      <pre className="overflow-x-auto rounded-lg border border-[var(--line)] bg-[var(--wash)] p-4 text-xs">
 {`JIRA_BASE_URL=https://votre-domaine.atlassian.net
 JIRA_EMAIL=it@coverseal.com
 JIRA_API_TOKEN=***
-JIRA_JQL_BASE=project = IT
-JIRA_SLA_HOURS=8`}
-        </pre>
-      </section>
+JIRA_JQL_BASE=project = IT`}
+      </pre>
     </div>
   );
 }

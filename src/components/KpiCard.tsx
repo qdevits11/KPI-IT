@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { KpiValue } from "@/lib/types";
-import { formatKpiValue, statusLabel } from "@/lib/format";
+import { formatKpiValue, statusLabel, sourceLabel } from "@/lib/format";
 
 const STATUS_CLASS: Record<KpiValue["status"], string> = {
   ok: "text-[var(--ok)]",
@@ -9,16 +9,12 @@ const STATUS_CLASS: Record<KpiValue["status"], string> = {
   na: "text-[var(--muted)]",
 };
 
-interface Props {
-  kpi: KpiValue;
-}
-
-export function KpiCard({ kpi }: Props) {
+export function KpiCard({ kpi }: { kpi: KpiValue }) {
   return (
     <article className="kpi-card group relative overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 transition-transform duration-300 hover:-translate-y-0.5">
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs uppercase tracking-[0.16em] text-[var(--muted)]">
-          {kpi.source === "jira" ? "Jira" : "Manuel"}
+          {sourceLabel(kpi.source)}
         </p>
         <span className={`text-xs font-medium ${STATUS_CLASS[kpi.status]}`}>
           {statusLabel(kpi.status)}
@@ -29,10 +25,7 @@ export function KpiCard({ kpi }: Props) {
       </h3>
       <p className="mt-1 text-sm text-[var(--ink-soft)]">{kpi.label}</p>
       {kpi.target !== null && (
-        <p className="mt-2 text-xs text-[var(--muted)]">
-          Cible : {kpi.target}
-          {kpi.unit === "percent" ? " %" : kpi.unit === "hours" ? " h" : ""}
-        </p>
+        <p className="mt-2 text-xs text-[var(--muted)]">Cible : ≤ {kpi.target}</p>
       )}
       <Link
         href={`/formules#${kpi.formulaId}`}

@@ -1,25 +1,28 @@
 "use client";
 
-import type { Period } from "@/lib/types";
-
-interface Props {
-  periods: Period[];
-  value: string;
-  onChange: (periodId: string) => void;
+interface WeekOption {
+  id: string;
+  label: string;
 }
 
-export function PeriodSelector({ periods, value, onChange }: Props) {
+interface Props {
+  weeks: WeekOption[];
+  value: string;
+  onChange: (weekId: string) => void;
+}
+
+export function WeekSelector({ weeks, value, onChange }: Props) {
   return (
     <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
-      <span className="uppercase tracking-[0.14em] text-xs">Période</span>
+      <span className="text-xs uppercase tracking-[0.14em]">Semaine</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-[var(--ink)] outline-none focus:border-[var(--accent)]"
       >
-        {periods.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.label}
+        {weeks.map((w) => (
+          <option key={w.id} value={w.id}>
+            {w.label}
           </option>
         ))}
       </select>

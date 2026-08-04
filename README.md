@@ -1,21 +1,24 @@
-# KPI·IT — Coverseal
+# KPI·IT — Coverseal / Becoflex
 
-Application de suivi des KPI du service IT.
+Tableau de bord des KPI du service IT, calqué sur `Becoflex/KPI.xlsx` (Google Drive).
 
-## Sources de données
+## Modèle (comme l'Excel)
 
-| Domaine | Source | Exemples d'indicateurs |
-|---------|--------|------------------------|
-| Tickets | **Jira** (API) | Créés, résolus, ouverts, délai moyen, SLA |
-| Mises à jour appareils | **Saisie manuelle** | % conformité parc |
-| Automatisations Odoo | **Saisie manuelle** | Actives, taux de succès |
-| Automatisations métier | **Saisie manuelle** | Actives, heures économisées |
-| Tests de phishing | **Saisie manuelle** | Taux de clic, taux de signalement |
-| Maintenance production | **Saisie manuelle** | Taux réalisation, disponibilité, incidents |
+Granularité **hebdomadaire**. Feuille année + journaux de détail :
 
-Chaque chiffre affiché est **calculé** à partir de données brutes. Les formules sont documentées dans l'app (`/formules`) et dans `src/lib/formulas.ts`.
+| Indicateur | Source | Formule |
+|------------|--------|---------|
+| Hors SLA clôture / prise en charge | Manuel (ou Jira SLA) | Valeur saisie |
+| Automatisations métiers | Journal | `COUNTIFS(année, semaine)` |
+| Améliorations Odoo | Journal | `COUNTIFS(année, semaine)` |
+| Échecs phishing | Journal | `SUMIFS(Nbr échecs)` |
+| Maintenances production | Journal | `COUNTIFS(année, semaine)` |
+| Demandes IT hebdo | Jira / saisie | Tickets créés |
+| Demandes IT YTD | Calculé | `Σ hebdo` (L_n = K_n + L_(n-1)) |
+| Non résolues hebdo / YTD | Jira / calculé | Snapshot + cumul Excel |
+| Tickets par type / responsable | Jira / Excel | Ventilation |
 
-> **Note :** le fichier Excel de référence n'a pas été joint à cette session. Les formules actuelles reflètent les domaines décrits ; elles pourront être alignées exactement sur l'Excel dès qu'il sera fourni.
+Données initiales importées depuis `data/seed-from-excel.json` (extrait de KPI.xlsx).
 
 ## Démarrage
 
@@ -24,33 +27,27 @@ npm install
 npm run dev
 ```
 
-Ouvrir [http://localhost:3000](http://localhost:3000).
+Ouvrir [http://localhost:3000](http://localhost:3000) — semaine 31 (2026) préchargée.
 
-## Configuration Jira
+### Réimporter l'Excel
 
-Copier `.env.example` vers `.env.local` :
+1. Remplacer `data/KPI.xlsx` puis régénérer le seed :
+   ```bash
+   python3 scripts/export-seed.py
+   ```
+2. Ou dans l'UI **Sync Jira** → « Réimporter KPI.xlsx » (recharge depuis `seed-from-excel.json`).
+
+### Jira
 
 ```env
 JIRA_BASE_URL=https://votre-domaine.atlassian.net
 JIRA_EMAIL=it@coverseal.com
-JIRA_API_TOKEN=votre_token
+JIRA_API_TOKEN=
 JIRA_JQL_BASE=project = IT
-JIRA_SLA_HOURS=8
 ```
-
-Sans ces variables, la page **Sync Jira** propose un mode démo (mock).
 
 ## Scripts
 
-- `npm run dev` — serveur de développement
-- `npm run build` — build production
-- `npm test` — tests des formules KPI
-- `npm run lint` — ESLint
-
-## Architecture
-
-- `src/lib/formulas.ts` — formules + moteur de calcul
-- `src/lib/jira.ts` — client API Jira Cloud
-- `src/lib/store.ts` — persistance JSON (`data/db.json`)
-- `src/app/api/*` — routes API
-- Pages : tableau de bord, saisie manuelle, sync Jira, formules
+- `npm run dev` / `build` / `start`
+- `npm test` — vérifie COUNTIFS / YTD vs Excel (ex. S31 → 1090 demandes YTD)
+- `npm run lint`

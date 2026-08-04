@@ -1,51 +1,59 @@
 import { NextResponse } from "next/server";
 import {
-  fetchJiraStatsForPeriod,
+  fetchJiraWeekStats,
   getJiraConfig,
-  mockJiraStats,
+  mockJiraWeekStats,
+  weekKey,
 } from "@/lib/jira";
-import { updateJiraStats, currentPeriodId } from "@/lib/store";
-import { computeKpis } from "@/lib/formulas";
+import {
+  updateWeeklyRow,
+  setTicketsBreakdown,
+  currentWeekId,
+  ensureWeek,
+} from "@/lib/store";
+import { buildWeekDashboard } from "@/lib/formulas";
+import { getDatabase } from "@/lib/store";
+import { weekId, parseWeekId } from "@/lib/types";
 
 export async function GET() {
-  const configured = Boolean(getJiraConfig());
   return NextResponse.json({
-    configured,
+    configured: Boolean(getJiraConfig()),
     env: {
       hasBaseUrl: Boolean(process.env.JIRA_BASE_URL),
       hasEmail: Boolean(process.env.JIRA_EMAIL),
       hasToken: Boolean(process.env.JIRA_API_TOKEN),
       jqlBase: process.env.JIRA_JQL_BASE ?? "project is not EMPTY",
-      slaHours: process.env.JIRA_SLA_HOURS ?? "8",
     },
   });
 }
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
-    periodId?: string;
+    weekId?: string;
     useMock?: boolean;
   };
-
-  const periodId = body.periodId ?? currentPeriodId();
+  const id = body.weekId ?? currentWeekId();
+  await ensureWeek(id);
+  const { year, week } = parseWeekId(id);
   const configured = Boolean(getJiraConfig());
 
   try {
-    let stats;
-    if (!configured || body.useMock) {
-      stats = mockJiraStats(periodId);
-    } else {
-      stats = await fetchJiraStatsForPeriod(periodId);
-    }
+    const result =
+      !configured || body.useMock
+        ? mockJiraWeekStats(year, week)
+        : await fetchJiraWeekStats(year, week);
 
-    const period = await updateJiraStats(periodId, stats);
-    const kpis = computeKpis(period);
+    await updateWeeklyRow(id, result.patch);
+    await setTicketsBreakdown(weekKey(year, week), result.byType, result.byAssignee);
+
+    const db = await getDatabase();
+    const row = db.weeks.find((w) => weekId(w) === id)!;
+    const dashboard = buildWeekDashboard(db, row);
 
     return NextResponse.json({
       ok: true,
       mode: !configured || body.useMock ? "mock" : "jira",
-      period,
-      kpis,
+      dashboard,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Erreur Jira";

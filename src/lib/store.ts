@@ -2,12 +2,12 @@ import { promises as fs } from "fs";
 import path from "path";
 import type {
   AppDatabase,
-  ManualEntries,
-  PeriodData,
-  PeriodId,
-  JiraTicketStats,
+  LogEvent,
+  PhishingEvent,
+  WeeklyRow,
 } from "./types";
-import { createEmptyManual, createEmptyJira, seedDatabase } from "./seed";
+import { weekId } from "./types";
+import { seedDatabase, createEmptyWeek } from "./seed";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
@@ -29,98 +29,135 @@ async function writeDb(db: AppDatabase): Promise<void> {
   await fs.writeFile(DB_PATH, JSON.stringify(db, null, 2), "utf-8");
 }
 
+/** Force re-seed from Excel JSON (dev / import) */
+export async function resetFromSeed(): Promise<AppDatabase> {
+  const seeded = seedDatabase();
+  await writeDb(seeded);
+  return seeded;
+}
+
 export async function getDatabase(): Promise<AppDatabase> {
   return ensureDb();
 }
 
-export async function listPeriods(): Promise<PeriodData[]> {
-  const db = await ensureDb();
-  return [...db.periods].sort((a, b) => b.period.id.localeCompare(a.period.id));
+export function currentWeekId(date = new Date()): string {
+  // ISO week
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${d.getUTCFullYear()}-S${String(week).padStart(2, "0")}`;
 }
 
-export async function getPeriod(id: PeriodId): Promise<PeriodData | null> {
-  const db = await ensureDb();
-  return db.periods.find((p) => p.period.id === id) ?? null;
+export function isoWeekParts(date = new Date()): {
+  year: number;
+  week: number;
+  month: number;
+} {
+  const id = currentWeekId(date);
+  const [y, w] = [Number(id.slice(0, 4)), Number(id.slice(6))];
+  return { year: y, week: w, month: date.getMonth() + 1 };
 }
 
-export async function ensurePeriod(id: PeriodId): Promise<PeriodData> {
+export async function listWeeks(): Promise<WeeklyRow[]> {
   const db = await ensureDb();
-  const existing = db.periods.find((p) => p.period.id === id);
+  return [...db.weeks].sort((a, b) =>
+    a.year === b.year ? b.week - a.week : b.year - a.year,
+  );
+}
+
+export async function getWeek(id: string): Promise<WeeklyRow | null> {
+  const db = await ensureDb();
+  return (
+    db.weeks.find((w) => weekId(w) === id) ?? null
+  );
+}
+
+export async function ensureWeek(id: string): Promise<WeeklyRow> {
+  const db = await ensureDb();
+  const existing = db.weeks.find((w) => weekId(w) === id);
   if (existing) return existing;
 
-  const [yearStr, monthStr] = id.split("-");
-  const year = Number(yearStr);
-  const month = Number(monthStr);
-  const label = new Date(year, month - 1, 1).toLocaleDateString("fr-BE", {
-    month: "long",
-    year: "numeric",
-  });
-
-  const period: PeriodData = {
-    period: { id, label: label.charAt(0).toUpperCase() + label.slice(1), year, month },
-    jira: createEmptyJira(),
-    manual: createEmptyManual(daysInMonth(year, month)),
-  };
-
-  db.periods.push(period);
+  const year = Number(id.slice(0, 4));
+  const week = Number(id.slice(6));
+  const month = Math.min(12, Math.ceil(week / 4.345));
+  const row = createEmptyWeek(year, month, week);
+  db.weeks.push(row);
   await writeDb(db);
-  return period;
+  return row;
 }
 
-export async function updateManualEntries(
-  periodId: PeriodId,
-  manual: ManualEntries,
-  updatedBy?: string,
-): Promise<PeriodData> {
+export async function updateWeeklyRow(
+  id: string,
+  patch: Partial<WeeklyRow>,
+): Promise<WeeklyRow> {
+  await ensureWeek(id);
   const db = await ensureDb();
-  let period = db.periods.find((p) => p.period.id === periodId);
-  if (!period) {
-    period = await ensurePeriod(periodId);
-    // re-read after ensure
-    const refreshed = await ensureDb();
-    period = refreshed.periods.find((p) => p.period.id === periodId)!;
-    Object.assign(db, refreshed);
+  const idx = db.weeks.findIndex((w) => weekId(w) === id);
+  db.weeks[idx] = {
+    ...db.weeks[idx],
+    ...patch,
+    year: db.weeks[idx].year,
+    week: db.weeks[idx].week,
+    updatedAt: new Date().toISOString(),
+  };
+  await writeDb(db);
+  return db.weeks[idx];
+}
+
+type LogCollection =
+  | "automationsMetier"
+  | "automationsOdoo"
+  | "maintenances";
+
+export async function addLogEvent(
+  collection: LogCollection,
+  event: Omit<LogEvent, "id">,
+): Promise<LogEvent> {
+  const db = await ensureDb();
+  const full: LogEvent = {
+    ...event,
+    id: `${collection}-${Date.now()}`,
+  };
+  db[collection].push(full);
+  await writeDb(db);
+  return full;
+}
+
+export async function addPhishingEvent(
+  event: Omit<PhishingEvent, "id">,
+): Promise<PhishingEvent> {
+  const db = await ensureDb();
+  const full: PhishingEvent = {
+    ...event,
+    id: `phish-${Date.now()}`,
+  };
+  db.phishing.push(full);
+  await writeDb(db);
+  return full;
+}
+
+export async function deleteLogEvent(
+  collection: LogCollection | "phishing",
+  eventId: string,
+): Promise<void> {
+  const db = await ensureDb();
+  if (collection === "phishing") {
+    db.phishing = db.phishing.filter((e) => e.id !== eventId);
+  } else {
+    db[collection] = db[collection].filter((e) => e.id !== eventId);
   }
-
-  const idx = db.periods.findIndex((p) => p.period.id === periodId);
-  db.periods[idx] = {
-    ...db.periods[idx],
-    manual: {
-      ...manual,
-      updatedAt: new Date().toISOString(),
-      updatedBy: updatedBy ?? "IT",
-    },
-  };
   await writeDb(db);
-  return db.periods[idx];
 }
 
-export async function updateJiraStats(
-  periodId: PeriodId,
-  jira: JiraTicketStats,
-): Promise<PeriodData> {
-  await ensurePeriod(periodId);
+export async function setTicketsBreakdown(
+  weekKey: string,
+  byType: Record<string, number>,
+  byAssignee: Record<string, number>,
+): Promise<void> {
   const db = await ensureDb();
-  const idx = db.periods.findIndex((p) => p.period.id === periodId);
-  db.periods[idx] = {
-    ...db.periods[idx],
-    jira: { ...jira, lastSyncedAt: new Date().toISOString() },
-  };
-  db.settings.jiraConfigured = true;
+  db.ticketsByType[weekKey] = byType;
+  db.ticketsByAssignee[weekKey] = byAssignee;
   await writeDb(db);
-  return db.periods[idx];
-}
-
-function daysInMonth(year: number, month: number): number {
-  return new Date(year, month, 0).getDate();
-}
-
-export function periodMinutesFor(year: number, month: number): number {
-  return daysInMonth(year, month) * 24 * 60;
-}
-
-export function currentPeriodId(date = new Date()): PeriodId {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
 }

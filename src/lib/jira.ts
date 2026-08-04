@@ -1,10 +1,10 @@
-import type { JiraTicketStats } from "./types";
+import type { WeeklyRow } from "./types";
+import { weekId } from "./types";
 
 export interface JiraConfig {
   baseUrl: string;
   email: string;
   apiToken: string;
-  /** Projet ou JQL de base, ex. project = IT */
   jqlBase: string;
 }
 
@@ -13,7 +13,6 @@ export function getJiraConfig(): JiraConfig | null {
   const email = process.env.JIRA_EMAIL;
   const apiToken = process.env.JIRA_API_TOKEN;
   const jqlBase = process.env.JIRA_JQL_BASE ?? "project is not EMPTY";
-
   if (!baseUrl || !email || !apiToken) return null;
   return { baseUrl, email, apiToken, jqlBase };
 }
@@ -26,30 +25,24 @@ interface JiraIssue {
   fields: {
     created: string;
     resolutiondate: string | null;
-    priority?: { name: string } | null;
-    status: { name: string; statusCategory?: { key: string } };
-    customfield_sla_met?: boolean;
+    assignee?: { displayName: string } | null;
+    labels?: string[];
+    // custom fields vary — category often in a custom field or component
+    components?: { name: string }[];
+    customfield_category?: { value: string } | string | null;
   };
 }
 
-async function searchAll(
-  config: JiraConfig,
-  jql: string,
-): Promise<JiraIssue[]> {
+async function searchAll(config: JiraConfig, jql: string): Promise<JiraIssue[]> {
   const issues: JiraIssue[] = [];
   let startAt = 0;
   const maxResults = 100;
-
-  // Jira Cloud search API (paginated)
   for (;;) {
     const url = new URL(`${config.baseUrl}/rest/api/3/search`);
     url.searchParams.set("jql", jql);
     url.searchParams.set("startAt", String(startAt));
     url.searchParams.set("maxResults", String(maxResults));
-    url.searchParams.set(
-      "fields",
-      "created,resolutiondate,priority,status",
-    );
+    url.searchParams.set("fields", "created,resolutiondate,assignee,labels,components");
 
     const res = await fetch(url.toString(), {
       headers: {
@@ -58,141 +51,122 @@ async function searchAll(
       },
       cache: "no-store",
     });
-
     if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Jira API ${res.status}: ${body.slice(0, 300)}`);
+      throw new Error(`Jira API ${res.status}: ${(await res.text()).slice(0, 300)}`);
     }
-
-    const data = (await res.json()) as {
-      issues: JiraIssue[];
-      total: number;
-    };
+    const data = (await res.json()) as { issues: JiraIssue[]; total: number };
     issues.push(...data.issues);
     startAt += data.issues.length;
     if (startAt >= data.total || data.issues.length === 0) break;
   }
-
   return issues;
 }
 
-function periodBounds(periodId: string): { start: string; end: string } {
-  const [y, m] = periodId.split("-").map(Number);
-  const start = `${y}-${String(m).padStart(2, "0")}-01`;
-  const lastDay = new Date(y, m, 0).getDate();
-  const end = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-  return { start, end };
+/** Bornes lundi–dimanche d'une semaine ISO */
+export function isoWeekDateRange(
+  year: number,
+  week: number,
+): { start: string; end: string } {
+  // ISO week: Thursday determines the year
+  const simple = new Date(Date.UTC(year, 0, 1 + (week - 1) * 7));
+  const dow = simple.getUTCDay();
+  const ISOweekStart = simple;
+  if (dow <= 4) {
+    ISOweekStart.setUTCDate(simple.getUTCDate() - simple.getUTCDay() + 1);
+  } else {
+    ISOweekStart.setUTCDate(simple.getUTCDate() + 8 - simple.getUTCDay());
+  }
+  const start = ISOweekStart;
+  const end = new Date(start);
+  end.setUTCDate(start.getUTCDate() + 6);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  return { start: fmt(start), end: fmt(end) };
 }
 
-function hoursBetween(a: string, b: string): number {
-  return (new Date(b).getTime() - new Date(a).getTime()) / (1000 * 60 * 60);
+export interface JiraWeekSyncResult {
+  patch: Partial<WeeklyRow>;
+  byType: Record<string, number>;
+  byAssignee: Record<string, number>;
 }
-
-function priorityBucket(
-  name: string | undefined,
-): keyof JiraTicketStats["byPriority"] {
-  const n = (name ?? "").toLowerCase();
-  if (n.includes("highest") || n.includes("blocker") || n.includes("critique"))
-    return "highest";
-  if (n.includes("high") || n.includes("majeur")) return "high";
-  if (n.includes("low") && !n.includes("lowest")) return "low";
-  if (n.includes("lowest") || n.includes("trivial")) return "lowest";
-  return "medium";
-}
-
-const DONE_CATEGORIES = new Set(["done"]);
 
 /**
- * Récupère et agrège les stats tickets pour une période YYYY-MM.
- * SLA : approximation via délai < 8h (configurable via JIRA_SLA_HOURS).
+ * Sync hebdo : demandes IT (= créés), non résolues (= open snapshot),
+ * ventilation type (composant) et responsable (assignee).
+ * Les hors-SLA restent manuels tant que les champs SLA Jira ne sont pas mappés.
  */
-export async function fetchJiraStatsForPeriod(
-  periodId: string,
-): Promise<JiraTicketStats> {
+export async function fetchJiraWeekStats(
+  year: number,
+  week: number,
+): Promise<JiraWeekSyncResult> {
   const config = getJiraConfig();
   if (!config) {
     throw new Error(
       "Jira non configuré. Définir JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN.",
     );
   }
-
-  const { start, end } = periodBounds(periodId);
-  const slaHours = Number(process.env.JIRA_SLA_HOURS ?? "8");
-
+  const { start, end } = isoWeekDateRange(year, week);
   const createdJql = `${config.jqlBase} AND created >= "${start}" AND created <= "${end} 23:59"`;
-  const resolvedJql = `${config.jqlBase} AND resolved >= "${start}" AND resolved <= "${end} 23:59"`;
   const openJql = `${config.jqlBase} AND statusCategory != Done`;
 
-  const [createdIssues, resolvedIssues, openIssues] = await Promise.all([
+  const [created, open] = await Promise.all([
     searchAll(config, createdJql),
-    searchAll(config, resolvedJql),
     searchAll(config, openJql),
   ]);
 
-  const byPriority: JiraTicketStats["byPriority"] = {
-    highest: 0,
-    high: 0,
-    medium: 0,
-    low: 0,
-    lowest: 0,
-  };
+  const byType: Record<string, number> = {};
+  const byAssignee: Record<string, number> = {};
 
-  let totalResolutionHours = 0;
-  let resolvedWithSlaMet = 0;
-  let resolvedWithSlaTracked = 0;
-
-  for (const issue of resolvedIssues) {
-    const { created, resolutiondate, priority } = issue.fields;
-    byPriority[priorityBucket(priority?.name ?? undefined)] += 1;
-
-    if (created && resolutiondate) {
-      const hours = hoursBetween(created, resolutiondate);
-      totalResolutionHours += hours;
-      resolvedWithSlaTracked += 1;
-      if (hours <= slaHours) resolvedWithSlaMet += 1;
-    }
-  }
-
-  // Also count created by priority for visibility
-  for (const issue of createdIssues) {
-    // already counted resolved priorities separately; created breakdown optional
-    void issue;
+  for (const issue of created) {
+    const cat =
+      issue.fields.components?.[0]?.name ??
+      issue.fields.labels?.[0] ??
+      "Non catégorisé";
+    byType[cat] = (byType[cat] ?? 0) + 1;
+    const who = issue.fields.assignee?.displayName ?? "Non assigné";
+    byAssignee[who] = (byAssignee[who] ?? 0) + 1;
   }
 
   return {
-    created: createdIssues.length,
-    resolved: resolvedIssues.length,
-    open: openIssues.filter(
-      (i) => !DONE_CATEGORIES.has(i.fields.status.statusCategory?.key ?? ""),
-    ).length,
-    totalResolutionHours: Math.round(totalResolutionHours * 10) / 10,
-    resolvedWithSlaMet,
-    resolvedWithSlaTracked,
-    byPriority,
-    lastSyncedAt: new Date().toISOString(),
+    patch: {
+      demandesItHebdo: created.length,
+      demandesNonResoluesHebdo: open.length,
+      jiraSyncedAt: new Date().toISOString(),
+    },
+    byType,
+    byAssignee,
   };
 }
 
-/** Mode démo : génère des stats réalistes sans appeler Jira */
-export function mockJiraStats(periodId: string): JiraTicketStats {
-  const seed = periodId.split("-").reduce((a, b) => a + Number(b), 0);
-  const created = 30 + (seed % 20);
-  const resolved = created + (seed % 5) - 2;
-  const open = 10 + (seed % 12);
+export function mockJiraWeekStats(
+  year: number,
+  week: number,
+): JiraWeekSyncResult {
+  const seed = year + week * 17;
+  const created = 20 + (seed % 35);
+  const open = 30 + (seed % 50);
   return {
-    created,
-    resolved: Math.max(0, resolved),
-    open,
-    totalResolutionHours: resolved * (3 + (seed % 4)),
-    resolvedWithSlaMet: Math.round(resolved * 0.92),
-    resolvedWithSlaTracked: resolved,
-    byPriority: {
-      highest: 1 + (seed % 2),
-      high: 4 + (seed % 4),
-      medium: Math.round(created * 0.5),
-      low: 5,
-      lowest: 2,
+    patch: {
+      demandesItHebdo: created,
+      demandesNonResoluesHebdo: open,
+      jiraSyncedAt: new Date().toISOString(),
     },
-    lastSyncedAt: new Date().toISOString(),
+    byType: {
+      Odoo: Math.round(created * 0.35),
+      Elfsquad: Math.round(created * 0.2),
+      Teams: Math.round(created * 0.1),
+      "Non catégorisé": Math.round(created * 0.15),
+      Extract: Math.round(created * 0.1),
+      Outlook: created - Math.round(created * 0.9),
+    },
+    byAssignee: {
+      "Gary Schreurs": Math.round(created * 0.4),
+      "Loic Voumard": Math.round(created * 0.3),
+      "Devits Quentin": Math.round(created * 0.25),
+      "Dominique Kudas": Math.max(0, created - Math.round(created * 0.95)),
+    },
   };
+}
+
+export function weekKey(year: number, week: number): string {
+  return weekId({ year, month: 1, week });
 }

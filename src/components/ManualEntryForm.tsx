@@ -1,65 +1,39 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
-import type { ManualEntries, Period } from "@/lib/types";
-import { PeriodSelector } from "./PeriodSelector";
+import type { LogEvent, PhishingEvent, WeeklyRow } from "@/lib/types";
+import { WeekSelector } from "./WeekSelector";
 
-const emptyManual = (): ManualEntries => ({
-  deviceUpdates: {
-    devicesTotal: 0,
-    devicesUpToDate: 0,
-    campaignName: "",
-    notes: "",
-  },
-  odooAutomations: {
-    activeAutomations: 0,
-    newThisPeriod: 0,
-    successfulRuns: 0,
-    totalRuns: 0,
-    notes: "",
-  },
-  businessAutomations: {
-    activeAutomations: 0,
-    newThisPeriod: 0,
-    estimatedHoursSaved: 0,
-    notes: "",
-  },
-  phishingTests: {
-    participants: 0,
-    clicked: 0,
-    reported: 0,
-    campaignName: "",
-    notes: "",
-  },
-  productionMaintenance: {
-    plannedInterventions: 0,
-    completedInterventions: 0,
-    unplannedIncidents: 0,
-    downtimeMinutes: 0,
-    periodMinutes: 30 * 24 * 60,
-    notes: "",
-  },
-  updatedAt: null,
-  updatedBy: null,
-});
-
-interface Props {
-  initialPeriod: string;
+interface WeekOption {
+  id: string;
+  label: string;
 }
 
-export function ManualEntryForm({ initialPeriod }: Props) {
-  const [periodId, setPeriodId] = useState(initialPeriod);
-  const [periods, setPeriods] = useState<Period[]>([]);
-  const [manual, setManual] = useState<ManualEntries>(emptyManual());
+export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
+  const [weekId, setWeekId] = useState(initialWeek);
+  const [weeks, setWeeks] = useState<WeekOption[]>([]);
+  const [week, setWeek] = useState<WeeklyRow | null>(null);
+  const [logs, setLogs] = useState<{
+    automationsMetier: LogEvent[];
+    automationsOdoo: LogEvent[];
+    phishing: PhishingEvent[];
+    maintenances: LogEvent[];
+  } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  const [eventForm, setEventForm] = useState({
+    explanation: "",
+    responsible: "",
+    failures: 0,
+  });
+
   const load = useCallback(async (id: string) => {
     setError(null);
     const [entriesRes, kpisRes] = await Promise.all([
-      fetch(`/api/entries?period=${encodeURIComponent(id)}`),
-      fetch(`/api/kpis?period=${encodeURIComponent(id)}`),
+      fetch(`/api/entries?week=${encodeURIComponent(id)}`),
+      fetch(`/api/kpis?week=${encodeURIComponent(id)}`),
     ]);
     if (!entriesRes.ok || !kpisRes.ok) {
       setError("Chargement impossible");
@@ -67,60 +41,99 @@ export function ManualEntryForm({ initialPeriod }: Props) {
     }
     const entries = await entriesRes.json();
     const kpis = await kpisRes.json();
-    setManual(entries.manual);
-    setPeriods(kpis.periods);
+    setWeek(entries.week);
+    setLogs({
+      automationsMetier: entries.automationsMetier,
+      automationsOdoo: entries.automationsOdoo,
+      phishing: entries.phishing,
+      maintenances: entries.maintenances,
+    });
+    setWeeks(kpis.weeks);
   }, []);
 
   useEffect(() => {
     startTransition(() => {
-      void load(periodId);
+      void load(weekId);
     });
-  }, [periodId, load]);
+  }, [weekId, load]);
 
-  async function save(e: React.FormEvent) {
+  async function saveWeek(e: React.FormEvent) {
     e.preventDefault();
+    if (!week) return;
     setMessage(null);
     setError(null);
     const res = await fetch("/api/entries", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ periodId, manual, updatedBy: "IT" }),
+      body: JSON.stringify({
+        weekId,
+        action: "updateWeek",
+        week: {
+          ticketsHorsSlaCloture: week.ticketsHorsSlaCloture,
+          ticketsHorsSlaPriseEnCharge: week.ticketsHorsSlaPriseEnCharge,
+          demandesItHebdo: week.demandesItHebdo,
+          demandesNonResoluesHebdo: week.demandesNonResoluesHebdo,
+          informations: week.informations,
+          reaction: week.reaction,
+        },
+      }),
     });
     if (!res.ok) {
       setError("Enregistrement échoué");
       return;
     }
-    setMessage("Saisie enregistrée — les KPI ont été recalculés.");
+    setMessage("Semaine enregistrée — YTD recalculé.");
   }
 
-  function num(
-    section: keyof Omit<ManualEntries, "updatedAt" | "updatedBy">,
-    field: string,
-    value: string,
+  async function addEvent(
+    action: "addMetier" | "addOdoo" | "addPhishing" | "addMaintenance",
   ) {
-    const n = value === "" ? 0 : Number(value);
-    setManual((prev) => ({
-      ...prev,
-      [section]: {
-        ...(prev[section] as unknown as Record<string, unknown>),
-        [field]: Number.isFinite(n) ? n : 0,
-      },
-    }));
+    if (!week || !eventForm.explanation.trim()) return;
+    setMessage(null);
+    const res = await fetch("/api/entries", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        weekId,
+        action,
+        event: {
+          year: week.year,
+          month: week.month,
+          week: week.week,
+          explanation: eventForm.explanation,
+          responsible: eventForm.responsible || "IT",
+          failures: eventForm.failures,
+        },
+      }),
+    });
+    if (!res.ok) {
+      setError("Ajout échoué");
+      return;
+    }
+    setEventForm({ explanation: "", responsible: "", failures: 0 });
+    setMessage("Événement ajouté — compteurs recalculés.");
+    await load(weekId);
   }
 
-  function str(
-    section: keyof Omit<ManualEntries, "updatedAt" | "updatedBy">,
-    field: string,
-    value: string,
-  ) {
-    setManual((prev) => ({
-      ...prev,
-      [section]: {
-        ...(prev[section] as unknown as Record<string, unknown>),
-        [field]: value,
-      },
-    }));
+  function num(field: keyof WeeklyRow, value: string) {
+    const n = value === "" ? null : Number(value);
+    setWeek((prev) =>
+      prev
+        ? {
+            ...prev,
+            [field]: n !== null && Number.isFinite(n) ? n : null,
+          }
+        : prev,
+    );
   }
+
+  const weekNum = week?.week;
+  const weekLogs = {
+    metier: logs?.automationsMetier.filter((e) => e.week === weekNum) ?? [],
+    odoo: logs?.automationsOdoo.filter((e) => e.week === weekNum) ?? [],
+    phish: logs?.phishing.filter((e) => e.week === weekNum) ?? [],
+    maint: logs?.maintenances.filter((e) => e.week === weekNum) ?? [],
+  };
 
   return (
     <div className="space-y-8">
@@ -130,221 +143,166 @@ export function ManualEntryForm({ initialPeriod }: Props) {
             Saisie manuelle
           </h1>
           <p className="mt-2 max-w-xl text-sm text-[var(--muted)]">
-            Données non disponibles dans Jira : appareils, Odoo, métier,
-            phishing et maintenance production.
+            SLA, demandes, remarques, et journaux (automations, Odoo, phishing,
+            maintenance) — comme dans KPI.xlsx.
           </p>
         </div>
-        {periods.length > 0 && (
-          <PeriodSelector
-            periods={periods}
-            value={periodId}
-            onChange={setPeriodId}
-          />
+        {weeks.length > 0 && (
+          <WeekSelector weeks={weeks} value={weekId} onChange={setWeekId} />
         )}
       </div>
 
-      <form onSubmit={save} className="space-y-8">
-        <Section title="Mises à jour des appareils">
+      {week && (
+        <form onSubmit={saveWeek} className="space-y-6">
+          <section className="space-y-3">
+            <h2 className="border-b border-[var(--line)] pb-2 font-[family-name:var(--font-display)] text-xl">
+              Indicateurs semaine
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <Field
+                label="Hors SLA clôture"
+                type="number"
+                value={week.ticketsHorsSlaCloture ?? ""}
+                onChange={(v) => num("ticketsHorsSlaCloture", v)}
+              />
+              <Field
+                label="Hors SLA prise en charge"
+                type="number"
+                value={week.ticketsHorsSlaPriseEnCharge ?? ""}
+                onChange={(v) => num("ticketsHorsSlaPriseEnCharge", v)}
+              />
+              <Field
+                label="Demandes IT (hebdo)"
+                type="number"
+                value={week.demandesItHebdo ?? ""}
+                onChange={(v) => num("demandesItHebdo", v)}
+              />
+              <Field
+                label="Non résolues (hebdo)"
+                type="number"
+                value={week.demandesNonResoluesHebdo ?? ""}
+                onChange={(v) => num("demandesNonResoluesHebdo", v)}
+              />
+              <Field
+                label="Informations"
+                value={week.informations}
+                onChange={(v) => setWeek({ ...week, informations: v })}
+                wide
+              />
+              <Field
+                label="Réaction"
+                value={week.reaction}
+                onChange={(v) => setWeek({ ...week, reaction: v })}
+                wide
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={pending}
+              className="rounded-md bg-[var(--accent)] px-5 py-2.5 text-sm font-medium text-white hover:bg-[var(--accent-deep)]"
+            >
+              Enregistrer la semaine
+            </button>
+          </section>
+        </form>
+      )}
+
+      <section className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
+        <h2 className="font-[family-name:var(--font-display)] text-xl">
+          Ajouter un événement (journal)
+        </h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Field
-            label="Parc total"
-            type="number"
-            value={manual.deviceUpdates.devicesTotal}
-            onChange={(v) => num("deviceUpdates", "devicesTotal", v)}
-          />
-          <Field
-            label="Appareils à jour"
-            type="number"
-            value={manual.deviceUpdates.devicesUpToDate}
-            onChange={(v) => num("deviceUpdates", "devicesUpToDate", v)}
-          />
-          <Field
-            label="Campagne"
-            value={manual.deviceUpdates.campaignName}
-            onChange={(v) => str("deviceUpdates", "campaignName", v)}
-          />
-          <Field
-            label="Notes"
-            value={manual.deviceUpdates.notes}
-            onChange={(v) => str("deviceUpdates", "notes", v)}
+            label="Explication"
+            value={eventForm.explanation}
+            onChange={(v) => setEventForm({ ...eventForm, explanation: v })}
             wide
           />
-        </Section>
-
-        <Section title="Automatisations Odoo">
           <Field
-            label="Actives"
-            type="number"
-            value={manual.odooAutomations.activeAutomations}
-            onChange={(v) => num("odooAutomations", "activeAutomations", v)}
+            label="Responsable"
+            value={eventForm.responsible}
+            onChange={(v) => setEventForm({ ...eventForm, responsible: v })}
           />
           <Field
-            label="Nouvelles (période)"
+            label="Échecs (phishing)"
             type="number"
-            value={manual.odooAutomations.newThisPeriod}
-            onChange={(v) => num("odooAutomations", "newThisPeriod", v)}
-          />
-          <Field
-            label="Exécutions réussies"
-            type="number"
-            value={manual.odooAutomations.successfulRuns}
-            onChange={(v) => num("odooAutomations", "successfulRuns", v)}
-          />
-          <Field
-            label="Exécutions totales"
-            type="number"
-            value={manual.odooAutomations.totalRuns}
-            onChange={(v) => num("odooAutomations", "totalRuns", v)}
-          />
-          <Field
-            label="Notes"
-            value={manual.odooAutomations.notes}
-            onChange={(v) => str("odooAutomations", "notes", v)}
-            wide
-          />
-        </Section>
-
-        <Section title="Automatisations métier">
-          <Field
-            label="Actives"
-            type="number"
-            value={manual.businessAutomations.activeAutomations}
-            onChange={(v) => num("businessAutomations", "activeAutomations", v)}
-          />
-          <Field
-            label="Nouvelles (période)"
-            type="number"
-            value={manual.businessAutomations.newThisPeriod}
-            onChange={(v) => num("businessAutomations", "newThisPeriod", v)}
-          />
-          <Field
-            label="Heures économisées"
-            type="number"
-            value={manual.businessAutomations.estimatedHoursSaved}
+            value={eventForm.failures}
             onChange={(v) =>
-              num("businessAutomations", "estimatedHoursSaved", v)
+              setEventForm({ ...eventForm, failures: Number(v) || 0 })
             }
           />
-          <Field
-            label="Notes"
-            value={manual.businessAutomations.notes}
-            onChange={(v) => str("businessAutomations", "notes", v)}
-            wide
-          />
-        </Section>
-
-        <Section title="Tests de phishing">
-          <Field
-            label="Participants"
-            type="number"
-            value={manual.phishingTests.participants}
-            onChange={(v) => num("phishingTests", "participants", v)}
-          />
-          <Field
-            label="Clics"
-            type="number"
-            value={manual.phishingTests.clicked}
-            onChange={(v) => num("phishingTests", "clicked", v)}
-          />
-          <Field
-            label="Signalements"
-            type="number"
-            value={manual.phishingTests.reported}
-            onChange={(v) => num("phishingTests", "reported", v)}
-          />
-          <Field
-            label="Campagne"
-            value={manual.phishingTests.campaignName}
-            onChange={(v) => str("phishingTests", "campaignName", v)}
-          />
-          <Field
-            label="Notes"
-            value={manual.phishingTests.notes}
-            onChange={(v) => str("phishingTests", "notes", v)}
-            wide
-          />
-        </Section>
-
-        <Section title="Maintenance production">
-          <Field
-            label="Planifiées"
-            type="number"
-            value={manual.productionMaintenance.plannedInterventions}
-            onChange={(v) =>
-              num("productionMaintenance", "plannedInterventions", v)
-            }
-          />
-          <Field
-            label="Réalisées"
-            type="number"
-            value={manual.productionMaintenance.completedInterventions}
-            onChange={(v) =>
-              num("productionMaintenance", "completedInterventions", v)
-            }
-          />
-          <Field
-            label="Incidents non planifiés"
-            type="number"
-            value={manual.productionMaintenance.unplannedIncidents}
-            onChange={(v) =>
-              num("productionMaintenance", "unplannedIncidents", v)
-            }
-          />
-          <Field
-            label="Indisponibilité (min)"
-            type="number"
-            value={manual.productionMaintenance.downtimeMinutes}
-            onChange={(v) =>
-              num("productionMaintenance", "downtimeMinutes", v)
-            }
-          />
-          <Field
-            label="Durée période (min)"
-            type="number"
-            value={manual.productionMaintenance.periodMinutes}
-            onChange={(v) => num("productionMaintenance", "periodMinutes", v)}
-          />
-          <Field
-            label="Notes"
-            value={manual.productionMaintenance.notes}
-            onChange={(v) => str("productionMaintenance", "notes", v)}
-            wide
-          />
-        </Section>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            disabled={pending}
-            className="rounded-md bg-[var(--accent)] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--accent-deep)] disabled:opacity-60"
-          >
-            Enregistrer
-          </button>
-          {message && (
-            <span className="text-sm text-[var(--ok)]">{message}</span>
-          )}
-          {error && (
-            <span className="text-sm text-[var(--crit)]">{error}</span>
-          )}
         </div>
-      </form>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => addEvent("addMetier")}
+            className="rounded-md border border-[var(--line)] px-3 py-2 text-sm hover:bg-[var(--wash)]"
+          >
+            + Automation métier
+          </button>
+          <button
+            type="button"
+            onClick={() => addEvent("addOdoo")}
+            className="rounded-md border border-[var(--line)] px-3 py-2 text-sm hover:bg-[var(--wash)]"
+          >
+            + Amélioration Odoo
+          </button>
+          <button
+            type="button"
+            onClick={() => addEvent("addPhishing")}
+            className="rounded-md border border-[var(--line)] px-3 py-2 text-sm hover:bg-[var(--wash)]"
+          >
+            + Test phishing
+          </button>
+          <button
+            type="button"
+            onClick={() => addEvent("addMaintenance")}
+            className="rounded-md border border-[var(--line)] px-3 py-2 text-sm hover:bg-[var(--wash)]"
+          >
+            + Maintenance prod
+          </button>
+        </div>
+
+        <div className="grid gap-4 pt-2 sm:grid-cols-2 text-sm">
+          <LogBlock title="Métiers cette semaine" items={weekLogs.metier} />
+          <LogBlock title="Odoo cette semaine" items={weekLogs.odoo} />
+          <LogBlock title="Maintenances" items={weekLogs.maint} />
+          <div>
+            <h3 className="font-medium text-[var(--ink)]">Phishing</h3>
+            <ul className="mt-1 space-y-1 text-[var(--ink-soft)]">
+              {weekLogs.phish.length === 0 && (
+                <li className="text-[var(--muted)]">Aucun</li>
+              )}
+              {weekLogs.phish.map((e) => (
+                <li key={e.id}>
+                  {e.explanation || "Campagne"} — {e.responsible} ({e.failures}{" "}
+                  échecs)
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {message && <p className="text-sm text-[var(--ok)]">{message}</p>}
+      {error && <p className="text-sm text-[var(--crit)]">{error}</p>}
     </div>
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function LogBlock({ title, items }: { title: string; items: LogEvent[] }) {
   return (
-    <section className="space-y-3">
-      <h2 className="border-b border-[var(--line)] pb-2 font-[family-name:var(--font-display)] text-xl text-[var(--ink)]">
-        {title}
-      </h2>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{children}</div>
-    </section>
+    <div>
+      <h3 className="font-medium text-[var(--ink)]">{title}</h3>
+      <ul className="mt-1 space-y-1 text-[var(--ink-soft)]">
+        {items.length === 0 && <li className="text-[var(--muted)]">Aucun</li>}
+        {items.map((e) => (
+          <li key={e.id}>
+            {e.explanation} — {e.responsible}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -362,7 +320,9 @@ function Field({
   wide?: boolean;
 }) {
   return (
-    <label className={`flex flex-col gap-1 text-sm ${wide ? "sm:col-span-2 lg:col-span-3" : ""}`}>
+    <label
+      className={`flex flex-col gap-1 text-sm ${wide ? "sm:col-span-2 lg:col-span-3" : ""}`}
+    >
       <span className="text-[var(--muted)]">{label}</span>
       <input
         type={type}

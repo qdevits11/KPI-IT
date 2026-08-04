@@ -1,289 +1,204 @@
 import type {
+  AppDatabase,
   FormulaDefinition,
   KpiValue,
-  ManualEntries,
-  PeriodData,
-  JiraTicketStats,
+  LogEvent,
+  PhishingEvent,
+  WeekDashboard,
+  WeeklyRow,
 } from "./types";
+import { weekId } from "./types";
 
-/** Catalogue des formules — source de vérité pour le calcul et l'explication UI */
+/**
+ * Formules calquées sur KPI.xlsx (feuille 2026 + feuilles de détail).
+ *
+ * YTD Demandes IT : L_n = K_n + L_(n-1)  (cumul des hebdo)
+ * YTD Non résolues : N_n = M_n + N_(n-1)  (cumul des stocks hebdo — comme Excel)
+ * Automations métiers : COUNTIFS(année, semaine) sur feuille « Automatisations métiers »
+ * Améliorations Odoo : COUNTIFS(année, semaine) sur « Automatisations Odoo »
+ * Échecs phishing : SUMIFS(Nbr échecs) sur « Tests Phishing »
+ * Maintenances : COUNTIFS(année, semaine) sur « Maintenances Production »
+ */
 export const FORMULAS: FormulaDefinition[] = [
   {
-    id: "tickets_created",
-    category: "tickets",
-    name: "Tickets créés",
-    description: "Nombre de tickets Jira créés pendant la période.",
-    formula: "COUNT(tickets WHERE created ∈ période)",
-    inputs: [
-      {
-        name: "tickets créés",
-        source: "jira",
-        description: "Issues créées via JQL sur la période",
-      },
-    ],
-    example: "45 tickets créés en mars 2026",
-  },
-  {
-    id: "tickets_resolved",
-    category: "tickets",
-    name: "Tickets résolus",
-    description: "Nombre de tickets résolus (statut Done / Resolved) pendant la période.",
-    formula: "COUNT(tickets WHERE resolved ∈ période)",
-    inputs: [
-      {
-        name: "tickets résolus",
-        source: "jira",
-        description: "Issues résolues via JQL sur la période",
-      },
-    ],
-    example: "52 tickets résolus en mars 2026",
-  },
-  {
-    id: "tickets_open",
-    category: "tickets",
-    name: "Tickets ouverts",
-    description: "Stock de tickets non résolus à la fin de la période.",
-    formula: "COUNT(tickets WHERE status ∉ {Done, Resolved, Closed})",
-    inputs: [
-      {
-        name: "tickets ouverts",
-        source: "jira",
-        description: "Issues encore ouvertes (snapshot)",
-      },
-    ],
-    example: "18 tickets encore ouverts",
-  },
-  {
-    id: "avg_resolution_hours",
-    category: "tickets",
-    name: "Délai moyen de résolution",
+    id: "hors_sla_cloture",
+    category: "sla",
+    name: "Tickets hors SLA clôture",
     description:
-      "Moyenne des délais entre création et résolution, pour les tickets résolus dans la période.",
-    formula: "Σ(heures_résolution) / tickets_résolus",
+      "Nombre de tickets clôturés hors délai SLA sur la semaine (User experience / IT Team).",
+    formula: "valeur saisie (ou sync Jira SLA)",
     inputs: [
       {
-        name: "totalResolutionHours",
-        source: "jira",
-        description: "Somme des délais de résolution (heures)",
-      },
-      {
-        name: "resolved",
-        source: "jira",
-        description: "Nombre de tickets résolus",
+        name: "ticketsHorsSlaCloture",
+        source: "manuel",
+        description: "Colonne E feuille année — ou métrique SLA Jira",
       },
     ],
-    example: "120 h / 40 tickets = 3,0 h",
+    example: "Semaine 31 : 7 tickets hors SLA clôture",
+    excelSheet: "2026",
   },
   {
-    id: "sla_compliance",
-    category: "tickets",
-    name: "Respect SLA",
+    id: "hors_sla_prise_en_charge",
+    category: "sla",
+    name: "Tickets hors SLA prise en charge",
     description:
-      "Pourcentage de tickets résolus dans le délai SLA parmi ceux qui ont un SLA suivi.",
-    formula: "(resolvedWithSlaMet / resolvedWithSlaTracked) × 100",
+      "Nombre de tickets dont la prise en charge a dépassé le SLA sur la semaine.",
+    formula: "valeur saisie (ou sync Jira SLA)",
     inputs: [
       {
-        name: "resolvedWithSlaMet",
-        source: "jira",
-        description: "Tickets résolus dans le SLA",
-      },
-      {
-        name: "resolvedWithSlaTracked",
-        source: "jira",
-        description: "Tickets résolus avec SLA applicable",
+        name: "ticketsHorsSlaPriseEnCharge",
+        source: "manuel",
+        description: "Colonne F feuille année",
       },
     ],
-    example: "38 / 40 = 95 %",
+    example: "Semaine 31 : 1 ticket hors SLA prise en charge",
+    excelSheet: "2026",
   },
   {
-    id: "device_compliance",
-    category: "appareils",
-    name: "Conformité mises à jour",
-    description:
-      "Part des appareils à jour par rapport au parc total déclaré.",
-    formula: "(devicesUpToDate / devicesTotal) × 100",
-    inputs: [
-      {
-        name: "devicesUpToDate",
-        source: "manuel",
-        description: "Appareils à jour",
-      },
-      {
-        name: "devicesTotal",
-        source: "manuel",
-        description: "Parc total suivi",
-      },
-    ],
-    example: "92 / 100 = 92 %",
-  },
-  {
-    id: "odoo_success_rate",
-    category: "odoo",
-    name: "Taux de succès Odoo",
-    description:
-      "Part des exécutions d'automatisations Odoo réussies sur la période.",
-    formula: "(successfulRuns / totalRuns) × 100",
-    inputs: [
-      {
-        name: "successfulRuns",
-        source: "manuel",
-        description: "Exécutions réussies",
-      },
-      {
-        name: "totalRuns",
-        source: "manuel",
-        description: "Total des exécutions",
-      },
-    ],
-    example: "480 / 500 = 96 %",
-  },
-  {
-    id: "odoo_active",
-    category: "odoo",
-    name: "Automatisations Odoo actives",
-    description: "Nombre d'automatisations Odoo actives en fin de période.",
-    formula: "activeAutomations",
-    inputs: [
-      {
-        name: "activeAutomations",
-        source: "manuel",
-        description: "Compteur saisi",
-      },
-    ],
-    example: "12 automatisations actives",
-  },
-  {
-    id: "business_active",
+    id: "automations_metier",
     category: "metier",
-    name: "Automatisations métier actives",
-    description: "Nombre d'automatisations métier actives.",
-    formula: "activeAutomations",
-    inputs: [
-      {
-        name: "activeAutomations",
-        source: "manuel",
-        description: "Compteur saisi",
-      },
-    ],
-    example: "8 automatisations métier",
-  },
-  {
-    id: "hours_saved",
-    category: "metier",
-    name: "Heures économisées",
+    name: "Automatisations métiers",
     description:
-      "Estimation des heures gagnées grâce aux automatisations métier sur la période.",
-    formula: "estimatedHoursSaved",
+      "Nombre d'automatisations métiers livrées cette semaine (lignes du journal).",
+    formula:
+      "COUNTIFS(Automatisations métiers!Année, année, Automatisations métiers!Semaine, semaine)",
     inputs: [
       {
-        name: "estimatedHoursSaved",
+        name: "lignes journal",
         source: "manuel",
-        description: "Estimation saisie par l'équipe IT",
+        description: "Chaque ligne = 1 automatisation (explication + responsable)",
       },
     ],
-    example: "40 heures estimées",
+    example: "Semaine 19 : 3 (FLUX B2C, N8N Mahieu, N8N Odoo→SMC)",
+    excelSheet: "Automatisations métiers",
   },
   {
-    id: "phishing_click_rate",
+    id: "ameliorations_odoo",
+    category: "odoo",
+    name: "Améliorations dans Odoo",
+    description: "Nombre d'améliorations / automatisations Odoo livrées cette semaine.",
+    formula:
+      "COUNTIFS(Automatisations Odoo!Année, année, Automatisations Odoo!Semaine, semaine)",
+    inputs: [
+      {
+        name: "lignes journal",
+        source: "manuel",
+        description: "Feuille Automatisations Odoo",
+      },
+    ],
+    example: "Semaine 22 : 1 (Rapport Logistique)",
+    excelSheet: "Automatisations Odoo",
+  },
+  {
+    id: "echecs_phishing",
     category: "phishing",
-    name: "Taux de clic phishing",
-    description:
-      "Part des participants ayant cliqué sur le lien de la campagne de phishing (plus bas = mieux).",
-    formula: "(clicked / participants) × 100",
-    inputs: [
-      { name: "clicked", source: "manuel", description: "Clics enregistrés" },
-      {
-        name: "participants",
-        source: "manuel",
-        description: "Employés ciblés",
-      },
-    ],
-    example: "8 / 120 = 6,7 %",
-  },
-  {
-    id: "phishing_report_rate",
-    category: "phishing",
-    name: "Taux de signalement",
-    description:
-      "Part des participants ayant signalé le mail de phishing (plus haut = mieux).",
-    formula: "(reported / participants) × 100",
+    name: "Échecs tests phishing",
+    description: "Somme des échecs (Nbr échecs) des tests de phishing de la semaine.",
+    formula:
+      "SUMIFS(Tests Phishing!Nbr échecs, Année, année, Semaine, semaine)",
     inputs: [
       {
-        name: "reported",
+        name: "Nbr échecs",
         source: "manuel",
-        description: "Signalements",
-      },
-      {
-        name: "participants",
-        source: "manuel",
-        description: "Employés ciblés",
+        description: "Colonne F feuille Tests Phishing",
       },
     ],
-    example: "54 / 120 = 45 %",
+    example: "Semaine 31 : 0 échec",
+    excelSheet: "Tests Phishing",
   },
   {
-    id: "maintenance_completion",
+    id: "maintenances_production",
     category: "production",
-    name: "Taux de maintenance réalisée",
-    description:
-      "Part des interventions de maintenance planifiées effectivement réalisées.",
-    formula: "(completedInterventions / plannedInterventions) × 100",
+    name: "Maintenances production",
+    description: "Nombre d'interventions de maintenance production sur la semaine.",
+    formula:
+      "COUNTIFS(Maintenances Production!Année, année, Maintenances Production!Semaine, semaine)",
     inputs: [
       {
-        name: "completedInterventions",
+        name: "lignes journal",
         source: "manuel",
-        description: "Interventions réalisées",
-      },
-      {
-        name: "plannedInterventions",
-        source: "manuel",
-        description: "Interventions planifiées",
+        description: "Feuille Maintenances Production",
       },
     ],
-    example: "9 / 10 = 90 %",
+    example: "Semaine 19 : 1 (Redémarrage Smartscans)",
+    excelSheet: "Maintenances Production",
   },
   {
-    id: "availability",
-    category: "production",
-    name: "Disponibilité production",
-    description:
-      "Pourcentage de temps où les systèmes de production étaient disponibles.",
-    formula: "((periodMinutes − downtimeMinutes) / periodMinutes) × 100",
+    id: "demandes_it_hebdo",
+    category: "ticketing",
+    name: "Demandes IT (hebdo)",
+    description: "Nombre de demandes / tickets IT sur la semaine.",
+    formula: "COUNT(tickets créés semaine) — saisie ou Jira",
     inputs: [
       {
-        name: "downtimeMinutes",
-        source: "manuel",
-        description: "Minutes d'indisponibilité",
-      },
-      {
-        name: "periodMinutes",
-        source: "manuel",
-        description: "Durée totale de la période en minutes",
+        name: "demandesItHebdo",
+        source: "jira",
+        description: "Colonne K feuille année / sync Jira",
       },
     ],
-    example: "((43200 − 90) / 43200) × 100 = 99,79 %",
+    example: "Semaine 31 : 15",
+    excelSheet: "2026",
   },
   {
-    id: "unplanned_incidents",
-    category: "production",
-    name: "Incidents non planifiés",
-    description: "Nombre d'incidents de production non planifiés sur la période.",
-    formula: "unplannedIncidents",
+    id: "demandes_it_ytd",
+    category: "ticketing",
+    name: "Demandes IT (YTD)",
+    description:
+      "Cumul année des demandes IT hebdomadaires (comme Excel : L_n = K_n + L_(n-1)).",
+    formula: "Σ demandesItHebdo depuis semaine 1 jusqu'à la semaine courante",
     inputs: [
       {
-        name: "unplannedIncidents",
-        source: "manuel",
-        description: "Compteur saisi",
+        name: "demandesItHebdo (toutes semaines ≤ n)",
+        source: "calcule",
+        description: "Somme des colonnes Hebdo Demandes IT",
       },
     ],
-    example: "2 incidents",
+    example: "Semaine 31 : 1090",
+    excelSheet: "2026",
+  },
+  {
+    id: "demandes_non_resolues_hebdo",
+    category: "ticketing",
+    name: "Demandes non résolues (hebdo)",
+    description: "Stock de demandes non résolues en fin de semaine.",
+    formula: "valeur saisie / snapshot Jira open",
+    inputs: [
+      {
+        name: "demandesNonResoluesHebdo",
+        source: "jira",
+        description: "Colonne M feuille année",
+      },
+    ],
+    example: "Semaine 31 : 48",
+    excelSheet: "2026",
+  },
+  {
+    id: "demandes_non_resolues_ytd",
+    category: "ticketing",
+    name: "Demandes non résolues (YTD)",
+    description:
+      "Cumul Excel des stocks hebdo : N_n = M_n + N_(n-1). Conservé pour parité avec le fichier.",
+    formula: "Σ demandesNonResoluesHebdo depuis semaine 1 jusqu'à n",
+    inputs: [
+      {
+        name: "demandesNonResoluesHebdo (≤ n)",
+        source: "calcule",
+        description: "Somme cumulative comme dans KPI.xlsx",
+      },
+    ],
+    example: "Semaine 31 : 1617",
+    excelSheet: "2026",
   },
 ];
 
-function pct(numerator: number, denominator: number): number | null {
-  if (denominator <= 0) return null;
-  return Math.round((numerator / denominator) * 1000) / 10;
-}
+export const CATEGORY_LABELS: Record<string, string> = {
+  sla: "User experience — SLA",
+  metier: "Logiciels et Données — Automations métiers",
+  odoo: "Logiciels et Données — Odoo",
+  phishing: "Infrastructure & Sécurité — Phishing",
+  production: "Infrastructure & Sécurité — Production",
+  ticketing: "Ticketing",
+};
 
 function statusFor(
   value: number | null,
@@ -298,245 +213,199 @@ function statusFor(
     return "critical";
   }
   if (value <= target) return "ok";
-  if (value <= target * 1.25) return "warning";
+  if (value <= target * 1.5) return "warning";
   return "critical";
 }
 
-function kpi(
-  partial: Omit<KpiValue, "status"> & { status?: KpiValue["status"] },
-): KpiValue {
-  const status =
-    partial.status ??
-    statusFor(partial.value, partial.target, partial.higherIsBetter);
-  return { ...partial, status };
+function kpi(partial: Omit<KpiValue, "status">): KpiValue {
+  return {
+    ...partial,
+    status: statusFor(partial.value, partial.target, partial.higherIsBetter),
+  };
 }
 
-export function computeKpis(data: PeriodData): KpiValue[] {
-  const { jira, manual } = data;
-  return [
-    ...computeTicketKpis(jira),
-    ...computeDeviceKpis(manual),
-    ...computeOdooKpis(manual),
-    ...computeBusinessKpis(manual),
-    ...computePhishingKpis(manual),
-    ...computeProductionKpis(manual),
-  ];
+function countForWeek(events: LogEvent[], year: number, week: number): number {
+  return events.filter((e) => e.year === year && e.week === week).length;
 }
 
-function computeTicketKpis(jira: JiraTicketStats): KpiValue[] {
-  const avgHours =
-    jira.resolved > 0
-      ? Math.round((jira.totalResolutionHours / jira.resolved) * 10) / 10
-      : null;
+function sumPhishingFailures(
+  events: PhishingEvent[],
+  year: number,
+  week: number,
+): number {
+  return events
+    .filter((e) => e.year === year && e.week === week)
+    .reduce((s, e) => s + (e.failures || 0), 0);
+}
+
+/** YTD = somme des valeurs hebdo de la semaine 1 à n (parité Excel) */
+export function ytdSum(
+  weeks: WeeklyRow[],
+  year: number,
+  upToWeek: number,
+  field: "demandesItHebdo" | "demandesNonResoluesHebdo",
+): number {
+  return weeks
+    .filter((w) => w.year === year && w.week <= upToWeek)
+    .sort((a, b) => a.week - b.week)
+    .reduce((sum, w) => sum + (w[field] ?? 0), 0);
+}
+
+export function computeWeekKpis(
+  db: AppDatabase,
+  week: WeeklyRow,
+): KpiValue[] {
+  const { year } = week;
+  const w = week.week;
+
+  const automations = countForWeek(db.automationsMetier, year, w);
+  const odoo = countForWeek(db.automationsOdoo, year, w);
+  const phishing = sumPhishingFailures(db.phishing, year, w);
+  const maint = countForWeek(db.maintenances, year, w);
+  const ytdIt = ytdSum(db.weeks, year, w, "demandesItHebdo");
+  const ytdOpen = ytdSum(db.weeks, year, w, "demandesNonResoluesHebdo");
 
   return [
     kpi({
-      id: "tickets_created",
-      category: "tickets",
-      label: "Tickets créés",
-      value: jira.created,
+      id: "hors_sla_cloture",
+      category: "sla",
+      label: "Hors SLA clôture",
+      value: week.ticketsHorsSlaCloture,
       unit: "number",
-      target: null,
-      higherIsBetter: false,
-      source: "jira",
-      formulaId: "tickets_created",
-    }),
-    kpi({
-      id: "tickets_resolved",
-      category: "tickets",
-      label: "Tickets résolus",
-      value: jira.resolved,
-      unit: "number",
-      target: null,
-      higherIsBetter: true,
-      source: "jira",
-      formulaId: "tickets_resolved",
-    }),
-    kpi({
-      id: "tickets_open",
-      category: "tickets",
-      label: "Tickets ouverts",
-      value: jira.open,
-      unit: "number",
-      target: 25,
-      higherIsBetter: false,
-      source: "jira",
-      formulaId: "tickets_open",
-    }),
-    kpi({
-      id: "avg_resolution_hours",
-      category: "tickets",
-      label: "Délai moyen résolution",
-      value: avgHours,
-      unit: "hours",
-      target: 8,
-      higherIsBetter: false,
-      source: "jira",
-      formulaId: "avg_resolution_hours",
-    }),
-    kpi({
-      id: "sla_compliance",
-      category: "tickets",
-      label: "Respect SLA",
-      value: pct(jira.resolvedWithSlaMet, jira.resolvedWithSlaTracked),
-      unit: "percent",
-      target: 95,
-      higherIsBetter: true,
-      source: "jira",
-      formulaId: "sla_compliance",
-    }),
-  ];
-}
-
-function computeDeviceKpis(manual: ManualEntries): KpiValue[] {
-  const d = manual.deviceUpdates;
-  return [
-    kpi({
-      id: "device_compliance",
-      category: "appareils",
-      label: "Conformité appareils",
-      value: pct(d.devicesUpToDate, d.devicesTotal),
-      unit: "percent",
-      target: 95,
-      higherIsBetter: true,
-      source: "manuel",
-      formulaId: "device_compliance",
-    }),
-  ];
-}
-
-function computeOdooKpis(manual: ManualEntries): KpiValue[] {
-  const o = manual.odooAutomations;
-  return [
-    kpi({
-      id: "odoo_active",
-      category: "odoo",
-      label: "Automations Odoo",
-      value: o.activeAutomations,
-      unit: "number",
-      target: null,
-      higherIsBetter: true,
-      source: "manuel",
-      formulaId: "odoo_active",
-    }),
-    kpi({
-      id: "odoo_success_rate",
-      category: "odoo",
-      label: "Succès Odoo",
-      value: pct(o.successfulRuns, o.totalRuns),
-      unit: "percent",
-      target: 98,
-      higherIsBetter: true,
-      source: "manuel",
-      formulaId: "odoo_success_rate",
-    }),
-  ];
-}
-
-function computeBusinessKpis(manual: ManualEntries): KpiValue[] {
-  const b = manual.businessAutomations;
-  return [
-    kpi({
-      id: "business_active",
-      category: "metier",
-      label: "Automations métier",
-      value: b.activeAutomations,
-      unit: "number",
-      target: null,
-      higherIsBetter: true,
-      source: "manuel",
-      formulaId: "business_active",
-    }),
-    kpi({
-      id: "hours_saved",
-      category: "metier",
-      label: "Heures économisées",
-      value: b.estimatedHoursSaved,
-      unit: "hours",
-      target: null,
-      higherIsBetter: true,
-      source: "manuel",
-      formulaId: "hours_saved",
-    }),
-  ];
-}
-
-function computePhishingKpis(manual: ManualEntries): KpiValue[] {
-  const p = manual.phishingTests;
-  return [
-    kpi({
-      id: "phishing_click_rate",
-      category: "phishing",
-      label: "Taux de clic phishing",
-      value: pct(p.clicked, p.participants),
-      unit: "percent",
       target: 10,
       higherIsBetter: false,
       source: "manuel",
-      formulaId: "phishing_click_rate",
+      formulaId: "hors_sla_cloture",
     }),
     kpi({
-      id: "phishing_report_rate",
-      category: "phishing",
-      label: "Taux de signalement",
-      value: pct(p.reported, p.participants),
-      unit: "percent",
-      target: 40,
-      higherIsBetter: true,
+      id: "hors_sla_prise_en_charge",
+      category: "sla",
+      label: "Hors SLA prise en charge",
+      value: week.ticketsHorsSlaPriseEnCharge,
+      unit: "number",
+      target: 10,
+      higherIsBetter: false,
       source: "manuel",
-      formulaId: "phishing_report_rate",
+      formulaId: "hors_sla_prise_en_charge",
+    }),
+    kpi({
+      id: "automations_metier",
+      category: "metier",
+      label: "Automatisations métiers",
+      value: automations,
+      unit: "number",
+      target: null,
+      higherIsBetter: true,
+      source: "calcule",
+      formulaId: "automations_metier",
+    }),
+    kpi({
+      id: "ameliorations_odoo",
+      category: "odoo",
+      label: "Améliorations Odoo",
+      value: odoo,
+      unit: "number",
+      target: null,
+      higherIsBetter: true,
+      source: "calcule",
+      formulaId: "ameliorations_odoo",
+    }),
+    kpi({
+      id: "echecs_phishing",
+      category: "phishing",
+      label: "Échecs phishing",
+      value: phishing,
+      unit: "number",
+      target: 0,
+      higherIsBetter: false,
+      source: "calcule",
+      formulaId: "echecs_phishing",
+    }),
+    kpi({
+      id: "maintenances_production",
+      category: "production",
+      label: "Maintenances production",
+      value: maint,
+      unit: "number",
+      target: null,
+      higherIsBetter: true,
+      source: "calcule",
+      formulaId: "maintenances_production",
+    }),
+    kpi({
+      id: "demandes_it_hebdo",
+      category: "ticketing",
+      label: "Demandes IT (hebdo)",
+      value: week.demandesItHebdo,
+      unit: "number",
+      target: null,
+      higherIsBetter: false,
+      source: "jira",
+      formulaId: "demandes_it_hebdo",
+    }),
+    kpi({
+      id: "demandes_it_ytd",
+      category: "ticketing",
+      label: "Demandes IT (YTD)",
+      value: ytdIt,
+      unit: "number",
+      target: null,
+      higherIsBetter: false,
+      source: "calcule",
+      formulaId: "demandes_it_ytd",
+    }),
+    kpi({
+      id: "demandes_non_resolues_hebdo",
+      category: "ticketing",
+      label: "Non résolues (hebdo)",
+      value: week.demandesNonResoluesHebdo,
+      unit: "number",
+      target: 50,
+      higherIsBetter: false,
+      source: "jira",
+      formulaId: "demandes_non_resolues_hebdo",
+    }),
+    kpi({
+      id: "demandes_non_resolues_ytd",
+      category: "ticketing",
+      label: "Non résolues (YTD)",
+      value: ytdOpen,
+      unit: "number",
+      target: null,
+      higherIsBetter: false,
+      source: "calcule",
+      formulaId: "demandes_non_resolues_ytd",
     }),
   ];
 }
 
-function computeProductionKpis(manual: ManualEntries): KpiValue[] {
-  const m = manual.productionMaintenance;
-  return [
-    kpi({
-      id: "maintenance_completion",
-      category: "production",
-      label: "Maintenance réalisée",
-      value: pct(m.completedInterventions, m.plannedInterventions),
-      unit: "percent",
-      target: 100,
-      higherIsBetter: true,
-      source: "manuel",
-      formulaId: "maintenance_completion",
-    }),
-    kpi({
-      id: "availability",
-      category: "production",
-      label: "Disponibilité",
-      value: pct(m.periodMinutes - m.downtimeMinutes, m.periodMinutes),
-      unit: "percent",
-      target: 99.5,
-      higherIsBetter: true,
-      source: "manuel",
-      formulaId: "availability",
-    }),
-    kpi({
-      id: "unplanned_incidents",
-      category: "production",
-      label: "Incidents non planifiés",
-      value: m.unplannedIncidents,
-      unit: "number",
-      target: 3,
-      higherIsBetter: false,
-      source: "manuel",
-      formulaId: "unplanned_incidents",
-    }),
-  ];
+export function buildWeekDashboard(
+  db: AppDatabase,
+  week: WeeklyRow,
+): WeekDashboard {
+  const id = weekId(week);
+  return {
+    week,
+    kpis: computeWeekKpis(db, week),
+    events: {
+      automationsMetier: db.automationsMetier.filter(
+        (e) => e.year === week.year && e.week === week.week,
+      ),
+      automationsOdoo: db.automationsOdoo.filter(
+        (e) => e.year === week.year && e.week === week.week,
+      ),
+      phishing: db.phishing.filter(
+        (e) => e.year === week.year && e.week === week.week,
+      ),
+      maintenances: db.maintenances.filter(
+        (e) => e.year === week.year && e.week === week.week,
+      ),
+    },
+    ticketsByType: db.ticketsByType[id] ?? {},
+    ticketsByAssignee: db.ticketsByAssignee[id] ?? {},
+  };
 }
 
 export function getFormula(id: string): FormulaDefinition | undefined {
   return FORMULAS.find((f) => f.id === id);
 }
-
-export const CATEGORY_LABELS: Record<string, string> = {
-  tickets: "Tickets Jira",
-  appareils: "Mises à jour appareils",
-  odoo: "Automatisations Odoo",
-  metier: "Automatisations métier",
-  phishing: "Tests de phishing",
-  production: "Maintenance production",
-};

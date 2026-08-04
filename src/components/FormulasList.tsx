@@ -2,12 +2,12 @@ import { FORMULAS, CATEGORY_LABELS } from "@/lib/formulas";
 import type { KpiCategory } from "@/lib/types";
 
 const ORDER: KpiCategory[] = [
-  "tickets",
-  "appareils",
-  "odoo",
+  "sla",
   "metier",
+  "odoo",
   "phishing",
   "production",
+  "ticketing",
 ];
 
 export function FormulasList() {
@@ -18,8 +18,9 @@ export function FormulasList() {
           Formules & sources
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">
-          Chaque chiffre du tableau de bord est dérivé de données brutes
-          (Jira ou saisie manuelle) via une formule documentée ici.
+          Alignées sur <code className="text-[var(--accent)]">Becoflex/KPI.xlsx</code> —
+          chaque indicateur du tableau de bord correspond à une formule Excel
+          (COUNTIFS, SUMIFS, cumul YTD).
         </p>
       </div>
 
@@ -37,7 +38,14 @@ export function FormulasList() {
                   id={f.id}
                   className="scroll-mt-24 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5"
                 >
-                  <h3 className="text-lg text-[var(--ink)]">{f.name}</h3>
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h3 className="text-lg text-[var(--ink)]">{f.name}</h3>
+                    {f.excelSheet && (
+                      <span className="text-xs uppercase tracking-wider text-[var(--muted)]">
+                        Feuille : {f.excelSheet}
+                      </span>
+                    )}
+                  </div>
                   <p className="mt-1 text-sm text-[var(--muted)]">
                     {f.description}
                   </p>
