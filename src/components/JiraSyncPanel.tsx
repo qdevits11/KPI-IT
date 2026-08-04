@@ -32,6 +32,13 @@ interface JqlPreview {
   usedRelativeWeekFunctions?: boolean;
 }
 
+interface WeekValues {
+  demandesItHebdo: number;
+  demandesNonResoluesHebdo: number;
+  ticketsHorsSlaCloture: number;
+  ticketsHorsSlaPriseEnCharge: number;
+}
+
 const DEFAULT_FORM = {
   baseUrl: "https://coverseal.atlassian.net",
   email: "",
@@ -45,14 +52,31 @@ const DEFAULT_FORM = {
   categoryField: "component" as "component" | "label" | "issuetype",
 };
 
+function parseInitialWeek(initialWeek: string): { year: number; week: number } {
+  const m = initialWeek.match(/^(\d{4})-S(\d{2})$/);
+  if (m) return { year: Number(m[1]), week: Number(m[2]) };
+  const now = new Date();
+  return { year: now.getFullYear(), week: 1 };
+}
+
 export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
+  const initial = parseInitialWeek(initialWeek);
+  const [year, setYear] = useState(initial.year);
+  const [week, setWeek] = useState(initial.week);
   const [weekId, setWeekId] = useState(initialWeek);
   const [weeks, setWeeks] = useState<WeekOption[]>([]);
   const [connected, setConnected] = useState(false);
   const [source, setSource] = useState<"account" | "env" | null>(null);
   const [connection, setConnection] = useState<ConnectionView | null>(null);
   const [jql, setJql] = useState<JqlPreview | null>(null);
+  const [dateRange, setDateRange] = useState<{
+    start: string;
+    endExclusive: string;
+  } | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [values, setValues] = useState<WeekValues | null>(null);
+  const [lastMode, setLastMode] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
   const [diagnostics, setDiagnostics] = useState<{
     createdCount: number;
     openCount: number;
@@ -71,11 +95,15 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState(DEFAULT_FORM);
 
+  const composedWeekId = `${year}-S${String(week).padStart(2, "0")}`;
+
   const loadMeta = useCallback(async () => {
     const [connectRes, syncRes, kpisRes] = await Promise.all([
       fetch("/api/jira/connect"),
-      fetch(`/api/jira/sync?week=${encodeURIComponent(weekId)}`),
-      fetch(`/api/kpis?week=${encodeURIComponent(weekId)}`),
+      fetch(
+        `/api/jira/sync?year=${encodeURIComponent(String(year))}&weekNum=${encodeURIComponent(String(week))}`,
+      ),
+      fetch(`/api/kpis?week=${encodeURIComponent(composedWeekId)}`),
     ]);
     const connect = await connectRes.json();
     const sync = await syncRes.json();
@@ -86,6 +114,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     setConnection(connect.connection);
     setJql(sync.previewJql);
     setWeeks(kpis.weeks);
+    setWeekId(composedWeekId);
 
     if (connect.connection) {
       setForm((f) => ({
@@ -102,13 +131,21 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         apiToken: "",
       }));
     }
-  }, [weekId]);
+  }, [year, week, composedWeekId]);
 
   useEffect(() => {
     startTransition(() => {
       void loadMeta();
     });
   }, [loadMeta]);
+
+  function applyWeekId(id: string) {
+    const m = id.match(/^(\d{4})-S(\d{2})$/);
+    if (!m) return;
+    setYear(Number(m[1]));
+    setWeek(Number(m[2]));
+    setWeekId(id);
+  }
 
   async function connectAccount(action: "connect" | "test") {
     setResult(null);
@@ -143,33 +180,55 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     setResult("Compte Jira déconnecté");
   }
 
-  function sync(useMock: boolean) {
+  function runQuery(opts: { dryRun: boolean; useMock: boolean }) {
     setResult(null);
     setError(null);
     setWarnings([]);
     setDiagnostics(null);
     setProbe(null);
+    setValues(null);
+    setSaved(false);
+    setLastMode(null);
+
     startTransition(async () => {
       const res = await fetch("/api/jira/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weekId, useMock }),
+        body: JSON.stringify({
+          year,
+          week,
+          dryRun: opts.dryRun,
+          useMock: opts.useMock,
+        }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) {
-        setError(json.error ?? "Sync échouée");
+        setError(json.error ?? "Requête échouée");
         return;
       }
-      const w = json.dashboard.week;
+
       setJql(json.jql);
       setWarnings(json.warnings ?? []);
       setProbe(json.probe ?? null);
       setDiagnostics(json.diagnostics ?? null);
+      setValues(json.values ?? null);
+      setLastMode(json.mode);
+      setSaved(!json.dryRun);
+      setWeekId(json.weekId ?? composedWeekId);
+
+      const label = json.dryRun ? "Test" : "Sync";
       setResult(
-        `Sync ${json.mode} OK — ${w.demandesItHebdo} demandes, ${w.demandesNonResoluesHebdo} non résolues, ${w.ticketsHorsSlaCloture} hors SLA clôture (48h), ${w.ticketsHorsSlaPriseEnCharge} hors SLA prise en charge (24h).`,
+        `${label} ${json.mode} OK — ${json.year}-S${String(json.week).padStart(2, "0")}` +
+          (json.dryRun ? " (non enregistré)" : " (enregistré au dashboard)"),
       );
+
+      if (!json.dryRun) {
+        await loadMeta();
+      }
     });
   }
+
+  const weekValid = year >= 2000 && year <= 2100 && week >= 1 && week <= 53;
 
   return (
     <div className="space-y-8">
@@ -179,12 +238,18 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
             Connexion & sync Jira
           </h1>
           <p className="mt-2 max-w-xl text-sm text-[var(--muted)]">
-            Calculs alignés sur le workflow n8n : projet CSD, SLA 24h / 48h en
-            heures ouvrées (week-ends + jours fériés BE exclus).
+            Testez n’importe quelle année / semaine ISO : créés, non résolus,
+            hors SLA clôture (48h) et hors SLA prise en charge (24h).
           </p>
         </div>
         {weeks.length > 0 && (
-          <WeekSelector weeks={weeks} value={weekId} onChange={setWeekId} />
+          <WeekSelector
+            weeks={weeks}
+            value={
+              weeks.some((w) => w.id === weekId) ? weekId : weeks[0]?.id ?? weekId
+            }
+            onChange={applyWeekId}
+          />
         )}
       </div>
 
@@ -282,7 +347,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
             onClick={() => void connectAccount("test")}
             className="rounded-md border border-[var(--line)] px-4 py-2 text-sm hover:bg-[var(--wash)] disabled:opacity-50"
           >
-            Tester
+            Tester la connexion
           </button>
           <button
             type="button"
@@ -304,30 +369,116 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         </div>
       </section>
 
-      <section className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
+      <section className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
         <h2 className="font-[family-name:var(--font-display)] text-xl">
-          Synchroniser la semaine
+          Tester une semaine
         </h2>
+        <p className="text-sm text-[var(--muted)]">
+          Choisissez l’année et le numéro de semaine ISO, puis lancez un test
+          (lecture seule) ou enregistrez les valeurs dans le dashboard.
+        </p>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-[var(--muted)]">Année</span>
+            <input
+              type="number"
+              min={2000}
+              max={2100}
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value) || year)}
+              className="w-28 rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-2 outline-none focus:border-[var(--accent)]"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-[var(--muted)]">Semaine ISO</span>
+            <input
+              type="number"
+              min={1}
+              max={53}
+              value={week}
+              onChange={(e) => setWeek(Number(e.target.value) || week)}
+              className="w-28 rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-2 outline-none focus:border-[var(--accent)]"
+            />
+          </label>
+          <p className="pb-2 text-sm text-[var(--muted)]">
+            → <span className="font-medium text-[var(--ink)]">{composedWeekId}</span>
+            {jql ? (
+              <>
+                {" "}
+                ({jql.start} → {jql.endExclusive})
+              </>
+            ) : null}
+          </p>
+        </div>
+
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={pending || !connected}
-            onClick={() => sync(false)}
+            disabled={pending || !connected || !weekValid}
+            onClick={() => runQuery({ dryRun: true, useMock: false })}
             className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
-            Synchroniser depuis Jira
+            {pending ? "Calcul…" : "Tester cette semaine"}
           </button>
           <button
             type="button"
-            disabled={pending}
-            onClick={() => sync(true)}
-            className="rounded-md border border-[var(--line)] px-4 py-2 text-sm"
+            disabled={pending || !connected || !weekValid}
+            onClick={() => runQuery({ dryRun: false, useMock: false })}
+            className="rounded-md border border-[var(--line)] px-4 py-2 text-sm disabled:opacity-50"
           >
-            Sync démo
+            Tester + enregistrer
+          </button>
+          <button
+            type="button"
+            disabled={pending || !weekValid}
+            onClick={() => runQuery({ dryRun: true, useMock: true })}
+            className="rounded-md border border-[var(--line)] px-4 py-2 text-sm disabled:opacity-50"
+          >
+            Test démo
           </button>
         </div>
+
         {result && <p className="text-sm text-[var(--ok)]">{result}</p>}
         {error && <p className="text-sm text-[var(--crit)]">{error}</p>}
+
+        {values && (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiTile
+              label="Tickets créés"
+              value={values.demandesItHebdo}
+              hint="Demandes IT — Hebdo"
+            />
+            <KpiTile
+              label="Non résolus"
+              value={values.demandesNonResoluesHebdo}
+              hint="Snapshot ouvert actuel"
+            />
+            <KpiTile
+              label="Hors SLA clôture"
+              value={values.ticketsHorsSlaCloture}
+              hint="> 48h ouvrées"
+            />
+            <KpiTile
+              label="Hors SLA prise en charge"
+              value={values.ticketsHorsSlaPriseEnCharge}
+              hint="> 24h ouvrées"
+            />
+          </div>
+        )}
+
+        {values && (
+          <p className="text-xs text-[var(--muted)]">
+            Source : {lastMode}
+            {saved ? " · enregistré" : " · non enregistré"}
+            {jql?.usedRelativeWeekFunctions
+              ? " · JQL relatif startOfWeek(-1) (comme n8n)"
+              : jql
+                ? ` · JQL dates ${jql.start} → ${jql.endExclusive}`
+                : ""}
+          </p>
+        )}
+
         {probe && (
           <p className="text-xs text-[var(--muted)]">
             Sonde projet :{" "}
@@ -341,7 +492,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         )}
         {diagnostics && (
           <p className="text-xs text-[var(--muted)]">
-            Détail sync : créés={diagnostics.createdCount}, ouverts=
+            Détail : créés={diagnostics.createdCount}, ouverts=
             {diagnostics.openCount}, candidats PEC=
             {diagnostics.pecCandidates}, candidats clôture=
             {diagnostics.resolvedCandidates}
@@ -379,6 +530,28 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           />
         </section>
       )}
+    </div>
+  );
+}
+
+function KpiTile({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: number;
+  hint: string;
+}) {
+  return (
+    <div className="rounded-lg border border-[var(--line)] bg-[var(--wash)] px-4 py-3">
+      <p className="text-xs uppercase tracking-wider text-[var(--muted)]">
+        {label}
+      </p>
+      <p className="mt-1 font-[family-name:var(--font-display)] text-3xl text-[var(--ink)]">
+        {value}
+      </p>
+      <p className="mt-1 text-xs text-[var(--muted)]">{hint}</p>
     </div>
   );
 }
