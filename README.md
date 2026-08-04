@@ -39,12 +39,19 @@ Ouvrir [http://localhost:3000](http://localhost:3000) — semaine 31 (2026) pré
 
 ### Jira
 
-```env
-JIRA_BASE_URL=https://votre-domaine.atlassian.net
-JIRA_EMAIL=it@coverseal.com
-JIRA_API_TOKEN=
-JIRA_JQL_BASE=project = IT
-```
+Dans l'UI **Sync Jira** : URL du site + email Atlassian + [API token](https://id.atlassian.com/manage-profile/security/api-tokens).
+
+La sync hebdomadaire exécute 4 JQL :
+
+1. **Demandes IT** — tickets créés dans la semaine
+2. **Non résolues** — créés ≤ fin de semaine et encore ouverts à cette date
+3. **Hors SLA clôture** — résolus dans la semaine avec `"Time to resolution" = breached()`
+4. **Hors SLA prise en charge** — créés dans la semaine avec `"Time to first response" = breached()`
+
+Les noms de SLA JSM et le filtre projet sont configurables dans le formulaire.
+
+Variables d'env optionnelles (sinon connexion via l'UI) : voir `.env.example`.
+Sur Vercel, définir aussi `JIRA_COOKIE_SECRET` pour chiffrer la session compte.
 
 ## Scripts
 

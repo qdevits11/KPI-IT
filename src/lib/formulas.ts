@@ -25,13 +25,14 @@ export const FORMULAS: FormulaDefinition[] = [
     category: "sla",
     name: "Tickets hors SLA clôture",
     description:
-      "Nombre de tickets clôturés hors délai SLA sur la semaine (User experience / IT Team).",
-    formula: "valeur saisie (ou sync Jira SLA)",
+      "Tickets résolus hors délai SLA sur la semaine (User experience / IT Team).",
+    formula:
+      'JQL: resolved ∈ semaine AND "Time to resolution" = breached() — ou saisie manuelle',
     inputs: [
       {
         name: "ticketsHorsSlaCloture",
-        source: "manuel",
-        description: "Colonne E feuille année — ou métrique SLA Jira",
+        source: "jira",
+        description: "Sync Jira (SLA JSM) ou colonne E feuille année",
       },
     ],
     example: "Semaine 31 : 7 tickets hors SLA clôture",
@@ -42,13 +43,14 @@ export const FORMULAS: FormulaDefinition[] = [
     category: "sla",
     name: "Tickets hors SLA prise en charge",
     description:
-      "Nombre de tickets dont la prise en charge a dépassé le SLA sur la semaine.",
-    formula: "valeur saisie (ou sync Jira SLA)",
+      "Tickets créés dans la semaine dont la prise en charge a dépassé le SLA.",
+    formula:
+      'JQL: created ∈ semaine AND "Time to first response" = breached() — ou saisie manuelle',
     inputs: [
       {
         name: "ticketsHorsSlaPriseEnCharge",
-        source: "manuel",
-        description: "Colonne F feuille année",
+        source: "jira",
+        description: "Sync Jira (SLA JSM) ou colonne F feuille année",
       },
     ],
     example: "Semaine 31 : 1 ticket hors SLA prise en charge",
@@ -274,7 +276,7 @@ export function computeWeekKpis(
       unit: "number",
       target: 10,
       higherIsBetter: false,
-      source: "manuel",
+      source: "jira",
       formulaId: "hors_sla_cloture",
     }),
     kpi({
@@ -285,7 +287,7 @@ export function computeWeekKpis(
       unit: "number",
       target: 10,
       higherIsBetter: false,
-      source: "manuel",
+      source: "jira",
       formulaId: "hors_sla_prise_en_charge",
     }),
     kpi({
