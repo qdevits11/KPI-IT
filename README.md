@@ -37,21 +37,20 @@ Ouvrir [http://localhost:3000](http://localhost:3000) — semaine 31 (2026) pré
    ```
 2. Ou dans l'UI **Sync Jira** → « Réimporter KPI.xlsx » (recharge depuis `seed-from-excel.json`).
 
-### Jira
+### Jira (aligné workflow n8n)
 
 Dans l'UI **Sync Jira** : URL du site + email Atlassian + [API token](https://id.atlassian.com/manage-profile/security/api-tokens).
 
-La sync hebdomadaire exécute 4 JQL :
+| KPI | Règle (comme n8n) |
+|-----|-------------------|
+| Demandes IT | `project = CSD` créés dans la semaine |
+| Non résolues | `status NOT IN (Partenaire, Canceled, Done)` (snapshot) |
+| Hors SLA prise en charge | `Date Prise en Charge` ∈ semaine + **> 24 h ouvrées** |
+| Hors SLA clôture | `resolutiondate` ∈ semaine + **> 48 h ouvrées** |
 
-1. **Demandes IT** — tickets créés dans la semaine
-2. **Non résolues** — créés ≤ fin de semaine et encore ouverts à cette date
-3. **Hors SLA clôture** — résolus dans la semaine avec `"Time to resolution" = breached()`
-4. **Hors SLA prise en charge** — créés dans la semaine avec `"Time to first response" = breached()`
+Heures ouvrées = hors week-ends et jours fériés belges (liste n8n).
 
-Les noms de SLA JSM et le filtre projet sont configurables dans le formulaire.
-
-Variables d'env optionnelles (sinon connexion via l'UI) : voir `.env.example`.
-Sur Vercel, définir aussi `JIRA_COOKIE_SECRET` pour chiffrer la session compte.
+Variables d'env optionnelles : voir `.env.example`. Sur Vercel, définir `JIRA_COOKIE_SECRET`.
 
 ## Scripts
 
