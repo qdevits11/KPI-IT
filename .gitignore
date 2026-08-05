@@ -37,6 +37,10 @@ yarn-error.log*
 # local KPI database
 /data/db.json
 
+# temp seed artifacts
+.tmp-seed/
+.tmp-kpi-seed.sql
+
 # vercel
 .vercel
 
