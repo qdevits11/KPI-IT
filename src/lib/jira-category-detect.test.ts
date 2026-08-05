@@ -79,5 +79,36 @@ describe("jira-category-detect", () => {
       categoryCustomFieldId: "customfield_10250",
       usedDiscovery: true,
     });
+
+    // Hint Coverseal 10152 prioritaire sur la détection
+    expect(
+      resolveCategoryConnection(
+        {
+          categoryField: "requestType",
+          categoryCustomFieldId: "customfield_10152",
+        },
+        found,
+      ),
+    ).toEqual({
+      categoryField: "custom",
+      categoryCustomFieldId: "customfield_10152",
+      usedDiscovery: false,
+    });
+  });
+});
+
+describe("normalizeCustomFieldId", () => {
+  it("normalise 10152 → customfield_10152", async () => {
+    const { normalizeCustomFieldId, DEFAULT_JIRA_SETTINGS } = await import(
+      "./jira-auth"
+    );
+    expect(normalizeCustomFieldId("10152")).toBe("customfield_10152");
+    expect(normalizeCustomFieldId("customfield_10152")).toBe(
+      "customfield_10152",
+    );
+    expect(DEFAULT_JIRA_SETTINGS.categoryCustomFieldId).toBe(
+      "customfield_10152",
+    );
+    expect(DEFAULT_JIRA_SETTINGS.categoryField).toBe("custom");
   });
 });

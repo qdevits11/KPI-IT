@@ -52,8 +52,9 @@ export const DEFAULT_JIRA_SETTINGS = {
   slaPriseEnChargeHours: 24,
   slaClotureHours: 48,
   /** Auto = champ IT Coverseal (pas le Request Type de canal mail) */
-  categoryField: "auto" as const,
-  categoryCustomFieldId: "",
+  categoryField: "custom" as const,
+  /** Champ Jira « Catégorie » (Coverseal CSD) */
+  categoryCustomFieldId: "customfield_10152",
 };
 
 function secretKey(): Buffer {
@@ -105,11 +106,12 @@ function normalizeConnection(
       ? partial.categoryCustomFieldId.trim()
       : "";
   const categoryField = normalizeCategoryField(rawCategory, rawCustom);
-  const categoryCustomFieldId =
+  const categoryCustomFieldId = normalizeCustomFieldId(
     rawCustom ||
-    (rawCategory.toLowerCase().startsWith("customfield_")
-      ? rawCategory
-      : DEFAULT_JIRA_SETTINGS.categoryCustomFieldId);
+      (rawCategory.toLowerCase().startsWith("customfield_")
+        ? rawCategory
+        : DEFAULT_JIRA_SETTINGS.categoryCustomFieldId),
+  );
 
   return {
     baseUrl: partial.baseUrl.replace(/\/$/, ""),
@@ -144,7 +146,9 @@ function normalizeCategoryField(
   if (v === "label" || v === "labels") return "label";
   if (v === "issuetype" || v === "type") return "issuetype";
   if (v === "component" || v === "components") return "component";
-  if (v === "custom" || v.startsWith("customfield_")) return "custom";
+  if (v === "custom" || v.startsWith("customfield_") || /^\d+$/.test(v)) {
+    return "custom";
+  }
   if (
     v === "requesttype" ||
     v === "request_type" ||
@@ -153,8 +157,17 @@ function normalizeCategoryField(
   ) {
     return "requestType";
   }
-  if (customId?.trim().toLowerCase().startsWith("customfield_")) return "custom";
-  return "auto";
+  if (customId?.trim()) return "custom";
+  return "custom";
+}
+
+/** « 10152 » → « customfield_10152 » */
+export function normalizeCustomFieldId(raw: string): string {
+  const v = raw.trim();
+  if (!v) return DEFAULT_JIRA_SETTINGS.categoryCustomFieldId;
+  if (/^customfield_\d+$/i.test(v)) return v.toLowerCase();
+  if (/^\d+$/.test(v)) return `customfield_${v}`;
+  return v;
 }
 
 export async function readJiraConnection(): Promise<JiraConnection | null> {
@@ -213,11 +226,14 @@ export async function resolveJiraConnection(): Promise<JiraConnection | null> {
     categoryField:
       (process.env.JIRA_CATEGORY_FIELD as JiraConnection["categoryField"]) ||
       DEFAULT_JIRA_SETTINGS.categoryField,
-    categoryCustomFieldId:
+    categoryCustomFieldId: normalizeCustomFieldId(
       process.env.JIRA_CATEGORY_CUSTOM_FIELD ||
-      (process.env.JIRA_CATEGORY_FIELD?.startsWith("customfield_")
-        ? process.env.JIRA_CATEGORY_FIELD
-        : DEFAULT_JIRA_SETTINGS.categoryCustomFieldId),
+        (process.env.JIRA_CATEGORY_FIELD?.startsWith("customfield_")
+          ? process.env.JIRA_CATEGORY_FIELD
+          : /^\d+$/.test(process.env.JIRA_CATEGORY_FIELD ?? "")
+            ? process.env.JIRA_CATEGORY_FIELD!
+            : DEFAULT_JIRA_SETTINGS.categoryCustomFieldId),
+    ),
     connectedAt: "env",
   });
 }

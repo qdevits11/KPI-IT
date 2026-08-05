@@ -221,6 +221,15 @@ export function resolveCategoryConnection(
     };
   }
 
+  // Même en auto/requestType : si un hint Coverseal est présent, l’utiliser
+  if (connection.categoryCustomFieldId) {
+    return {
+      categoryField: "custom",
+      categoryCustomFieldId: connection.categoryCustomFieldId,
+      usedDiscovery: false,
+    };
+  }
+
   const wantAuto =
     connection.categoryField === "auto" ||
     connection.categoryField === "requestType" ||

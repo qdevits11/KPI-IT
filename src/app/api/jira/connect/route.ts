@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   clearJiraConnection,
   DEFAULT_JIRA_SETTINGS,
+  normalizeCustomFieldId,
   readJiraConnection,
   resolveJiraConnection,
   sanitizeConnection,
@@ -68,9 +69,10 @@ export async function POST(request: Request) {
     slaClotureHours:
       Number(body.slaClotureHours) || DEFAULT_JIRA_SETTINGS.slaClotureHours,
     categoryField: body.categoryField || DEFAULT_JIRA_SETTINGS.categoryField,
-    categoryCustomFieldId:
+    categoryCustomFieldId: normalizeCustomFieldId(
       body.categoryCustomFieldId?.trim() ||
-      DEFAULT_JIRA_SETTINGS.categoryCustomFieldId,
+        DEFAULT_JIRA_SETTINGS.categoryCustomFieldId,
+    ),
     connectedAt: new Date().toISOString(),
   };
 
