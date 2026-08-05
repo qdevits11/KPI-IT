@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
-import { cookies } from "next/headers";
 import {
   atlassianOAuthConfigured,
   atlassianRedirectUri,
@@ -17,6 +16,14 @@ function safeNext(raw: string | null): string {
   if (raw.startsWith("/login")) return "/";
   return raw;
 }
+
+const oauthCookieOpts = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax" as const,
+  path: "/",
+  maxAge: 600,
+};
 
 /** Démarre le flux OAuth Atlassian pour la connexion utilisateur. */
 export async function GET(request: Request) {
@@ -36,22 +43,10 @@ export async function GET(request: Request) {
   const redirectUri = atlassianRedirectUri(origin);
   const state = randomBytes(24).toString("hex");
   const next = safeNext(url.searchParams.get("next"));
-  const jar = await cookies();
-  jar.set(JIRA_OAUTH_STATE_COOKIE, state, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 600,
-  });
-  jar.set(JIRA_OAUTH_NEXT_COOKIE, next, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 600,
-  });
 
   const authorizeUrl = buildAtlassianAuthorizeUrl({ state, redirectUri });
-  return NextResponse.redirect(authorizeUrl);
+  const response = NextResponse.redirect(authorizeUrl);
+  response.cookies.set(JIRA_OAUTH_STATE_COOKIE, state, oauthCookieOpts);
+  response.cookies.set(JIRA_OAUTH_NEXT_COOKIE, next, oauthCookieOpts);
+  return response;
 }

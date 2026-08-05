@@ -65,7 +65,7 @@ export async function POST(request: Request, { params }: Params) {
       {
         ok: false,
         error:
-          "Les modifications de tickets nécessitent une connexion OAuth (Microsoft / Atlassian).",
+          "Les modifications de tickets nécessitent un compte de sync en OAuth (Sync Jira). Le login utilisateur ne suffit pas.",
         needOAuth: true,
       },
       { status: 403 },

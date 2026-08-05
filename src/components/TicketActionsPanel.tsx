@@ -85,14 +85,15 @@ export function TicketActionsPanel({
     return (
       <div className="rounded-md border border-[var(--warn)]/40 bg-[var(--warn)]/10 px-3 py-2 text-sm text-[var(--ink)]">
         <p>
-          Pour changer statut, assigné ou type, reconnectez-vous avec Microsoft
-          / Atlassian (session utilisateur). La sync KPI garde son propre token.
+          Les modifications de tickets nécessitent un token de synchronisation
+          en OAuth (admin → Sync Jira). Votre login sert à l’identité KPI·IT ;
+          la sync garde son propre compte.
         </p>
         <Link
-          href="/api/jira/oauth/start?next=/tickets-ouverts"
+          href="/jira"
           className="mt-2 inline-block font-medium text-[var(--accent-deep)] hover:underline"
         >
-          Reconnecter Microsoft / Atlassian →
+          Ouvrir Sync Jira →
         </Link>
       </div>
     );
@@ -114,10 +115,10 @@ export function TicketActionsPanel({
           {error}{" "}
           {needOAuth && (
             <Link
-              href="/api/jira/oauth/start?next=/tickets-ouverts"
+              href="/jira"
               className="underline text-[var(--accent-deep)]"
             >
-              OAuth
+              Sync Jira
             </Link>
           )}
         </p>

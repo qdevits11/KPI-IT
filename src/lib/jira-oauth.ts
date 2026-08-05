@@ -11,11 +11,7 @@ import {
   writeJiraConnection,
   type JiraConnection,
 } from "./jira-auth";
-import {
-  readUserSession,
-  writeUserSession,
-  type UserSessionPayload,
-} from "./user-session";
+import { writeUserSession } from "./user-session";
 
 export const JIRA_OAUTH_STATE_COOKIE = "kpi_jira_oauth_state";
 /** Destination après login OAuth (chemin relatif). */
@@ -248,32 +244,68 @@ async function buildOAuthConnection(opts: {
 }
 
 /**
- * Login utilisateur : session navigateur uniquement.
- * N’écrase jamais le token de synchronisation partagé.
+ * Login utilisateur : identité seule dans le cookie de session.
+ * Ne stocke pas les tokens OAuth (trop volumineux → cookie ignoré par le navigateur)
+ * et n’exige pas de site Jira accessible — la sync garde son token partagé.
  */
 export async function persistOAuthUserLogin(opts: {
   accessToken: string;
   refreshToken?: string;
   expiresIn: number;
   preferredBaseUrl?: string;
-}): Promise<{ email: string; displayName?: string; connection: JiraConnection }> {
-  const conn = await buildOAuthConnection(opts);
+}): Promise<{ email: string; displayName?: string }> {
+  void opts.refreshToken;
+  void opts.expiresIn;
+  void opts.preferredBaseUrl;
+
+  const me = await fetchAtlassianMe(opts.accessToken);
+  let email = (me.email || "").trim().toLowerCase();
+  let displayName = me.name?.trim() || undefined;
+
+  // Fallback : profil Jira si /me ne renvoie pas d’email
+  if (!email || !email.includes("@")) {
+    try {
+      const resources = await fetchAccessibleResources(opts.accessToken);
+      const site = pickResource(resources, opts.preferredBaseUrl);
+      if (site) {
+        const res = await fetch(
+          `https://api.atlassian.com/ex/jira/${site.id}/rest/api/3/myself`,
+          {
+            headers: {
+              Authorization: `Bearer ${opts.accessToken}`,
+              Accept: "application/json",
+            },
+            cache: "no-store",
+          },
+        );
+        if (res.ok) {
+          const myself = (await res.json()) as {
+            emailAddress?: string;
+            displayName?: string;
+          };
+          email = (myself.emailAddress || email || "").trim().toLowerCase();
+          displayName = myself.displayName?.trim() || displayName;
+        }
+      }
+    } catch {
+      // ignore — on valide l’email ci-dessous
+    }
+  }
+
+  if (!email || !email.includes("@")) {
+    throw new Error(
+      "Impossible de lire l’email du compte Atlassian. Vérifiez les scopes OAuth (read:jira-user).",
+    );
+  }
+
   await writeUserSession({
-    email: conn.email,
-    displayName: conn.accountDisplayName,
+    email,
+    displayName,
     authMode: "oauth",
-    accessToken: conn.accessToken,
-    refreshToken: conn.refreshToken,
-    cloudId: conn.cloudId,
-    tokenExpiresAt: conn.tokenExpiresAt,
-    baseUrl: conn.baseUrl,
-    connectedAt: conn.connectedAt,
+    connectedAt: new Date().toISOString(),
   });
-  return {
-    email: conn.email,
-    displayName: conn.accountDisplayName,
-    connection: conn,
-  };
+
+  return { email, displayName };
 }
 
 /**
@@ -297,37 +329,8 @@ export async function persistOAuthConnection(opts: {
   refreshToken?: string;
   expiresIn: number;
   preferredBaseUrl?: string;
-}): Promise<JiraConnection> {
-  const { connection } = await persistOAuthUserLogin(opts);
-  return connection;
-}
-
-function connectionFromUserSession(
-  session: UserSessionPayload,
-): JiraConnection | null {
-  if (session.authMode !== "oauth" || !session.accessToken || !session.baseUrl) {
-    return null;
-  }
-  return normalizeConnection({
-    baseUrl: session.baseUrl,
-    email: session.email,
-    apiToken: "",
-    authMode: "oauth",
-    accessToken: session.accessToken,
-    refreshToken: session.refreshToken,
-    cloudId: session.cloudId,
-    tokenExpiresAt: session.tokenExpiresAt,
-    accountDisplayName: session.displayName,
-    jqlBase: DEFAULT_JIRA_SETTINGS.jqlBase,
-    openStatusJql: DEFAULT_JIRA_SETTINGS.openStatusJql,
-    datePriseEnChargeJql: DEFAULT_JIRA_SETTINGS.datePriseEnChargeJql,
-    datePriseEnChargeFieldId: DEFAULT_JIRA_SETTINGS.datePriseEnChargeFieldId,
-    slaPriseEnChargeHours: DEFAULT_JIRA_SETTINGS.slaPriseEnChargeHours,
-    slaClotureHours: DEFAULT_JIRA_SETTINGS.slaClotureHours,
-    categoryField: DEFAULT_JIRA_SETTINGS.categoryField,
-    categoryCustomFieldId: DEFAULT_JIRA_SETTINGS.categoryCustomFieldId,
-    connectedAt: session.connectedAt,
-  });
+}): Promise<{ email: string; displayName?: string }> {
+  return persistOAuthUserLogin(opts);
 }
 
 /** Rafraîchit le Bearer du compte partagé (sync) sans toucher à la session user. */
@@ -361,31 +364,6 @@ export async function ensureFreshOAuthConnection(
   });
 }
 
-async function ensureFreshPersonalOAuth(
-  session: UserSessionPayload,
-): Promise<JiraConnection | null> {
-  let conn = connectionFromUserSession(session);
-  if (!conn) return null;
-
-  const expiresAt = conn.tokenExpiresAt
-    ? Date.parse(conn.tokenExpiresAt)
-    : 0;
-  const stillValid =
-    Number.isFinite(expiresAt) && expiresAt > Date.now() + 60_000;
-  if (stillValid) return conn;
-
-  if (!conn.refreshToken || !atlassianOAuthConfigured()) return null;
-  const tokens = await refreshAccessToken(conn.refreshToken);
-  await persistOAuthUserLogin({
-    accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token || conn.refreshToken,
-    expiresIn: tokens.expires_in,
-    preferredBaseUrl: conn.baseUrl,
-  });
-  const refreshed = await readUserSession();
-  return refreshed ? connectionFromUserSession(refreshed) : null;
-}
-
 /**
  * Connexion partagée pour sync / lectures KPI (token actuel en base).
  * Refresh OAuth partagé si besoin — n’altère pas la session utilisateur.
@@ -405,20 +383,10 @@ export async function resolveFreshJiraConnection(): Promise<JiraConnection | nul
 }
 
 /**
- * Connexion pour actions tickets : OAuth personnel (login) en priorité,
- * sinon compte partagé s’il est en OAuth.
+ * Connexion pour actions tickets : compte partagé OAuth (sync).
+ * La session login ne transporte plus de tokens (cookie identité uniquement).
  */
 export async function resolveTicketWriteConnection(): Promise<JiraConnection | null> {
-  const session = await readUserSession();
-  if (session?.authMode === "oauth" && session.accessToken) {
-    try {
-      const personal = await ensureFreshPersonalOAuth(session);
-      if (personal) return personal;
-    } catch (err) {
-      console.warn("Refresh OAuth personnel échoué:", err);
-    }
-  }
-
   const shared = await resolveFreshJiraConnection();
   if (shared?.authMode === "oauth") return shared;
   return null;

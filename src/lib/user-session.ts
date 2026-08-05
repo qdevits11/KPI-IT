@@ -59,21 +59,40 @@ export function decryptUserSession(token: string): UserSessionPayload | null {
   }
 }
 
+/**
+ * Options cookie session utilisateur (identité KPI·IT).
+ */
+export function userSessionCookieOptions(secure?: boolean) {
+  return {
+    httpOnly: true,
+    secure: secure ?? process.env.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    path: "/",
+    maxAge: 60 * 60 * 24 * 90,
+  };
+}
+
 export async function writeUserSession(
   payload: UserSessionPayload,
 ): Promise<void> {
-  try {
-    const jar = await cookies();
-    jar.set(USER_SESSION_COOKIE, encryptUserSession(payload), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 90,
-    });
-  } catch {
-    // hors requête
-  }
+  const jar = await cookies();
+  jar.set(
+    USER_SESSION_COOKIE,
+    encryptUserSession(payload),
+    userSessionCookieOptions(),
+  );
+}
+
+/** Attache la session au NextResponse (redirect OAuth fiable). */
+export function attachUserSessionCookie(
+  response: { cookies: { set: (name: string, value: string, opts: object) => void } },
+  payload: UserSessionPayload,
+): void {
+  response.cookies.set(
+    USER_SESSION_COOKIE,
+    encryptUserSession(payload),
+    userSessionCookieOptions(),
+  );
 }
 
 export async function clearUserSession(): Promise<void> {

@@ -3,10 +3,15 @@ import { cookies } from "next/headers";
 import {
   atlassianRedirectUri,
   exchangeAuthorizationCode,
+  fetchAtlassianMe,
+  fetchAccessibleResources,
   JIRA_OAUTH_NEXT_COOKIE,
   JIRA_OAUTH_STATE_COOKIE,
-  persistOAuthUserLogin,
 } from "@/lib/jira-oauth";
+import {
+  attachUserSessionCookie,
+  type UserSessionPayload,
+} from "@/lib/user-session";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +20,51 @@ function safeNext(raw: string | undefined): string {
   if (!raw.startsWith("/") || raw.startsWith("//")) return "/";
   if (raw.startsWith("/login")) return "/";
   return raw;
+}
+
+async function resolveLoginIdentity(accessToken: string): Promise<{
+  email: string;
+  displayName?: string;
+}> {
+  const me = await fetchAtlassianMe(accessToken);
+  let email = (me.email || "").trim().toLowerCase();
+  let displayName = me.name?.trim() || undefined;
+
+  if (!email || !email.includes("@")) {
+    try {
+      const resources = await fetchAccessibleResources(accessToken);
+      const site = resources[0];
+      if (site) {
+        const res = await fetch(
+          `https://api.atlassian.com/ex/jira/${site.id}/rest/api/3/myself`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              Accept: "application/json",
+            },
+            cache: "no-store",
+          },
+        );
+        if (res.ok) {
+          const myself = (await res.json()) as {
+            emailAddress?: string;
+            displayName?: string;
+          };
+          email = (myself.emailAddress || "").trim().toLowerCase();
+          displayName = myself.displayName?.trim() || displayName;
+        }
+      }
+    } catch {
+      // validated below
+    }
+  }
+
+  if (!email || !email.includes("@")) {
+    throw new Error(
+      "Impossible de lire l’email du compte Atlassian. Vérifiez les scopes OAuth (read:jira-user).",
+    );
+  }
+  return { email, displayName };
 }
 
 export async function GET(request: Request) {
@@ -45,13 +95,19 @@ export async function GET(request: Request) {
   try {
     const redirectUri = atlassianRedirectUri(origin);
     const tokens = await exchangeAuthorizationCode(code, redirectUri);
-    await persistOAuthUserLogin({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresIn: tokens.expires_in,
-    });
-    // Login utilisateur uniquement — le token de sync partagé n’est pas modifié.
-    return NextResponse.redirect(`${origin}${next}`);
+    const identity = await resolveLoginIdentity(tokens.access_token);
+
+    const payload: UserSessionPayload = {
+      email: identity.email,
+      displayName: identity.displayName,
+      authMode: "oauth",
+      connectedAt: new Date().toISOString(),
+    };
+
+    // Cookie sur la réponse de redirect (fiable) — identité seule, pas les tokens.
+    const response = NextResponse.redirect(`${origin}${next}`);
+    attachUserSessionCookie(response, payload);
+    return response;
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Échec connexion OAuth";
