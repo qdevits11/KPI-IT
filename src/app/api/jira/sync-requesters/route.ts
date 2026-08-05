@@ -11,6 +11,7 @@ import {
   patchTicketsBreakdown,
   type BreakdownPart,
 } from "@/lib/store";
+import { requireAdminApi } from "@/lib/access-api";
 
 const ALL_PARTS: BreakdownPart[] = ["type", "assignee", "requester"];
 
@@ -33,6 +34,9 @@ function parseParts(raw: unknown): BreakdownPart[] {
  * Clear : { action: "clear", year?, weekFrom?, weekTo?, parts? }
  */
 export async function POST(request: Request) {
+  const gate = await requireAdminApi();
+  if ("response" in gate) return gate.response;
+
   const body = (await request.json().catch(() => ({}))) as {
     action?: string;
     year?: number;

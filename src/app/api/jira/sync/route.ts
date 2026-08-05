@@ -31,6 +31,7 @@ import {
   resolveBreakdownFlags,
   type SaveFields,
 } from "@/lib/save-fields";
+import { requireAdminApi } from "@/lib/access-api";
 
 async function persistBreakdowns(
   year: number,
@@ -242,6 +243,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const gate = await requireAdminApi();
+  if ("response" in gate) return gate.response;
+
   const body = (await request.json().catch(() => ({}))) as {
     action?: string;
     weekId?: string;

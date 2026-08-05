@@ -4,6 +4,7 @@ import {
   getResponsibles,
   removeResponsible,
 } from "@/lib/store";
+import { requireAdminApi } from "@/lib/access-api";
 
 export async function GET() {
   const responsibles = await getResponsibles();
@@ -11,6 +12,9 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
+  const gate = await requireAdminApi();
+  if ("response" in gate) return gate.response;
+
   const body = (await request.json()) as {
     action?: "add" | "remove";
     name?: string;

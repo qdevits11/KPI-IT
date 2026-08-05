@@ -11,6 +11,8 @@ import {
   writeJiraConnection,
   type JiraConnection,
 } from "./jira-auth";
+import { isAdmin, buildAppUser } from "./roles";
+import { writeUserSession } from "./user-session";
 
 export const JIRA_OAUTH_STATE_COOKIE = "kpi_jira_oauth_state";
 
@@ -233,7 +235,25 @@ export async function persistOAuthConnection(opts: {
   if (!conn) {
     throw new Error("Impossible de normaliser la connexion OAuth");
   }
-  await writeJiraConnection(conn);
+
+  const user = buildAppUser(conn.email, conn.accountDisplayName);
+  await writeUserSession({
+    email: user.email,
+    displayName: conn.accountDisplayName,
+    authMode: "oauth",
+    accessToken: conn.accessToken,
+    refreshToken: conn.refreshToken,
+    cloudId: conn.cloudId,
+    tokenExpiresAt: conn.tokenExpiresAt,
+    baseUrl: conn.baseUrl,
+    connectedAt: conn.connectedAt,
+  });
+
+  // Compte partagé (sync KPI) : réservé à l’admin pour ne pas écraser le token de sync
+  if (isAdmin(user)) {
+    await writeJiraConnection(conn);
+  }
+
   return conn;
 }
 

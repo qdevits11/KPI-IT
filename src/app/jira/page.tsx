@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { JiraSyncPanel } from "@/components/JiraSyncPanel";
+import { requireAdminUser } from "@/lib/access";
 import { currentWeekId } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +10,7 @@ export default async function JiraPage({
 }: {
   searchParams: Promise<{ week?: string }>;
 }) {
+  await requireAdminUser();
   const params = await searchParams;
   const week =
     params.week && /^\d{4}-S\d{2}$/.test(params.week)

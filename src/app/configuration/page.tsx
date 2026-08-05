@@ -1,7 +1,9 @@
 import { ConfigPanel } from "@/components/ConfigPanel";
+import { requireAdminUser } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
 
-export default function ConfigurationPage() {
+export default async function ConfigurationPage() {
+  await requireAdminUser();
   return <ConfigPanel />;
 }

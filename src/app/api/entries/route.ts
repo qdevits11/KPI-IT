@@ -13,6 +13,8 @@ import { weekId } from "@/lib/types";
 import type { WeeklyRow } from "@/lib/types";
 import { isoWeekPartsFromDate, weekIdFromDate } from "@/lib/dates";
 import { canonicalResponsible } from "@/lib/responsibles";
+import { canEditWeekRetour } from "@/lib/roles";
+import { resolveCurrentUser } from "@/lib/user-session";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -20,6 +22,7 @@ export async function GET(request: Request) {
   await ensureWeek(id);
   const db = await getDatabase();
   const week = db.weeks.find((w) => weekId(w) === id)!;
+  const user = await resolveCurrentUser();
   return NextResponse.json({
     week,
     automationsMetier: db.automationsMetier,
@@ -27,6 +30,9 @@ export async function GET(request: Request) {
     phishing: db.phishing,
     maintenances: db.maintenances,
     responsibles: db.settings.responsibles,
+    permissions: {
+      weekRetour: canEditWeekRetour(user),
+    },
   });
 }
 
@@ -113,6 +119,21 @@ export async function PUT(request: Request) {
       ...parts,
     });
   } else if (body.action === "updateWeek" && body.week) {
+    const touchesRetour =
+      body.week.informations !== undefined ||
+      body.week.reaction !== undefined;
+    if (touchesRetour) {
+      const user = await resolveCurrentUser();
+      if (!canEditWeekRetour(user)) {
+        return NextResponse.json(
+          {
+            error:
+              "Seul le responsable KPI peut enregistrer le retour sur la semaine.",
+          },
+          { status: 403 },
+        );
+      }
+    }
     await updateWeeklyRow(id, body.week);
   } else if (body.week && !body.action) {
     // Compat : sync Jira / anciens clients

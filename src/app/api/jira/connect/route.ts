@@ -11,9 +11,16 @@ import {
 import { testJiraConnection } from "@/lib/jira";
 import { supabaseConfigured } from "@/lib/supabase-db";
 import { atlassianOAuthConfigured } from "@/lib/jira-oauth";
+import { buildAppUser, canAccessAdminPages, isAdmin } from "@/lib/roles";
+import {
+  clearUserSession,
+  resolveCurrentUser,
+  writeUserSession,
+} from "@/lib/user-session";
 
 export async function GET() {
   const { connection, source } = await resolveJiraConnectionSource();
+  const user = await resolveCurrentUser();
   return NextResponse.json({
     connected: Boolean(connection),
     source,
@@ -22,6 +29,8 @@ export async function GET() {
     oauthConfigured: atlassianOAuthConfigured(),
     connection: connection ? sanitizeConnection(connection) : null,
     defaults: DEFAULT_JIRA_SETTINGS,
+    user,
+    canManageJira: canAccessAdminPages(user),
   });
 }
 
@@ -32,6 +41,7 @@ export async function POST(request: Request) {
 
   if (body.action === "disconnect") {
     await clearJiraConnection();
+    await clearUserSession();
     return NextResponse.json({ ok: true, connected: false });
   }
 
@@ -50,6 +60,29 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { ok: false, error: "URL Jira invalide (https://xxx.atlassian.net)" },
       { status: 400 },
+    );
+  }
+
+  const actor = await resolveCurrentUser();
+  const targetUser = buildAppUser(email);
+  if (actor && !canAccessAdminPages(actor)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "Seul un administrateur peut enregistrer un token API Jira partagé.",
+      },
+      { status: 403 },
+    );
+  }
+  if (!isAdmin(targetUser)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "Le token API partagé doit être celui d’un compte admin (ex. q.devits@coverseal.com).",
+      },
+      { status: 403 },
     );
   }
 
@@ -98,16 +131,29 @@ export async function POST(request: Request) {
   }
 
   await writeJiraConnection(conn);
+  await writeUserSession({
+    email: targetUser.email,
+    displayName: test.displayName,
+    authMode: "basic",
+    baseUrl: conn.baseUrl,
+    connectedAt: conn.connectedAt,
+  });
+
   return NextResponse.json({
     ok: true,
     connected: true,
     displayName: test.displayName,
     source: supabaseConfigured() ? "supabase" : "cookie",
     connection: sanitizeConnection(conn),
+    user: targetUser,
   });
 }
 
 export async function DELETE() {
-  await clearJiraConnection();
+  const user = await resolveCurrentUser();
+  if (canAccessAdminPages(user)) {
+    await clearJiraConnection();
+  }
+  await clearUserSession();
   return NextResponse.json({ ok: true, connected: false });
 }

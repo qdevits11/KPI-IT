@@ -18,7 +18,7 @@ export async function GET(request: Request) {
 
   if (error) {
     return NextResponse.redirect(
-      `${origin}/jira?oauth=error&message=${encodeURIComponent(error)}`,
+      `${origin}/?oauth=error&message=${encodeURIComponent(error)}`,
     );
   }
 
@@ -28,24 +28,29 @@ export async function GET(request: Request) {
 
   if (!code || !state || !expected || state !== expected) {
     return NextResponse.redirect(
-      `${origin}/jira?oauth=error&message=${encodeURIComponent("État OAuth invalide — réessayez.")}`,
+      `${origin}/?oauth=error&message=${encodeURIComponent("État OAuth invalide — réessayez.")}`,
     );
   }
 
   try {
     const redirectUri = atlassianRedirectUri(origin);
     const tokens = await exchangeAuthorizationCode(code, redirectUri);
-    await persistOAuthConnection({
+    const conn = await persistOAuthConnection({
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       expiresIn: tokens.expires_in,
     });
-    return NextResponse.redirect(`${origin}/jira?oauth=ok`);
+    const { buildAppUser, canAccessAdminPages } = await import("@/lib/roles");
+    const user = buildAppUser(conn.email, conn.accountDisplayName);
+    const dest = canAccessAdminPages(user)
+      ? `${origin}/jira?oauth=ok`
+      : `${origin}/tickets-ouverts?oauth=ok`;
+    return NextResponse.redirect(dest);
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Échec connexion OAuth";
     return NextResponse.redirect(
-      `${origin}/jira?oauth=error&message=${encodeURIComponent(message)}`,
+      `${origin}/?oauth=error&message=${encodeURIComponent(message)}`,
     );
   }
 }

@@ -1,0 +1,104 @@
+/**
+ * Session utilisateur par navigateur (identité pour les rôles).
+ * Distincte du compte Jira partagé (sync KPI dans Supabase).
+ */
+
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
+import { cookies } from "next/headers";
+import {
+  buildAppUser,
+  type AppUser,
+} from "./roles";
+
+export const USER_SESSION_COOKIE = "kpi_app_user";
+
+export interface UserSessionPayload {
+  email: string;
+  displayName?: string;
+  /** Tokens OAuth personnels (actions tickets) — optionnel. */
+  authMode?: "basic" | "oauth";
+  accessToken?: string;
+  refreshToken?: string;
+  cloudId?: string;
+  tokenExpiresAt?: string;
+  baseUrl?: string;
+  connectedAt: string;
+}
+
+function secretKey(): Buffer {
+  const raw =
+    process.env.JIRA_COOKIE_SECRET ||
+    process.env.NEXTAUTH_SECRET ||
+    "kpi-it-dev-secret-change-me";
+  return createHash("sha256").update(`user-session:${raw}`).digest();
+}
+
+export function encryptUserSession(payload: UserSessionPayload): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", secretKey(), iv);
+  const plaintext = Buffer.from(JSON.stringify(payload), "utf-8");
+  const enc = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, enc]).toString("base64url");
+}
+
+export function decryptUserSession(token: string): UserSessionPayload | null {
+  try {
+    const buf = Buffer.from(token, "base64url");
+    const iv = buf.subarray(0, 12);
+    const tag = buf.subarray(12, 28);
+    const data = buf.subarray(28);
+    const decipher = createDecipheriv("aes-256-gcm", secretKey(), iv);
+    decipher.setAuthTag(tag);
+    const dec = Buffer.concat([decipher.update(data), decipher.final()]);
+    const parsed = JSON.parse(dec.toString("utf-8")) as UserSessionPayload;
+    if (!parsed?.email) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function writeUserSession(
+  payload: UserSessionPayload,
+): Promise<void> {
+  try {
+    const jar = await cookies();
+    jar.set(USER_SESSION_COOKIE, encryptUserSession(payload), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 90,
+    });
+  } catch {
+    // hors requête
+  }
+}
+
+export async function clearUserSession(): Promise<void> {
+  try {
+    const jar = await cookies();
+    jar.delete(USER_SESSION_COOKIE);
+  } catch {
+    // ignore
+  }
+}
+
+export async function readUserSession(): Promise<UserSessionPayload | null> {
+  try {
+    const jar = await cookies();
+    const raw = jar.get(USER_SESSION_COOKIE)?.value;
+    if (!raw) return null;
+    return decryptUserSession(raw);
+  } catch {
+    return null;
+  }
+}
+
+/** Utilisateur courant pour RBAC (null si pas de session). */
+export async function resolveCurrentUser(): Promise<AppUser | null> {
+  const session = await readUserSession();
+  if (!session?.email) return null;
+  return buildAppUser(session.email, session.displayName);
+}

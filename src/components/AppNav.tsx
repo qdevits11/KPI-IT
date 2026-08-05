@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import type { AppUser } from "@/lib/roles";
+import { isAdminNavHref } from "@/lib/roles";
 
 const LINKS = [
   { href: "/semaine", label: "Semaine en cours" },
@@ -17,6 +20,38 @@ const LINKS = [
 
 export function AppNav() {
   const pathname = usePathname();
+  const [user, setUser] = useState<AppUser | null>(null);
+  const [adminPages, setAdminPages] = useState(false);
+  const [oauthConfigured, setOauthConfigured] = useState(false);
+
+  const loadMe = useCallback(async () => {
+    const res = await fetch("/api/me");
+    if (!res.ok) return;
+    const json = (await res.json()) as {
+      user: AppUser | null;
+      permissions?: { adminPages?: boolean };
+      oauthConfigured?: boolean;
+    };
+    setUser(json.user);
+    setAdminPages(Boolean(json.permissions?.adminPages));
+    setOauthConfigured(Boolean(json.oauthConfigured));
+  }, []);
+
+  useEffect(() => {
+    void loadMe();
+  }, [loadMe, pathname]);
+
+  async function logoutSession() {
+    await fetch("/api/me", { method: "DELETE" });
+    setUser(null);
+    setAdminPages(false);
+    window.location.href = "/";
+  }
+
+  const visibleLinks = LINKS.filter((link) => {
+    if (isAdminNavHref(link.href)) return adminPages;
+    return true;
+  });
 
   return (
     <header className="border-b border-[var(--line)] bg-[var(--surface)]/90 backdrop-blur-md sticky top-0 z-40">
@@ -29,27 +64,53 @@ export function AppNav() {
             Coverseal
           </span>
         </Link>
-        <nav className="flex flex-wrap items-center justify-end gap-1 sm:gap-2">
-          {LINKS.map((link) => {
-            const active =
-              link.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(link.href);
-            return (
+        <div className="flex flex-col items-end gap-1">
+          <nav className="flex flex-wrap items-center justify-end gap-1 sm:gap-2">
+            {visibleLinks.map((link) => {
+              const active =
+                link.href === "/"
+                  ? pathname === "/"
+                  : pathname.startsWith(link.href);
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={`rounded-md px-2.5 py-1.5 text-sm transition-colors ${
+                    active
+                      ? "bg-[var(--ink)] text-[var(--paper)]"
+                      : "text-[var(--muted)] hover:bg-[var(--wash)] hover:text-[var(--ink)]"
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
+          </nav>
+          <div className="flex flex-wrap items-center justify-end gap-2 text-[11px] text-[var(--muted)]">
+            {user ? (
+              <>
+                <span>
+                  {user.displayName || user.email}
+                  {user.role === "admin" ? " · admin" : " · user"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void logoutSession()}
+                  className="underline-offset-2 hover:underline"
+                >
+                  Quitter la session
+                </button>
+              </>
+            ) : oauthConfigured ? (
               <Link
-                key={link.href}
-                href={link.href}
-                className={`rounded-md px-2.5 py-1.5 text-sm transition-colors ${
-                  active
-                    ? "bg-[var(--ink)] text-[var(--paper)]"
-                    : "text-[var(--muted)] hover:bg-[var(--wash)] hover:text-[var(--ink)]"
-                }`}
+                href="/api/jira/oauth/start"
+                className="underline-offset-2 hover:underline"
               >
-                {link.label}
+                Se connecter (Microsoft / Atlassian)
               </Link>
-            );
-          })}
-        </nav>
+            ) : null}
+          </div>
+        </div>
       </div>
     </header>
   );

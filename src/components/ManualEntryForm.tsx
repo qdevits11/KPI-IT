@@ -94,6 +94,7 @@ export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
   const [failures, setFailures] = useState(0);
   const [fluctuation, setFluctuation] = useState("");
   const [recommendations, setRecommendations] = useState("");
+  const [canEditRetour, setCanEditRetour] = useState(false);
 
   const load = useCallback(async (id: string) => {
     setError(null);
@@ -122,6 +123,11 @@ export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
     }
     setFluctuation(entries.week?.informations ?? "");
     setRecommendations(entries.week?.reaction ?? "");
+    const allowRetour = Boolean(entries.permissions?.weekRetour);
+    setCanEditRetour(allowRetour);
+    if (!allowRetour) {
+      setKind((prev) => (prev === "retour" ? null : prev));
+    }
   }, []);
 
   useEffect(() => {
@@ -296,6 +302,9 @@ export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
   const active = kind ? KINDS.find((k) => k.id === kind)! : null;
   const weekNum = Number(weekId.slice(6));
   const yearNum = Number(weekId.slice(0, 4));
+  const visibleKinds = KINDS.filter(
+    (k) => k.id !== "retour" || canEditRetour,
+  );
 
   const recentItems = (() => {
     if (!kind || !logs || kind === "retour") {
@@ -342,7 +351,7 @@ export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
         aria-label="Type d'encodage"
         className="grid grid-cols-2 gap-3 sm:grid-cols-3"
       >
-        {KINDS.map((k) => {
+        {visibleKinds.map((k) => {
           const selected = kind === k.id;
           return (
             <button
