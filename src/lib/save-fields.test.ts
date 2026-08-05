@@ -65,7 +65,7 @@ describe("describeSaveFields", () => {
       ticketsByAssignee: true,
       ticketsByRequester: true,
     });
-    expect(labels).toEqual(["types", "responsables", "demandeurs"]);
+    expect(labels).toEqual(["types", "assignés Jira", "demandeurs"]);
   });
 });
 

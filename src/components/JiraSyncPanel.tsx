@@ -463,7 +463,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     const partsLabel = parts
       .map((p) =>
         p === "assignee"
-          ? "responsables"
+          ? "assignés"
           : p === "requester"
             ? "demandeurs"
             : "types",
@@ -473,7 +473,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
       `Import ${partsLabel} S${String(from).padStart(2, "0")}–S${String(to).padStart(2, "0")} : ${ok} OK` +
         (failed ? `, ${failed} échec(s)` : "") +
         (sampleAssignees.length
-          ? ` — ex. responsables : ${sampleAssignees.join(", ")}`
+          ? ` — ex. assignés : ${sampleAssignees.join(", ")}`
           : "") +
         " — KPI hebdo inchangés.",
     );
@@ -499,7 +499,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     const partsLabel = parts
       .map((p) =>
         p === "assignee"
-          ? "responsables"
+          ? "assignés"
           : p === "requester"
             ? "demandeurs"
             : "types",
@@ -800,14 +800,14 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           </p>
           <div className="grid gap-2 sm:grid-cols-3">
             <SaveCheck
-              label="Responsables"
+              label="Assignés Jira (assignee)"
               checked={saveFields.ticketsByAssignee}
               onChange={(v) =>
                 setSaveFields((f) => ({ ...f, ticketsByAssignee: v }))
               }
             />
             <SaveCheck
-              label="Demandeurs"
+              label="Demandeurs (reporter)"
               checked={saveFields.ticketsByRequester}
               onChange={(v) =>
                 setSaveFields((f) => ({ ...f, ticketsByRequester: v }))
@@ -904,7 +904,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           <div className="grid gap-3 text-sm sm:grid-cols-3">
             <div className="rounded-lg border border-[var(--line)] bg-[var(--paper)]/60 p-3">
               <p className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
-                Responsables
+                Assignés Jira
               </p>
               <p className="mt-1 text-[var(--ink-soft)]">
                 {Object.keys(breakdowns.byAssignee).length
@@ -1003,10 +1003,11 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           Importer ventilations (plage)
         </h2>
         <p className="text-sm text-[var(--muted)]">
-          Remplit les statistiques <strong>par responsable</strong>,{" "}
+          Remplit les statistiques <strong>par assigné Jira</strong>,{" "}
           <strong>par demandeur</strong> et/ou <strong>par type</strong> à
-          partir des tickets créés Jira. Les KPI hebdo (créés, SLA, non
-          résolus) ne sont pas modifiés.
+          partir des tickets créés. Les assignés viennent du champ{" "}
+          <code className="text-xs">assignee</code> (pas de la liste
+          Configuration). Les KPI hebdo ne sont pas modifiés.
         </p>
 
         <div className="flex flex-wrap items-end gap-3">
@@ -1056,7 +1057,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           </legend>
           <div className="grid gap-2 sm:grid-cols-3">
             <SaveCheck
-              label="Responsables (assignee)"
+              label="Assignés Jira (assignee)"
               checked={importParts.assignee}
               onChange={(v) =>
                 setImportParts((p) => ({ ...p, assignee: v }))

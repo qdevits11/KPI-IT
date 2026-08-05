@@ -316,7 +316,7 @@ export async function POST(request: Request) {
           parts,
         });
         if (bd.type) cleared.push("types");
-        if (bd.assignee) cleared.push("responsables");
+        if (bd.assignee) cleared.push("assignés");
         if (bd.requester) cleared.push("demandeurs");
       }
       const db = await getDatabase();

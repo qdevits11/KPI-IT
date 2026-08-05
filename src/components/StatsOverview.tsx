@@ -56,8 +56,9 @@ export function StatsOverview({ initialYear = 2026 }: { initialYear?: number }) 
             Statistiques
           </h1>
           <p className="mt-2 max-w-xl text-sm text-[var(--muted)]">
-            Volumes annuels par responsable, demandeur et type de demande —
-            issus du seed Excel et des syncs Jira.
+            Volumes annuels par assigné Jira, demandeur et type de demande —
+            issus du seed Excel et des syncs Jira (pas de la liste
+            Configuration).
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm text-[var(--muted)]">

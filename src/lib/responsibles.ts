@@ -1,4 +1,4 @@
-/** Responsables autorisés pour l'encodage manuel (liste configurable). */
+/** Responsables d'encodage manuel uniquement (pas les assignés Jira). */
 
 export const DEFAULT_RESPONSIBLES = [
   "Dominique",

@@ -13,7 +13,7 @@ export const STAT_DIMENSIONS: Record<
   assignee: {
     label: "Par responsable",
     description:
-      "Nombre de tickets créés assignés à chaque membre de l’équipe IT.",
+      "Tickets créés groupés par assigné Jira (champ assignee). Indépendant de la liste Configuration → responsables d’encodage.",
     href: "/statistiques/par-responsable",
   },
   requester: {

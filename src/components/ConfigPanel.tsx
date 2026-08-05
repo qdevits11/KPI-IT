@@ -84,18 +84,22 @@ export function ConfigPanel() {
           Configuration
         </h1>
         <p className="text-sm text-[var(--muted)]">
-          Gérez les personnes autorisées comme responsable à l&apos;encodage.
-          Seules ces personnes apparaissent dans le formulaire.
+          Personnes autorisées pour l&apos;encodage manuel uniquement
+          (automatisations métiers, Odoo, maintenances). Cette liste{" "}
+          <strong>n&apos;est pas utilisée</strong> pour les statistiques
+          tickets : les responsables tickets viennent de l&apos;assigné Jira
+          (<code className="text-xs">assignee</code>).
         </p>
       </header>
 
       <section className="space-y-5 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
         <div>
           <h2 className="font-[family-name:var(--font-display)] text-xl text-[var(--ink)]">
-            Responsables
+            Responsables d&apos;encodage
           </h2>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Utilisés pour les automatisations métiers, Odoo et maintenances.
+            Apparaissent dans le formulaire d&apos;encodage. Sans lien avec
+            Sync Jira / Statistiques → Par responsable.
           </p>
         </div>
 

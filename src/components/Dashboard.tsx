@@ -258,7 +258,7 @@ export function Dashboard({ initialWeek }: { initialWeek: string }) {
               </div>
               <Breakdown title="Tickets par type" data={data.ticketsByType} />
               <Breakdown
-                title="Tickets par responsable"
+                title="Tickets par assigné (Jira)"
                 data={data.ticketsByAssignee}
               />
               <Breakdown

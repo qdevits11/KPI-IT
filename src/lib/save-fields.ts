@@ -107,7 +107,7 @@ export function describeSaveFields(saveFields?: SaveFields | null): string[] {
     labels.push("hors SLA prise en charge");
   }
   if (bd.type) labels.push("types");
-  if (bd.assignee) labels.push("responsables");
+  if (bd.assignee) labels.push("assignés Jira");
   if (bd.requester) labels.push("demandeurs");
   return labels;
 }
