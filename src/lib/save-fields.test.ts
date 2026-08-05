@@ -41,7 +41,20 @@ describe("describeSaveFields", () => {
       ticketsHorsSlaPriseEnCharge: false,
       demandesNonResoluesHebdo: false,
       ticketsBreakdown: false,
+      ticketsByRequester: false,
     });
     expect(labels).toEqual(["tickets créés", "hors SLA clôture"]);
+  });
+
+  it("inclut la répartition demandeurs", () => {
+    const labels = describeSaveFields({
+      demandesItHebdo: false,
+      ticketsHorsSlaCloture: false,
+      ticketsHorsSlaPriseEnCharge: false,
+      demandesNonResoluesHebdo: false,
+      ticketsBreakdown: false,
+      ticketsByRequester: true,
+    });
+    expect(labels).toEqual(["répartition demandeurs"]);
   });
 });

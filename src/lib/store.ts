@@ -301,12 +301,25 @@ export async function setTicketsBreakdown(
   weekKey: string,
   byType: Record<string, number>,
   byAssignee: Record<string, number>,
-  byRequester: Record<string, number> = {},
+  byRequester?: Record<string, number>,
 ): Promise<void> {
   const db = await ensureDb();
   if (!db.ticketsByRequester) db.ticketsByRequester = {};
   db.ticketsByType[weekKey] = byType;
   db.ticketsByAssignee[weekKey] = byAssignee;
+  if (byRequester !== undefined) {
+    db.ticketsByRequester[weekKey] = byRequester;
+  }
+  await writeDb(db);
+}
+
+/** Met à jour uniquement la ventilation par demandeur (reporter). */
+export async function setTicketsByRequester(
+  weekKey: string,
+  byRequester: Record<string, number>,
+): Promise<void> {
+  const db = await ensureDb();
+  if (!db.ticketsByRequester) db.ticketsByRequester = {};
   db.ticketsByRequester[weekKey] = byRequester;
   await writeDb(db);
 }

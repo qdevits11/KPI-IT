@@ -14,6 +14,7 @@ import {
 import {
   updateWeeklyRow,
   setTicketsBreakdown,
+  setTicketsByRequester,
   currentWeekId,
   ensureWeek,
   getDatabase,
@@ -29,6 +30,30 @@ import {
   pickSavePatch,
   type SaveFields,
 } from "@/lib/save-fields";
+
+async function persistBreakdowns(
+  year: number,
+  week: number,
+  result: {
+    byType: Record<string, number>;
+    byAssignee: Record<string, number>;
+    byRequester: Record<string, number>;
+  },
+  saveFields: SaveFields,
+): Promise<void> {
+  const key = weekKey(year, week);
+  const flags = { ...DEFAULT_SAVE_FIELDS, ...saveFields };
+  if (flags.ticketsBreakdown) {
+    await setTicketsBreakdown(
+      key,
+      result.byType,
+      result.byAssignee,
+      flags.ticketsByRequester ? result.byRequester : undefined,
+    );
+  } else if (flags.ticketsByRequester) {
+    await setTicketsByRequester(key, result.byRequester);
+  }
+}
 
 function excelBaseline(year: number, week: number) {
   const row = (
@@ -319,14 +344,7 @@ export async function POST(request: Request) {
         await ensureWeek(id);
         const toWrite = pickSavePatch(merged.patch, saveFields);
         await updateWeeklyRow(id, toWrite);
-        if (saveFields.ticketsBreakdown !== false) {
-          await setTicketsBreakdown(
-            weekKey(year, week),
-            result.byType,
-            result.byAssignee,
-            result.byRequester,
-          );
-        }
+        await persistBreakdowns(year, week, result, saveFields);
         merged.warnings.push(
           `Enregistré : ${describeSaveFields(saveFields).join(", ")}.`,
         );
@@ -394,14 +412,7 @@ export async function POST(request: Request) {
     if (!dryRun) {
       const toWrite = pickSavePatch(merged.patch, saveFields);
       await updateWeeklyRow(id, toWrite);
-      if (saveFields.ticketsBreakdown !== false) {
-        await setTicketsBreakdown(
-          weekKey(year, week),
-          result.byType,
-          result.byAssignee,
-          result.byRequester,
-        );
-      }
+      await persistBreakdowns(year, week, result, saveFields);
       merged.warnings.push(
         `Enregistré en base : ${describeSaveFields(saveFields).join(", ")}.`,
       );

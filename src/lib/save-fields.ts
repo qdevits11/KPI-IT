@@ -5,7 +5,8 @@ export type SaveFieldKey =
   | "demandesNonResoluesHebdo"
   | "ticketsHorsSlaCloture"
   | "ticketsHorsSlaPriseEnCharge"
-  | "ticketsBreakdown";
+  | "ticketsBreakdown"
+  | "ticketsByRequester";
 
 export type SaveFields = Partial<Record<SaveFieldKey, boolean>>;
 
@@ -15,6 +16,7 @@ export const DEFAULT_SAVE_FIELDS: SaveFields = {
   ticketsHorsSlaCloture: true,
   ticketsHorsSlaPriseEnCharge: true,
   ticketsBreakdown: true,
+  ticketsByRequester: true,
 };
 
 /** Ne garde que les champs cochés pour l’écriture en base. */
@@ -63,6 +65,17 @@ export function describeSaveFields(saveFields?: SaveFields | null): string[] {
     ["ticketsHorsSlaCloture", "hors SLA clôture"],
     ["ticketsHorsSlaPriseEnCharge", "hors SLA prise en charge"],
     ["ticketsBreakdown", "répartition type/assigné"],
+    ["ticketsByRequester", "répartition demandeurs"],
   ];
   return labels.filter(([k]) => flags[k]).map(([, label]) => label);
 }
+
+/** Sync plage : n’écrit que les demandeurs (aucun KPI hebdo). */
+export const REQUESTER_ONLY_SAVE_FIELDS: SaveFields = {
+  demandesItHebdo: false,
+  demandesNonResoluesHebdo: false,
+  ticketsHorsSlaCloture: false,
+  ticketsHorsSlaPriseEnCharge: false,
+  ticketsBreakdown: false,
+  ticketsByRequester: true,
+};

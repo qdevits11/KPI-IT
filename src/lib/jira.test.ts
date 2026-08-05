@@ -118,3 +118,12 @@ describe("mockJiraWeekStats", () => {
     expect(Object.keys(r.byRequester).length).toBeGreaterThan(0);
   });
 });
+
+describe("mockCreatedBreakdown", () => {
+  it("expose les demandeurs sans KPI SLA", async () => {
+    const { mockCreatedBreakdown } = await import("./jira");
+    const r = mockCreatedBreakdown(2026, 12);
+    expect(Object.keys(r.byRequester).length).toBeGreaterThan(0);
+    expect(r.createdCount).toBeGreaterThan(0);
+  });
+});

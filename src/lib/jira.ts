@@ -769,6 +769,99 @@ export function weekKey(year: number, week: number): string {
   return weekId({ year, month: 1, week });
 }
 
+export interface CreatedBreakdownResult {
+  byType: Record<string, number>;
+  byAssignee: Record<string, number>;
+  byRequester: Record<string, number>;
+  createdCount: number;
+  jql: WeekJqlBundle;
+  warnings: string[];
+  sampleCreatedKeys: string[];
+}
+
+/**
+ * Sync légère : uniquement les tickets créés de la semaine
+ * (type / assigné / demandeur). Pas de SLA ni de snapshot open.
+ */
+export async function fetchJiraCreatedBreakdown(
+  year: number,
+  week: number,
+  conn?: JiraConnection | null,
+): Promise<CreatedBreakdownResult> {
+  const connection = conn ?? (await resolveJiraConnection());
+  if (!connection) {
+    throw new Error(
+      "Aucun compte Jira connecté. Connectez-vous depuis la page Sync Jira.",
+    );
+  }
+
+  const jql = buildWeekJql(connection, year, week);
+  const warnings: string[] = [];
+  const createdIssues = await searchAll(
+    connection,
+    jql.created,
+    "created,assignee,reporter,labels,components,issuetype",
+  ).catch((err: Error) => {
+    warnings.push(`Search créés: ${err.message.slice(0, 160)}`);
+    return [] as JiraIssue[];
+  });
+
+  const approx = await countJql(connection, jql.created).catch(() => 0);
+  let createdCount = createdIssues.length;
+  if (createdIssues.length === 0 && approx > 0) {
+    createdCount = approx;
+    warnings.push(
+      `Search/jql a renvoyé 0 issue mais approximate-count = ${approx}. Répartition demandeurs indisponible.`,
+    );
+  } else if (approx > createdIssues.length && createdIssues.length > 0) {
+    createdCount = approx;
+    warnings.push(
+      `Pagination search (${createdIssues.length}) < approximate-count (${approx}).`,
+    );
+  }
+
+  const byType: Record<string, number> = {};
+  const byAssignee: Record<string, number> = {};
+  const byRequester: Record<string, number> = {};
+  for (const issue of createdIssues) {
+    const cat = categoryOf(issue, connection.categoryField);
+    byType[cat] = (byType[cat] ?? 0) + 1;
+    const who = issue.fields.assignee?.displayName ?? "Non assigné";
+    byAssignee[who] = (byAssignee[who] ?? 0) + 1;
+    const requester = issue.fields.reporter?.displayName ?? "Inconnu";
+    byRequester[requester] = (byRequester[requester] ?? 0) + 1;
+  }
+
+  return {
+    byType,
+    byAssignee,
+    byRequester,
+    createdCount,
+    jql,
+    warnings,
+    sampleCreatedKeys: createdIssues
+      .map((i) => i.key)
+      .filter(Boolean)
+      .slice(0, 8),
+  };
+}
+
+export function mockCreatedBreakdown(
+  year: number,
+  week: number,
+): CreatedBreakdownResult {
+  const mock = mockJiraWeekStats(year, week);
+  return {
+    byType: mock.byType,
+    byAssignee: mock.byAssignee,
+    byRequester: mock.byRequester,
+    createdCount: mock.patch.demandesItHebdo ?? 0,
+    jql: mock.jql,
+    warnings: ["Mode démo — demandeurs fictifs"],
+    sampleCreatedKeys: mock.diagnostics.sampleCreatedKeys,
+  };
+}
+
 export async function getJiraConfig(): Promise<JiraConnection | null> {
   return resolveJiraConnection();
 }

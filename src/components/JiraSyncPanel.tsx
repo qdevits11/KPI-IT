@@ -110,7 +110,19 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     ticketsHorsSlaCloture: true,
     ticketsHorsSlaPriseEnCharge: true,
     ticketsBreakdown: true,
+    ticketsByRequester: true,
   });
+  const [reqFrom, setReqFrom] = useState(2);
+  const [reqTo, setReqTo] = useState(31);
+  const [reqProgress, setReqProgress] = useState<{
+    current: number;
+    total: number;
+    weekId: string;
+    ok: number;
+    failed: number;
+    lastError?: string;
+  } | null>(null);
+  const [reqBusy, setReqBusy] = useState(false);
 
   const composedWeekId = `${year}-S${String(week).padStart(2, "0")}`;
 
@@ -299,8 +311,91 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     });
   }
 
+  async function syncRequestersRange(opts: { useMock: boolean }) {
+    const from = Math.min(reqFrom, reqTo);
+    const to = Math.max(reqFrom, reqTo);
+    if (from < 1 || to > 53) {
+      setError("Plage de semaines invalide (1–53).");
+      return;
+    }
+    setError(null);
+    setResult(null);
+    setReqBusy(true);
+    const total = to - from + 1;
+    let ok = 0;
+    let failed = 0;
+    let lastError: string | undefined;
+    setReqProgress({
+      current: 0,
+      total,
+      weekId: `${year}-S${String(from).padStart(2, "0")}`,
+      ok: 0,
+      failed: 0,
+    });
+
+    for (let w = from; w <= to; w++) {
+      const weekIdLabel = `${year}-S${String(w).padStart(2, "0")}`;
+      setReqProgress({
+        current: w - from + 1,
+        total,
+        weekId: weekIdLabel,
+        ok,
+        failed,
+        lastError,
+      });
+      try {
+        const res = await fetch("/api/jira/sync-requesters", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            year,
+            week: w,
+            useMock: opts.useMock,
+            dryRun: false,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.ok) {
+          failed += 1;
+          lastError = `${weekIdLabel}: ${json.error ?? "échec"}`;
+        } else {
+          ok += 1;
+        }
+      } catch (err) {
+        failed += 1;
+        lastError =
+          err instanceof Error
+            ? `${weekIdLabel}: ${err.message}`
+            : `${weekIdLabel}: erreur réseau`;
+      }
+      setReqProgress({
+        current: w - from + 1,
+        total,
+        weekId: weekIdLabel,
+        ok,
+        failed,
+        lastError,
+      });
+    }
+
+    setReqBusy(false);
+    setResult(
+      `Demandeurs S${String(from).padStart(2, "0")}–S${String(to).padStart(2, "0")} : ${ok} OK` +
+        (failed ? `, ${failed} échec(s)` : "") +
+        " — KPI / types / assignés inchangés.",
+    );
+    if (failed && lastError) setError(lastError);
+  }
+
   const weekValid = year >= 2000 && year <= 2100 && week >= 1 && week <= 53;
   const anySaveField = Object.values(saveFields).some(Boolean);
+  const rangeValid =
+    year >= 2000 &&
+    year <= 2100 &&
+    reqFrom >= 1 &&
+    reqFrom <= 53 &&
+    reqTo >= 1 &&
+    reqTo <= 53;
 
   return (
     <div className="space-y-8">
@@ -524,6 +619,13 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
                 setSaveFields((f) => ({ ...f, ticketsBreakdown: v }))
               }
             />
+            <SaveCheck
+              label="Répartition demandeurs"
+              checked={saveFields.ticketsByRequester}
+              onChange={(v) =>
+                setSaveFields((f) => ({ ...f, ticketsByRequester: v }))
+              }
+            />
           </div>
         </fieldset>
 
@@ -644,6 +746,97 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
               <li key={w}>⚠ {w}</li>
             ))}
           </ul>
+        )}
+      </section>
+
+      <section className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
+        <h2 className="font-[family-name:var(--font-display)] text-xl">
+          Importer les demandeurs (plage)
+        </h2>
+        <p className="text-sm text-[var(--muted)]">
+          Remplit uniquement la ventilation <strong>par demandeur</strong>{" "}
+          (reporter Jira) pour chaque semaine de la plage. Les KPI, types et
+          responsables ne sont pas modifiés.
+        </p>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-[var(--muted)]">Année</span>
+            <input
+              type="number"
+              min={2000}
+              max={2100}
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value) || year)}
+              className="w-28 rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-2 outline-none focus:border-[var(--accent)]"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-[var(--muted)]">De la semaine</span>
+            <input
+              type="number"
+              min={1}
+              max={53}
+              value={reqFrom}
+              onChange={(e) => setReqFrom(Number(e.target.value) || reqFrom)}
+              className="w-28 rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-2 outline-none focus:border-[var(--accent)]"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-[var(--muted)]">À la semaine</span>
+            <input
+              type="number"
+              min={1}
+              max={53}
+              value={reqTo}
+              onChange={(e) => setReqTo(Number(e.target.value) || reqTo)}
+              className="w-28 rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-2 outline-none focus:border-[var(--accent)]"
+            />
+          </label>
+          <p className="pb-2 text-sm text-[var(--muted)]">
+            → {year}-S{String(Math.min(reqFrom, reqTo)).padStart(2, "0")} …{" "}
+            {year}-S{String(Math.max(reqFrom, reqTo)).padStart(2, "0")} (
+            {Math.abs(reqTo - reqFrom) + 1} semaines)
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={pending || reqBusy || !connected || !rangeValid}
+            onClick={() => void syncRequestersRange({ useMock: false })}
+            className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {reqBusy
+              ? `Import… ${reqProgress?.current ?? 0}/${reqProgress?.total ?? 0}`
+              : "Importer les demandeurs Jira"}
+          </button>
+          <button
+            type="button"
+            disabled={pending || reqBusy || !rangeValid}
+            onClick={() => void syncRequestersRange({ useMock: true })}
+            className="rounded-md border border-[var(--line)] px-4 py-2 text-sm disabled:opacity-50"
+          >
+            Import démo (fictif)
+          </button>
+        </div>
+
+        {reqProgress && (
+          <div className="space-y-2">
+            <div className="h-2 overflow-hidden rounded bg-[var(--wash)]">
+              <div
+                className="h-full rounded bg-[var(--accent)] transition-all duration-300"
+                style={{
+                  width: `${(reqProgress.current / Math.max(reqProgress.total, 1)) * 100}%`,
+                }}
+              />
+            </div>
+            <p className="text-xs text-[var(--muted)]">
+              {reqProgress.weekId} — {reqProgress.ok} OK
+              {reqProgress.failed ? `, ${reqProgress.failed} échec(s)` : ""}
+              {reqBusy ? "…" : " — terminé"}
+            </p>
+          </div>
         )}
       </section>
 

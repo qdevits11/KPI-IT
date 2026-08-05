@@ -54,6 +54,10 @@ Ouvrir [http://localhost:3000](http://localhost:3000) — semaine 31 (2026) pré
 
 Dans l'UI **Sync Jira** : URL du site + email Atlassian + [API token](https://id.atlassian.com/manage-profile/security/api-tokens).
 
+**Importer les demandeurs (plage)** : remplit uniquement la ventilation par
+demandeur (reporter) pour une plage de semaines (ex. S2→S31), sans modifier
+les KPI / types / responsables.
+
 | KPI | Règle (comme n8n) |
 |-----|-------------------|
 | Demandes IT | `project = CSD AND created >= startOfWeek(-1) AND created < startOfWeek()` |
