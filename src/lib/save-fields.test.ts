@@ -55,7 +55,7 @@ describe("describeSaveFields", () => {
     expect(labels).toEqual(["tickets créés", "hors SLA clôture"]);
   });
 
-  it("sépare responsables, demandeurs et types", () => {
+  it("sépare assignés, demandeurs et types", () => {
     const labels = describeSaveFields({
       demandesItHebdo: false,
       ticketsHorsSlaCloture: false,

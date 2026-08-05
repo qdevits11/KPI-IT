@@ -840,7 +840,7 @@ export async function fetchJiraCreatedBreakdown(
   if (createdIssues.length === 0 && approx > 0) {
     createdCount = approx;
     warnings.push(
-      `Search/jql a renvoyé 0 issue mais approximate-count = ${approx}. Répartition type/responsable/demandeur indisponible.`,
+      `Search/jql a renvoyé 0 issue mais approximate-count = ${approx}. Répartition type/assigné/demandeur indisponible.`,
     );
   } else if (approx > createdIssues.length && createdIssues.length > 0) {
     createdCount = approx;

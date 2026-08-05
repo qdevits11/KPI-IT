@@ -21,11 +21,10 @@ Granularité **hebdomadaire**. Feuille année + journaux de détail :
 **Vue annuelle** (`/vue`) : tableau type Excel (une ligne / semaine) avec filtres par type (SLA, métier, Odoo, phishing, maintenance, ticketing, remarques) et totaux année.
 
 **Responsables d'encodage** (`/configuration`) : liste pour l’encodage manuel
-(automatisations, Odoo, maintenances). **Sans lien** avec les stats tickets :
-là, le « responsable » = **assigné Jira** (`assignee`).
+(automatisations, Odoo, maintenances). **Sans lien** avec les tickets Jira.
 
-**Statistiques** (`/statistiques`) : module d’analyse tickets avec sous-menus —
-par responsable (assigné Jira), par demandeur (reporter), par type de demande.
+**Statistiques** (`/statistiques`) : analyse tickets —
+par **assigné** (champ Jira `assignee`), par demandeur (reporter), par type.
 Classement annuel + graphique + matrice hebdomadaire.
 
 **Encodage manuel** (`/saisie`) :

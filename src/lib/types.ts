@@ -85,7 +85,7 @@ export interface AppDatabase {
   settings: {
     companyName: string;
     jiraConfigured: boolean;
-    /** Personnes autorisées comme responsable à l'encodage. */
+    /** Personnes autorisées comme responsable d'encodage (pas les assignés Jira). */
     responsibles: string[];
   };
 }

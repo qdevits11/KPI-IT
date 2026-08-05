@@ -11,10 +11,10 @@ export const STAT_DIMENSIONS: Record<
   { label: string; description: string; href: string }
 > = {
   assignee: {
-    label: "Par responsable",
+    label: "Par assigné",
     description:
-      "Tickets créés groupés par assigné Jira (champ assignee). Indépendant de la liste Configuration → responsables d’encodage.",
-    href: "/statistiques/par-responsable",
+      "Tickets créés groupés par la personne assignée dans Jira (champ assignee).",
+    href: "/statistiques/par-assigne",
   },
   requester: {
     label: "Par demandeur",

@@ -26,7 +26,7 @@ function parseParts(raw: unknown): BreakdownPart[] {
 }
 
 /**
- * Sync légère ventilations tickets créés (type / responsable / demandeur).
+ * Sync légère ventilations tickets créés (type / assigné / demandeur).
  *
  * Sync une semaine : { year, week, parts?, useMock?, dryRun? }
  * Sync plage : { year, weekFrom, weekTo, parts?, useMock?, dryRun? }

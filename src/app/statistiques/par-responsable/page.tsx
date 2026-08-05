@@ -1,7 +1,8 @@
-import { TicketStatsView } from "@/components/TicketStatsView";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default function StatsParResponsablePage() {
-  return <TicketStatsView dimension="assignee" initialYear={2026} />;
+/** Ancienne URL — redirige vers /statistiques/par-assigne */
+export default function StatsParResponsableRedirect() {
+  redirect("/statistiques/par-assigne");
 }

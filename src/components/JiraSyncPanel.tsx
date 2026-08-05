@@ -395,7 +395,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
 
     if (parts.length === 0) {
       setError(
-        "Cochez au moins une ventilation (responsable, demandeur ou type).",
+        "Cochez au moins une ventilation (assigné, demandeur ou type).",
       );
       return;
     }
@@ -704,7 +704,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         </h2>
         <p className="text-sm text-[var(--muted)]">
           Cochez ce que vous voulez synchroniser ou effacer : KPI et
-          ventilations (responsables, demandeurs, types). Seules les cases
+          ventilations (assignés Jira, demandeurs, types). Seules les cases
           cochées sont touchées.
         </p>
 
@@ -1136,7 +1136,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         )}
 
         {result &&
-          (result.toLowerCase().includes("responsable") ||
+          (result.toLowerCase().includes("assign") ||
             result.toLowerCase().includes("demandeur") ||
             result.toLowerCase().includes("type") ||
             result.toLowerCase().includes("import") ||

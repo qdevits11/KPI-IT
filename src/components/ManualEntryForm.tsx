@@ -629,7 +629,9 @@ function ResponsibleSelect({
 }) {
   return (
     <label className="flex flex-col gap-1.5 text-sm">
-      <span className="font-medium text-[var(--ink-soft)]">Responsable</span>
+      <span className="font-medium text-[var(--ink-soft)]">
+        Responsable d&apos;encodage
+      </span>
       <select
         value={value}
         required
@@ -647,7 +649,7 @@ function ResponsibleSelect({
       </select>
       {options.length === 0 && (
         <span className="text-xs text-[var(--crit)]">
-          Aucun responsable configuré — allez dans Configuration.
+          Aucun responsable d&apos;encodage — allez dans Configuration.
         </span>
       )}
     </label>

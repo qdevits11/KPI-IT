@@ -93,7 +93,7 @@ function fixture(): AppDatabase {
 }
 
 describe("buildTicketStats", () => {
-  it("agrège les volumes par responsable sur l’année", () => {
+  it("agrège les volumes par assigné sur l’année", () => {
     const stats = buildTicketStats(fixture(), 2026, "assignee");
     expect(stats.weeks).toEqual(["2026-S01", "2026-S30", "2026-S31"]);
     expect(stats.grandTotal).toBe(5 + 3 + 7 + 4);
