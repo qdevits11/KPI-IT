@@ -7,6 +7,7 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { AppDatabase } from "./types";
+import { blobConfigured } from "./db-persist";
 
 export const KPI_APP_STATE_ID = "default";
 export const KPI_APP_STATE_TABLE = "kpi_app_state";
@@ -84,4 +85,84 @@ export async function saveDbToSupabase(db: AppDatabase): Promise<boolean> {
     console.warn("Écriture Supabase KPI impossible:", err);
     return false;
   }
+}
+
+export type StorageBackend = "supabase" | "blob" | "disk";
+
+export interface StorageStatus {
+  backend: StorageBackend;
+  ok: boolean;
+  supabaseConfigured: boolean;
+  blobConfigured: boolean;
+  /** Dernière écriture connue dans Supabase (ISO), si joignable. */
+  updatedAt: string | null;
+  weeks: number | null;
+  assigneeWeeks: number | null;
+  requesterWeeks: number | null;
+  error?: string;
+}
+
+/** Diagnostic pour savoir si la prod lit/écrit bien Supabase. */
+export async function getStorageStatus(): Promise<StorageStatus> {
+  const hasSb = supabaseConfigured();
+  const hasBlob = blobConfigured();
+
+  if (hasSb) {
+    const sb = getServiceClient()!;
+    try {
+      const { data, error } = await sb
+        .from(KPI_APP_STATE_TABLE)
+        .select("data, updated_at")
+        .eq("id", KPI_APP_STATE_ID)
+        .maybeSingle();
+      if (error) {
+        return {
+          backend: "supabase",
+          ok: false,
+          supabaseConfigured: true,
+          blobConfigured: hasBlob,
+          updatedAt: null,
+          weeks: null,
+          assigneeWeeks: null,
+          requesterWeeks: null,
+          error: error.message,
+        };
+      }
+      const payload = data?.data as AppDatabase | undefined;
+      return {
+        backend: "supabase",
+        ok: Boolean(data),
+        supabaseConfigured: true,
+        blobConfigured: hasBlob,
+        updatedAt: data?.updated_at ?? null,
+        weeks: payload?.weeks?.length ?? 0,
+        assigneeWeeks: Object.keys(payload?.ticketsByAssignee ?? {}).length,
+        requesterWeeks: Object.keys(payload?.ticketsByRequester ?? {}).length,
+        error: data ? undefined : "Aucune ligne kpi_app_state (seed au prochain write).",
+      };
+    } catch (err) {
+      return {
+        backend: "supabase",
+        ok: false,
+        supabaseConfigured: true,
+        blobConfigured: hasBlob,
+        updatedAt: null,
+        weeks: null,
+        assigneeWeeks: null,
+        requesterWeeks: null,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  return {
+    backend: hasBlob ? "blob" : "disk",
+    ok: true,
+    supabaseConfigured: false,
+    blobConfigured: hasBlob,
+    updatedAt: null,
+    weeks: null,
+    assigneeWeeks: null,
+    requesterWeeks: null,
+  };
 }

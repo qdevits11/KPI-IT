@@ -84,4 +84,27 @@ describe("supabase-db", () => {
       { onConflict: "id" },
     );
   });
+
+  it("rapporte le statut Supabase ok", async () => {
+    const { getStorageStatus } = await import("./supabase-db");
+    fromMock.mockReturnValue({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({
+            data: {
+              data: sampleDb(),
+              updated_at: "2026-08-05T12:00:00.000Z",
+            },
+            error: null,
+          }),
+        }),
+      }),
+    });
+    const status = await getStorageStatus();
+    expect(status).toMatchObject({
+      backend: "supabase",
+      ok: true,
+      requesterWeeks: 1,
+    });
+  });
 });

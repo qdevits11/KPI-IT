@@ -134,20 +134,31 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     lastError?: string;
   } | null>(null);
   const [reqBusy, setReqBusy] = useState(false);
+  const [storage, setStorage] = useState<{
+    backend: "supabase" | "blob" | "disk";
+    ok: boolean;
+    updatedAt: string | null;
+    weeks: number | null;
+    assigneeWeeks: number | null;
+    requesterWeeks: number | null;
+    error?: string;
+  } | null>(null);
 
   const composedWeekId = `${year}-S${String(week).padStart(2, "0")}`;
 
   const loadMeta = useCallback(async () => {
-    const [connectRes, syncRes, kpisRes] = await Promise.all([
+    const [connectRes, syncRes, kpisRes, storageRes] = await Promise.all([
       fetch("/api/jira/connect"),
       fetch(
         `/api/jira/sync?year=${encodeURIComponent(String(year))}&weekNum=${encodeURIComponent(String(week))}`,
       ),
       fetch(`/api/kpis?week=${encodeURIComponent(composedWeekId)}`),
+      fetch("/api/storage"),
     ]);
     const connect = await connectRes.json();
     const sync = await syncRes.json();
     const kpis = await kpisRes.json();
+    const storageJson = await storageRes.json().catch(() => null);
 
     setConnected(Boolean(connect.connected));
     setSource(connect.source);
@@ -156,6 +167,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     setDateRange(sync.dateRange ?? null);
     setWeeks(kpis.weeks);
     setWeekId(composedWeekId);
+    if (storageJson?.backend) setStorage(storageJson);
 
     if (connect.connection) {
       setForm((f) => ({
@@ -581,6 +593,41 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           />
         )}
       </div>
+
+      {storage && (
+        <p
+          className={`rounded-lg border px-4 py-3 text-sm ${
+            storage.backend === "supabase" && storage.ok
+              ? "border-[var(--ok)]/40 bg-[var(--ok)]/10 text-[var(--ink)]"
+              : "border-[var(--warn)]/40 bg-[var(--warn)]/10 text-[var(--ink)]"
+          }`}
+        >
+          {storage.backend === "supabase" && storage.ok ? (
+            <>
+              Persistance : <strong>Supabase</strong>
+              {storage.updatedAt
+                ? ` · maj ${new Date(storage.updatedAt).toLocaleString("fr-BE")}`
+                : ""}
+              {storage.requesterWeeks != null
+                ? ` · ${storage.requesterWeeks} sem. demandeurs`
+                : ""}
+              {storage.assigneeWeeks != null
+                ? ` · ${storage.assigneeWeeks} sem. assignés`
+                : ""}
+            </>
+          ) : storage.backend === "supabase" ? (
+            <>
+              Supabase configuré mais injoignable
+              {storage.error ? ` : ${storage.error}` : "."}
+            </>
+          ) : (
+            <>
+              Persistance : <strong>{storage.backend}</strong> (pas encore
+              Supabase — vérifiez SUPABASE_URL / SERVICE_ROLE_KEY sur Vercel).
+            </>
+          )}
+        </p>
+      )}
 
       <section className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
