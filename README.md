@@ -17,7 +17,7 @@ Tableau de bord des KPI du service IT (Jira + encodage manuel).
 
 | Sous-menu | Route | Contenu |
 |-----------|-------|---------|
-| Vue d’ensemble | `/admin` | Santé stockage, Jira, reset base |
+| Vue d’ensemble | `/admin` | Santé stockage, statut Jira |
 | Personnes & droits | `/admin/personnes` | Accès + responsables d’encodage |
 | Intégration Jira | `/admin/jira` | Credentials, JQL, champs, SLA |
 | Opérations données | `/admin/operations` | Sync semaine, import ventilations |

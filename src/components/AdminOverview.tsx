@@ -19,8 +19,6 @@ export function AdminOverview() {
   const [authLabel, setAuthLabel] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const [resetting, setResetting] = useState(false);
-  const [resetMsg, setResetMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -52,31 +50,6 @@ export function AdminOverview() {
     });
   }, [load]);
 
-  async function resetDatabase() {
-    if (
-      !window.confirm(
-        "Effacer toutes les données KPI (semaines, journaux, ventilations) ?\nCette action est irréversible. La connexion Jira n’est pas touchée.",
-      )
-    ) {
-      return;
-    }
-    setResetting(true);
-    setResetMsg(null);
-    setError(null);
-    try {
-      const res = await fetch("/api/admin/reset", { method: "POST" });
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
-        setError(json.error ?? "Réinitialisation échouée");
-        return;
-      }
-      setResetMsg("Base réinitialisée (vide). Relancez une sync Jira.");
-      await load();
-    } finally {
-      setResetting(false);
-    }
-  }
-
   return (
     <div className="space-y-8">
       <div>
@@ -95,11 +68,6 @@ export function AdminOverview() {
       {error && (
         <p className="rounded-md border border-[var(--crit)]/30 bg-[var(--crit)]/10 px-3 py-2 text-sm text-[var(--crit)]">
           {error}
-        </p>
-      )}
-      {resetMsg && (
-        <p className="rounded-md border border-[var(--ok)]/30 bg-[var(--ok)]/10 px-3 py-2 text-sm text-[var(--ok)]">
-          {resetMsg}
         </p>
       )}
 
@@ -183,24 +151,6 @@ export function AdminOverview() {
             <p className="mt-1 text-xs text-[var(--muted)]">{card.desc}</p>
           </Link>
         ))}
-      </section>
-
-      <section className="rounded-xl border border-[var(--crit)]/30 bg-[var(--surface)] p-5">
-        <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--crit)]">
-          Zone destructive
-        </h2>
-        <p className="mt-2 text-sm text-[var(--muted)]">
-          Remet la base KPI à vide. Les credentials Jira (table séparée) sont
-          conservés.
-        </p>
-        <button
-          type="button"
-          disabled={resetting}
-          onClick={() => void resetDatabase()}
-          className="mt-4 rounded-md border border-[var(--crit)]/40 px-4 py-2 text-sm text-[var(--crit)] disabled:opacity-50"
-        >
-          {resetting ? "Réinitialisation…" : "Réinitialiser la base"}
-        </button>
       </section>
     </div>
   );

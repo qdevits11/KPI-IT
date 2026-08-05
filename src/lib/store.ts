@@ -193,15 +193,6 @@ async function writeDb(db: AppDatabase): Promise<void> {
   }
 }
 
-/** Réinitialise la base (vide) — action admin destructive. */
-export async function resetDatabase(): Promise<AppDatabase> {
-  const empty = createEmptyDatabase();
-  // writeDb incrémente revision ; partir de 0 → revision 1
-  empty.revision = 0;
-  await writeDb(empty);
-  return empty;
-}
-
 export async function getDatabase(): Promise<AppDatabase> {
   return ensureDb();
 }
