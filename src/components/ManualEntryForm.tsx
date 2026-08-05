@@ -5,16 +5,11 @@ import type { LogEvent, PhishingEvent } from "@/lib/types";
 import {
   formatFrDate,
   isoWeekPartsFromDate,
-  mondayOfIsoWeek,
   todayIsoDate,
   weekIdFromDate,
 } from "@/lib/dates";
-import { WeekSelector } from "./WeekSelector";
 
-interface WeekOption {
-  id: string;
-  label: string;
-}
+type EntryKind = "metier" | "odoo" | "maintenance" | "phishing";
 
 type LogAction = "addMetier" | "addOdoo" | "addMaintenance";
 type LogCollection =
@@ -23,22 +18,50 @@ type LogCollection =
   | "maintenances"
   | "phishing";
 
-const EMPTY_LOG = {
-  date: todayIsoDate(),
-  explanation: "",
-  responsible: "",
-};
-
-function defaultDateForWeek(id: string): string {
-  const y = Number(id.slice(0, 4));
-  const w = Number(id.slice(6));
-  if (!Number.isFinite(y) || !Number.isFinite(w)) return todayIsoDate();
-  return mondayOfIsoWeek(y, w);
-}
+const KINDS: Array<{
+  id: EntryKind;
+  label: string;
+  short: string;
+  fields: string;
+  action?: LogAction;
+  collection: LogCollection;
+}> = [
+  {
+    id: "metier",
+    label: "Automatisation métier",
+    short: "Métier",
+    fields: "Date, explication, responsable",
+    action: "addMetier",
+    collection: "automationsMetier",
+  },
+  {
+    id: "odoo",
+    label: "Automatisation Odoo",
+    short: "Odoo",
+    fields: "Date, explication, responsable",
+    action: "addOdoo",
+    collection: "automationsOdoo",
+  },
+  {
+    id: "maintenance",
+    label: "Maintenance production",
+    short: "Maintenance",
+    fields: "Date, explication, responsable",
+    action: "addMaintenance",
+    collection: "maintenances",
+  },
+  {
+    id: "phishing",
+    label: "Test phishing raté",
+    short: "Phishing",
+    fields: "Date, nombre d'échecs",
+    collection: "phishing",
+  },
+];
 
 export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
+  const [kind, setKind] = useState<EntryKind | null>(null);
   const [weekId, setWeekId] = useState(initialWeek);
-  const [weeks, setWeeks] = useState<WeekOption[]>([]);
   const [logs, setLogs] = useState<{
     automationsMetier: LogEvent[];
     automationsOdoo: LogEvent[];
@@ -48,41 +71,27 @@ export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [saving, setSaving] = useState(false);
 
-  const initialDate = defaultDateForWeek(initialWeek);
-  const [metierForm, setMetierForm] = useState({
-    ...EMPTY_LOG,
-    date: initialDate,
-  });
-  const [odooForm, setOdooForm] = useState({ ...EMPTY_LOG, date: initialDate });
-  const [maintForm, setMaintForm] = useState({
-    ...EMPTY_LOG,
-    date: initialDate,
-  });
-  const [phishForm, setPhishForm] = useState({
-    date: initialDate,
-    failures: 0,
-  });
+  const [date, setDate] = useState(todayIsoDate());
+  const [explanation, setExplanation] = useState("");
+  const [responsible, setResponsible] = useState("");
+  const [failures, setFailures] = useState(0);
 
   const load = useCallback(async (id: string) => {
     setError(null);
-    const [entriesRes, kpisRes] = await Promise.all([
-      fetch(`/api/entries?week=${encodeURIComponent(id)}`),
-      fetch(`/api/kpis?week=${encodeURIComponent(id)}`),
-    ]);
-    if (!entriesRes.ok || !kpisRes.ok) {
+    const res = await fetch(`/api/entries?week=${encodeURIComponent(id)}`);
+    if (!res.ok) {
       setError("Chargement impossible");
       return;
     }
-    const entries = await entriesRes.json();
-    const kpis = await kpisRes.json();
+    const entries = await res.json();
     setLogs({
       automationsMetier: entries.automationsMetier,
       automationsOdoo: entries.automationsOdoo,
       phishing: entries.phishing,
       maintenances: entries.maintenances,
     });
-    setWeeks(kpis.weeks);
   }, []);
 
   useEffect(() => {
@@ -91,86 +100,108 @@ export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
     });
   }, [weekId, load]);
 
-  function selectWeek(id: string) {
-    const monday = defaultDateForWeek(id);
-    setWeekId(id);
-    setMetierForm((f) => ({ ...f, date: monday }));
-    setOdooForm((f) => ({ ...f, date: monday }));
-    setMaintForm((f) => ({ ...f, date: monday }));
-    setPhishForm((f) => ({ ...f, date: monday }));
+  function resetFields(keepDate = true) {
+    if (!keepDate) setDate(todayIsoDate());
+    setExplanation("");
+    setResponsible("");
+    setFailures(0);
   }
 
-  async function addLog(action: LogAction, form: typeof EMPTY_LOG) {
-    if (!form.date || !form.explanation.trim() || !form.responsible.trim()) {
+  function selectKind(next: EntryKind) {
+    setKind(next);
+    setMessage(null);
+    setError(null);
+    resetFields(false);
+  }
+
+  function backToChoices() {
+    setKind(null);
+    setMessage(null);
+    setError(null);
+    resetFields(false);
+  }
+
+  async function submitLog(action: LogAction) {
+    if (!date || !explanation.trim() || !responsible.trim()) {
       setError("Date, explication et responsable sont obligatoires.");
       return;
     }
+    setSaving(true);
     setMessage(null);
     setError(null);
-    const parts = isoWeekPartsFromDate(form.date);
-    const res = await fetch("/api/entries", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        weekId: weekIdFromDate(form.date),
-        action,
-        event: {
-          date: form.date,
-          year: parts.year,
-          month: parts.month,
-          week: parts.week,
-          explanation: form.explanation.trim(),
-          responsible: form.responsible.trim(),
-        },
-      }),
-    });
-    if (!res.ok) {
-      setError("Ajout échoué");
-      return;
+    try {
+      const parts = isoWeekPartsFromDate(date);
+      const res = await fetch("/api/entries", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          weekId: weekIdFromDate(date),
+          action,
+          event: {
+            date,
+            year: parts.year,
+            month: parts.month,
+            week: parts.week,
+            explanation: explanation.trim(),
+            responsible: responsible.trim(),
+          },
+        }),
+      });
+      if (!res.ok) {
+        setError("Enregistrement échoué");
+        return;
+      }
+      const targetWeek = weekIdFromDate(date);
+      setWeekId(targetWeek);
+      resetFields(true);
+      setMessage("Enregistré — merci ! Vous pouvez en ajouter un autre.");
+      await load(targetWeek);
+    } finally {
+      setSaving(false);
     }
-    const targetWeek = weekIdFromDate(form.date);
-    selectWeek(targetWeek);
-    setMessage(`Événement ajouté — semaine ${targetWeek}.`);
-    await load(targetWeek);
   }
 
-  async function addPhishing() {
-    if (!phishForm.date) {
+  async function submitPhishing() {
+    if (!date) {
       setError("La date est obligatoire.");
       return;
     }
-    if (phishForm.failures < 0 || !Number.isFinite(phishForm.failures)) {
+    if (failures < 0 || !Number.isFinite(failures)) {
       setError("Nombre d'échecs invalide.");
       return;
     }
+    setSaving(true);
     setMessage(null);
     setError(null);
-    const parts = isoWeekPartsFromDate(phishForm.date);
-    const keptDate = phishForm.date;
-    const res = await fetch("/api/entries", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        weekId: weekIdFromDate(phishForm.date),
-        action: "addPhishing",
-        event: {
-          date: phishForm.date,
-          year: parts.year,
-          month: parts.month,
-          week: parts.week,
-          failures: phishForm.failures,
-        },
-      }),
-    });
-    if (!res.ok) {
-      setError("Ajout échoué");
-      return;
+    try {
+      const parts = isoWeekPartsFromDate(date);
+      const res = await fetch("/api/entries", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          weekId: weekIdFromDate(date),
+          action: "addPhishing",
+          event: {
+            date,
+            year: parts.year,
+            month: parts.month,
+            week: parts.week,
+            failures,
+          },
+        }),
+      });
+      if (!res.ok) {
+        setError("Enregistrement échoué");
+        return;
+      }
+      const targetWeek = weekIdFromDate(date);
+      setWeekId(targetWeek);
+      setFailures(0);
+      setMessage("Test phishing enregistré — merci !");
+      await load(targetWeek);
+    } finally {
+      setSaving(false);
     }
-    const targetWeek = weekIdFromDate(keptDate);
-    selectWeek(targetWeek);
-    setPhishForm({ date: keptDate, failures: 0 });
-    setMessage(`Test phishing enregistré — semaine ${targetWeek}.`);
-    await load(targetWeek);
   }
 
   async function removeEvent(collection: LogCollection, eventId: string) {
@@ -194,237 +225,239 @@ export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
     await load(weekId);
   }
 
+  const active = kind ? KINDS.find((k) => k.id === kind)! : null;
   const weekNum = Number(weekId.slice(6));
   const yearNum = Number(weekId.slice(0, 4));
-  const weekLogs = {
-    metier:
-      logs?.automationsMetier.filter(
+
+  const recentItems = (() => {
+    if (!kind || !logs) return [] as Array<LogEvent | PhishingEvent>;
+    if (kind === "metier") {
+      return logs.automationsMetier.filter(
         (e) => e.year === yearNum && e.week === weekNum,
-      ) ?? [],
-    odoo:
-      logs?.automationsOdoo.filter(
+      );
+    }
+    if (kind === "odoo") {
+      return logs.automationsOdoo.filter(
         (e) => e.year === yearNum && e.week === weekNum,
-      ) ?? [],
-    phish:
-      logs?.phishing.filter(
+      );
+    }
+    if (kind === "maintenance") {
+      return logs.maintenances.filter(
         (e) => e.year === yearNum && e.week === weekNum,
-      ) ?? [],
-    maint:
-      logs?.maintenances.filter(
-        (e) => e.year === yearNum && e.week === weekNum,
-      ) ?? [],
-  };
+      );
+    }
+    return logs.phishing.filter(
+      (e) => e.year === yearNum && e.week === weekNum,
+    );
+  })();
+
+  const busy = pending || saving;
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="font-[family-name:var(--font-display)] text-3xl text-[var(--ink)]">
-            Encodage
-          </h1>
-          <p className="mt-2 max-w-xl text-sm text-[var(--muted)]">
-            Seules ces infos se saisissent à la main : automatisations métiers /
-            Odoo, maintenances prod (date, explication, responsable) et tests
-            phishing ratés (date, nombre d&apos;échecs). Le reste vient de Jira.
-          </p>
-        </div>
-        {weeks.length > 0 && (
-          <WeekSelector weeks={weeks} value={weekId} onChange={selectWeek} />
-        )}
-      </div>
+    <div className="mx-auto max-w-2xl space-y-8">
+      <header className="space-y-2 text-center sm:text-left">
+        <h1 className="font-[family-name:var(--font-display)] text-3xl text-[var(--ink)] sm:text-4xl">
+          Encodage
+        </h1>
+        <p className="text-sm text-[var(--muted)] sm:text-base">
+          {kind
+            ? "Remplissez le formulaire — la semaine est calculée automatiquement."
+            : "Qu’avez-vous fait ? Choisissez le type de tâche à encoder."}
+        </p>
+      </header>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <JournalCard
-          title="Automatisations métiers"
-          hint="Date · explication · responsable"
-          form={metierForm}
-          onChange={setMetierForm}
-          onSubmit={() => addLog("addMetier", metierForm)}
-          pending={pending}
-          items={weekLogs.metier}
-          onDelete={(id) => removeEvent("automationsMetier", id)}
-        />
-        <JournalCard
-          title="Automatisations Odoo"
-          hint="Date · explication · responsable"
-          form={odooForm}
-          onChange={setOdooForm}
-          onSubmit={() => addLog("addOdoo", odooForm)}
-          pending={pending}
-          items={weekLogs.odoo}
-          onDelete={(id) => removeEvent("automationsOdoo", id)}
-        />
-        <JournalCard
-          title="Maintenances production"
-          hint="Date · explication · responsable"
-          form={maintForm}
-          onChange={setMaintForm}
-          onSubmit={() => addLog("addMaintenance", maintForm)}
-          pending={pending}
-          items={weekLogs.maint}
-          onDelete={(id) => removeEvent("maintenances", id)}
-        />
+      {/* Sélecteur / onglets des 4 types */}
+      <nav
+        aria-label="Type d'encodage"
+        className="grid grid-cols-2 gap-3 sm:grid-cols-4"
+      >
+        {KINDS.map((k) => {
+          const selected = kind === k.id;
+          return (
+            <button
+              key={k.id}
+              type="button"
+              onClick={() => selectKind(k.id)}
+              aria-pressed={selected}
+              className={`group rounded-xl border px-3 py-4 text-left transition-all duration-200 sm:px-4 ${
+                selected
+                  ? "border-[var(--accent)] bg-[var(--accent)] text-white shadow-md shadow-teal-900/10"
+                  : "border-[var(--line)] bg-[var(--surface)] text-[var(--ink)] hover:border-[var(--accent)] hover:bg-[var(--wash)]"
+              }`}
+            >
+              <span
+                className={`block font-[family-name:var(--font-display)] text-sm leading-tight sm:text-base ${
+                  selected ? "text-white" : "text-[var(--ink)]"
+                }`}
+              >
+                {k.short}
+              </span>
+              <span
+                className={`mt-1 block text-[11px] leading-snug sm:text-xs ${
+                  selected ? "text-white/80" : "text-[var(--muted)]"
+                }`}
+              >
+                {k.fields}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
 
-        <section className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
-          <div>
-            <h2 className="font-[family-name:var(--font-display)] text-xl text-[var(--ink)]">
-              Tests phishing ratés
-            </h2>
-            <p className="mt-1 text-xs text-[var(--muted)]">
-              Date · nombre d&apos;échecs
-            </p>
+      {!kind && (
+        <p className="text-center text-sm text-[var(--muted)]">
+          Un clic → un formulaire. Idéal juste après une tâche terminée.
+        </p>
+      )}
+
+      {active && (
+        <section
+          className="space-y-5 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7"
+          style={{ animation: "rise-in 0.35s ease both" }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="font-[family-name:var(--font-display)] text-xl text-[var(--ink)] sm:text-2xl">
+                {active.label}
+              </h2>
+              <p className="mt-1 text-sm text-[var(--muted)]">{active.fields}</p>
+            </div>
+            <button
+              type="button"
+              onClick={backToChoices}
+              className="shrink-0 text-sm text-[var(--muted)] underline-offset-2 hover:text-[var(--ink)] hover:underline"
+            >
+              Changer
+            </button>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (active.id === "phishing") {
+                void submitPhishing();
+              } else if (active.action) {
+                void submitLog(active.action);
+              }
+            }}
+          >
             <Field
               label="Date"
               type="date"
-              value={phishForm.date}
-              onChange={(v) => setPhishForm({ ...phishForm, date: v })}
+              value={date}
+              onChange={setDate}
+              autoFocus
             />
-            <Field
-              label="Nombre d'échecs"
-              type="number"
-              value={phishForm.failures}
-              onChange={(v) =>
-                setPhishForm({ ...phishForm, failures: Number(v) || 0 })
-              }
-            />
-          </div>
-          {phishForm.date && (
-            <p className="text-xs text-[var(--muted)]">
-              → semaine {weekIdFromDate(phishForm.date)}
+            {date && (
+              <p className="text-xs text-[var(--muted)]">
+                Semaine {weekIdFromDate(date)}
+              </p>
+            )}
+
+            {active.id === "phishing" ? (
+              <Field
+                label="Nombre d'échecs"
+                type="number"
+                value={failures}
+                onChange={(v) => setFailures(Number(v) || 0)}
+              />
+            ) : (
+              <>
+                <Field
+                  label="Explication"
+                  value={explanation}
+                  onChange={setExplanation}
+                  placeholder="Ex. Flux B2C, redémarrage Smartscans…"
+                />
+                <Field
+                  label="Responsable"
+                  value={responsible}
+                  onChange={setResponsible}
+                  placeholder="Ex. Quentin, Loic, Gary…"
+                />
+              </>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <button
+                type="submit"
+                disabled={busy}
+                className="rounded-md bg-[var(--accent)] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[var(--accent-deep)] disabled:opacity-60"
+              >
+                {busy ? "Enregistrement…" : "Enregistrer"}
+              </button>
+              <button
+                type="button"
+                onClick={backToChoices}
+                className="rounded-md px-3 py-2.5 text-sm text-[var(--muted)] hover:text-[var(--ink)]"
+              >
+                Annuler
+              </button>
+            </div>
+          </form>
+
+          {message && (
+            <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-[var(--ok)]">
+              {message}
             </p>
           )}
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => void addPhishing()}
-            className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-deep)] disabled:opacity-60"
-          >
-            Enregistrer le test
-          </button>
-          <ul className="space-y-1 border-t border-[var(--line)] pt-3 text-sm">
-            {weekLogs.phish.length === 0 && (
-              <li className="text-[var(--muted)]">Aucun test cette semaine</li>
-            )}
-            {weekLogs.phish.map((e) => (
-              <li
-                key={e.id}
-                className="flex items-start justify-between gap-2 text-[var(--ink-soft)]"
-              >
-                <span>
-                  <span className="tabular-nums text-[var(--muted)]">
-                    {e.date ? formatFrDate(e.date) : `S${e.week}`}
-                  </span>
-                  {" — "}
-                  {e.failures} échec{e.failures > 1 ? "s" : ""}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void removeEvent("phishing", e.id)}
-                  className="text-xs text-[var(--crit)] hover:underline"
+          {error && (
+            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-[var(--crit)]">
+              {error}
+            </p>
+          )}
+
+          <div className="border-t border-[var(--line)] pt-4">
+            <h3 className="text-sm font-medium text-[var(--ink)]">
+              Cette semaine ({weekId})
+            </h3>
+            <ul className="mt-2 space-y-2 text-sm">
+              {recentItems.length === 0 && (
+                <li className="text-[var(--muted)]">Aucun encodage pour l’instant</li>
+              )}
+              {recentItems.map((e) => (
+                <li
+                  key={e.id}
+                  className="flex items-start justify-between gap-3 border-l-2 border-[var(--accent)] pl-3 text-[var(--ink-soft)]"
                 >
-                  Supprimer
-                </button>
-              </li>
-            ))}
-          </ul>
+                  <span>
+                    <span className="tabular-nums text-[var(--muted)]">
+                      {"date" in e && e.date
+                        ? formatFrDate(e.date)
+                        : `S${e.week}`}
+                    </span>
+                    {" — "}
+                    {kind === "phishing" ? (
+                      <>
+                        {(e as PhishingEvent).failures} échec
+                        {(e as PhishingEvent).failures > 1 ? "s" : ""}
+                      </>
+                    ) : (
+                      <>
+                        {(e as LogEvent).explanation}{" "}
+                        <span className="text-[var(--muted)]">
+                          ({(e as LogEvent).responsible})
+                        </span>
+                      </>
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void removeEvent(active.collection, e.id)
+                    }
+                    className="shrink-0 text-xs text-[var(--crit)] hover:underline"
+                  >
+                    Supprimer
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         </section>
-      </div>
-
-      {message && <p className="text-sm text-[var(--ok)]">{message}</p>}
-      {error && <p className="text-sm text-[var(--crit)]">{error}</p>}
-    </div>
-  );
-}
-
-function JournalCard({
-  title,
-  hint,
-  form,
-  onChange,
-  onSubmit,
-  pending,
-  items,
-  onDelete,
-}: {
-  title: string;
-  hint: string;
-  form: typeof EMPTY_LOG;
-  onChange: (f: typeof EMPTY_LOG) => void;
-  onSubmit: () => void;
-  pending: boolean;
-  items: LogEvent[];
-  onDelete: (id: string) => void;
-}) {
-  return (
-    <section className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
-      <div>
-        <h2 className="font-[family-name:var(--font-display)] text-xl text-[var(--ink)]">
-          {title}
-        </h2>
-        <p className="mt-1 text-xs text-[var(--muted)]">{hint}</p>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field
-          label="Date"
-          type="date"
-          value={form.date}
-          onChange={(v) => onChange({ ...form, date: v })}
-        />
-        <Field
-          label="Responsable"
-          value={form.responsible}
-          onChange={(v) => onChange({ ...form, responsible: v })}
-        />
-        <Field
-          label="Explication"
-          value={form.explanation}
-          onChange={(v) => onChange({ ...form, explanation: v })}
-          wide
-        />
-      </div>
-      {form.date && (
-        <p className="text-xs text-[var(--muted)]">
-          → semaine {weekIdFromDate(form.date)}
-        </p>
       )}
-      <button
-        type="button"
-        disabled={pending}
-        onClick={onSubmit}
-        className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-deep)] disabled:opacity-60"
-      >
-        Ajouter
-      </button>
-      <ul className="space-y-1 border-t border-[var(--line)] pt-3 text-sm">
-        {items.length === 0 && (
-          <li className="text-[var(--muted)]">Aucun événement cette semaine</li>
-        )}
-        {items.map((e) => (
-          <li
-            key={e.id}
-            className="flex items-start justify-between gap-2 text-[var(--ink-soft)]"
-          >
-            <span>
-              <span className="tabular-nums text-[var(--muted)]">
-                {e.date ? formatFrDate(e.date) : `S${e.week}`}
-              </span>
-              {" — "}
-              {e.explanation}{" "}
-              <span className="text-[var(--muted)]">({e.responsible})</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => onDelete(e.id)}
-              className="shrink-0 text-xs text-[var(--crit)] hover:underline"
-            >
-              Supprimer
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
+    </div>
   );
 }
 
@@ -433,26 +466,28 @@ function Field({
   value,
   onChange,
   type = "text",
-  wide,
+  placeholder,
+  autoFocus,
 }: {
   label: string;
   value: string | number;
   onChange: (v: string) => void;
   type?: "text" | "number" | "date";
-  wide?: boolean;
+  placeholder?: string;
+  autoFocus?: boolean;
 }) {
   return (
-    <label
-      className={`flex flex-col gap-1 text-sm ${wide ? "sm:col-span-2" : ""}`}
-    >
-      <span className="text-[var(--muted)]">{label}</span>
+    <label className="flex flex-col gap-1.5 text-sm">
+      <span className="font-medium text-[var(--ink-soft)]">{label}</span>
       <input
         type={type}
         value={value}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
         onChange={(e) => onChange(e.target.value)}
         min={type === "number" ? 0 : undefined}
         required
-        className="rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-2 text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+        className="rounded-lg border border-[var(--line)] bg-[var(--paper)] px-3 py-2.5 text-base text-[var(--ink)] outline-none transition-colors focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
       />
     </label>
   );
