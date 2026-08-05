@@ -13,11 +13,11 @@ import {
 } from "@/lib/jira-auth";
 import {
   updateWeeklyRow,
-  setTicketsBreakdown,
-  setTicketsByRequester,
   currentWeekId,
   ensureWeek,
   getDatabase,
+  patchTicketsBreakdown,
+  clearTicketsBreakdown,
 } from "@/lib/store";
 import { buildWeekDashboard } from "@/lib/formulas";
 import { weekId, parseWeekId } from "@/lib/types";
@@ -25,9 +25,10 @@ import excelSeed from "@/data/seed-from-excel.json";
 import { isIsoWeekCompleted } from "@/lib/open-snapshot";
 import type { WeeklyRow } from "@/lib/types";
 import {
-  DEFAULT_SAVE_FIELDS,
   describeSaveFields,
+  pickClearKpiPatch,
   pickSavePatch,
+  resolveBreakdownFlags,
   type SaveFields,
 } from "@/lib/save-fields";
 
@@ -42,16 +43,17 @@ async function persistBreakdowns(
   saveFields: SaveFields,
 ): Promise<void> {
   const key = weekKey(year, week);
-  const flags = { ...DEFAULT_SAVE_FIELDS, ...saveFields };
-  if (flags.ticketsBreakdown) {
-    await setTicketsBreakdown(
-      key,
-      result.byType,
-      result.byAssignee,
-      flags.ticketsByRequester ? result.byRequester : undefined,
-    );
-  } else if (flags.ticketsByRequester) {
-    await setTicketsByRequester(key, result.byRequester);
+  const bd = resolveBreakdownFlags(saveFields);
+  const patch: {
+    byType?: Record<string, number>;
+    byAssignee?: Record<string, number>;
+    byRequester?: Record<string, number>;
+  } = {};
+  if (bd.type) patch.byType = result.byType;
+  if (bd.assignee) patch.byAssignee = result.byAssignee;
+  if (bd.requester) patch.byRequester = result.byRequester;
+  if (Object.keys(patch).length > 0) {
+    await patchTicketsBreakdown(key, patch);
   }
 }
 
@@ -241,6 +243,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
+    action?: string;
     weekId?: string;
     year?: number;
     week?: number;
@@ -254,6 +257,11 @@ export async function POST(request: Request) {
       ticketsHorsSlaCloture?: number;
       ticketsHorsSlaPriseEnCharge?: number;
     };
+    applyBreakdowns?: {
+      byType?: Record<string, number>;
+      byAssignee?: Record<string, number>;
+      byRequester?: Record<string, number>;
+    };
   };
 
   const target = resolveTargetWeek(body);
@@ -265,12 +273,70 @@ export async function POST(request: Request) {
   const dryRun = Boolean(body.dryRun);
   const forceOpenLive = Boolean(body.forceOpenLive);
   const saveFields: SaveFields = {
-    ...DEFAULT_SAVE_FIELDS,
-    ...(body.saveFields ?? {}),
+    ...body.saveFields,
+  };
+  // Defaults only for missing keys — allow explicit false
+  const mergedFields: SaveFields = {
+    demandesItHebdo: saveFields.demandesItHebdo ?? true,
+    demandesNonResoluesHebdo: saveFields.demandesNonResoluesHebdo ?? false,
+    ticketsHorsSlaCloture: saveFields.ticketsHorsSlaCloture ?? true,
+    ticketsHorsSlaPriseEnCharge: saveFields.ticketsHorsSlaPriseEnCharge ?? true,
+    ticketsByType: saveFields.ticketsByType ?? saveFields.ticketsBreakdown ?? true,
+    ticketsByAssignee:
+      saveFields.ticketsByAssignee ?? saveFields.ticketsBreakdown ?? true,
+    ticketsByRequester: saveFields.ticketsByRequester ?? true,
   };
   const conn = await resolveJiraConnection();
 
   try {
+    if (body.action === "clear") {
+      await ensureWeek(id);
+      const cleared: string[] = [];
+      const kpiPatch = pickClearKpiPatch(mergedFields);
+      const kpiKeys = Object.keys(kpiPatch).filter((k) => k !== "jiraSyncedAt");
+      if (kpiKeys.length > 0) {
+        await updateWeeklyRow(id, kpiPatch);
+        cleared.push(...describeSaveFields(mergedFields).filter((l) =>
+          ["tickets créés", "non résolus", "hors SLA clôture", "hors SLA prise en charge"].includes(l),
+        ));
+      }
+      const bd = resolveBreakdownFlags(mergedFields);
+      const parts = (
+        [
+          bd.type ? "type" : null,
+          bd.assignee ? "assignee" : null,
+          bd.requester ? "requester" : null,
+        ] as const
+      ).filter((p): p is "type" | "assignee" | "requester" => p != null);
+      if (parts.length > 0) {
+        await clearTicketsBreakdown({
+          year,
+          weekFrom: week,
+          weekTo: week,
+          parts,
+        });
+        if (bd.type) cleared.push("types");
+        if (bd.assignee) cleared.push("responsables");
+        if (bd.requester) cleared.push("demandeurs");
+      }
+      const db = await getDatabase();
+      const row = db.weeks.find((w) => weekId(w) === id)!;
+      return NextResponse.json({
+        ok: true,
+        mode: "clear",
+        weekId: id,
+        year,
+        week,
+        cleared,
+        dashboard: buildWeekDashboard(db, row),
+        warnings: [
+          cleared.length
+            ? `Effacé pour ${id} : ${cleared.join(", ")}.`
+            : "Aucune case cochée — rien à effacer.",
+        ],
+      });
+    }
+
     // Appliquer les valeurs du dernier test (sans re-fetch Jira)
     if (!dryRun && body.applyValues && !body.useMock) {
       await ensureWeek(id);
@@ -282,41 +348,48 @@ export async function POST(request: Request) {
         jiraSyncedAt: new Date().toISOString(),
       };
 
-      if (saveFields.demandesNonResoluesHebdo) {
-        const policy = applyOpenSnapshotPolicy(
+      const policy = applyOpenSnapshotPolicy(
+        year,
+        week,
+        patch,
+        existing,
+        forceOpenLive || Boolean(mergedFields.demandesNonResoluesHebdo),
+      );
+      patch = policy.patch;
+
+      const toWrite = pickSavePatch(patch, mergedFields);
+      await updateWeeklyRow(id, toWrite);
+      if (body.applyBreakdowns) {
+        await persistBreakdowns(
           year,
           week,
-          patch,
-          existing,
-          forceOpenLive || true,
+          {
+            byType: body.applyBreakdowns.byType ?? {},
+            byAssignee: body.applyBreakdowns.byAssignee ?? {},
+            byRequester: body.applyBreakdowns.byRequester ?? {},
+          },
+          mergedFields,
         );
-        patch = { ...patch, ...policy.patch };
       }
-
-      const toWrite = pickSavePatch(patch, saveFields);
-      await updateWeeklyRow(id, toWrite);
+      const saved = describeSaveFields(mergedFields);
 
       const db = await getDatabase();
       const row = db.weeks.find((w) => weekId(w) === id)!;
-      const saved = describeSaveFields(saveFields);
-
       return NextResponse.json({
         ok: true,
         mode: "apply",
         dryRun: false,
+        openMode: policy.openMode,
         weekId: id,
         year,
         week,
+        values: body.applyValues,
+        breakdowns: body.applyBreakdowns ?? null,
         savedFields: saved,
-        values: {
-          demandesItHebdo: row.demandesItHebdo ?? 0,
-          demandesNonResoluesHebdo: row.demandesNonResoluesHebdo ?? 0,
-          ticketsHorsSlaCloture: row.ticketsHorsSlaCloture ?? 0,
-          ticketsHorsSlaPriseEnCharge: row.ticketsHorsSlaPriseEnCharge ?? 0,
-        },
         excelBaseline: excelBaseline(year, week),
         dashboard: buildWeekDashboard(db, row),
         warnings: [
+          ...policy.warnings,
           `Base mise à jour pour ${id} : ${saved.join(", ") || "(aucun champ)"}.`,
         ],
       });
@@ -331,7 +404,7 @@ export async function POST(request: Request) {
         week,
         result.patch,
         existing,
-        forceOpenLive || Boolean(saveFields.demandesNonResoluesHebdo),
+        forceOpenLive || Boolean(mergedFields.demandesNonResoluesHebdo),
       );
       const merged = {
         ...result,
@@ -339,14 +412,19 @@ export async function POST(request: Request) {
         warnings: [...result.warnings, ...policy.warnings],
       };
       const values = valuesFromPatch({ ...merged, patch: result.patch });
+      const breakdowns = {
+        byType: result.byType,
+        byAssignee: result.byAssignee,
+        byRequester: result.byRequester,
+      };
 
       if (!dryRun) {
         await ensureWeek(id);
-        const toWrite = pickSavePatch(merged.patch, saveFields);
+        const toWrite = pickSavePatch(merged.patch, mergedFields);
         await updateWeeklyRow(id, toWrite);
-        await persistBreakdowns(year, week, result, saveFields);
+        await persistBreakdowns(year, week, result, mergedFields);
         merged.warnings.push(
-          `Enregistré : ${describeSaveFields(saveFields).join(", ")}.`,
+          `Enregistré : ${describeSaveFields(mergedFields).join(", ")}.`,
         );
       }
 
@@ -369,7 +447,8 @@ export async function POST(request: Request) {
         year,
         week,
         values,
-        savedFields: dryRun ? [] : describeSaveFields(saveFields),
+        breakdowns,
+        savedFields: dryRun ? [] : describeSaveFields(mergedFields),
         excelBaseline: excelBaseline(year, week),
         dashboard: dryRun ? null : buildWeekDashboard(db, row),
         jql: result.jql,
@@ -399,22 +478,26 @@ export async function POST(request: Request) {
       week,
       result.patch,
       existing,
-      forceOpenLive || Boolean(saveFields.demandesNonResoluesHebdo),
+      forceOpenLive || Boolean(mergedFields.demandesNonResoluesHebdo),
     );
     const merged = {
       ...result,
       patch: policy.patch,
       warnings: [...result.warnings, ...policy.warnings],
     };
-    // Afficher toujours les valeurs Jira live calculées
     const values = valuesFromPatch({ ...merged, patch: result.patch });
+    const breakdowns = {
+      byType: result.byType,
+      byAssignee: result.byAssignee,
+      byRequester: result.byRequester,
+    };
 
     if (!dryRun) {
-      const toWrite = pickSavePatch(merged.patch, saveFields);
+      const toWrite = pickSavePatch(merged.patch, mergedFields);
       await updateWeeklyRow(id, toWrite);
-      await persistBreakdowns(year, week, result, saveFields);
+      await persistBreakdowns(year, week, result, mergedFields);
       merged.warnings.push(
-        `Enregistré en base : ${describeSaveFields(saveFields).join(", ")}.`,
+        `Enregistré en base : ${describeSaveFields(mergedFields).join(", ")}.`,
       );
     }
 
@@ -437,21 +520,22 @@ export async function POST(request: Request) {
       year,
       week,
       values,
-      savedFields: dryRun ? [] : describeSaveFields(saveFields),
+      breakdowns,
+      savedFields: dryRun ? [] : describeSaveFields(mergedFields),
       excelBaseline: excelBaseline(year, week),
       dashboard: dryRun ? null : buildWeekDashboard(db, row),
       jql: result.jql,
       warnings: merged.warnings,
       probe: result.probe,
-      diagnostics: {
-        ...result.diagnostics,
-        openCountLive: result.diagnostics.openCount,
-        openCountStored: row.demandesNonResoluesHebdo ?? 0,
-      },
+      diagnostics: result.diagnostics,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Erreur Jira";
-    return NextResponse.json({ ok: false, error: message }, { status: 502 });
+    return NextResponse.json(
+      {
+        ok: false,
+        error: err instanceof Error ? err.message : "Erreur sync Jira",
+      },
+      { status: 500 },
+    );
   }
 }
-

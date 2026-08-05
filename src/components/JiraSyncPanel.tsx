@@ -109,9 +109,15 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     demandesNonResoluesHebdo: false,
     ticketsHorsSlaCloture: true,
     ticketsHorsSlaPriseEnCharge: true,
-    ticketsBreakdown: true,
+    ticketsByType: true,
+    ticketsByAssignee: true,
     ticketsByRequester: true,
   });
+  const [breakdowns, setBreakdowns] = useState<{
+    byType: Record<string, number>;
+    byAssignee: Record<string, number>;
+    byRequester: Record<string, number>;
+  } | null>(null);
   const [reqFrom, setReqFrom] = useState(2);
   const [reqTo, setReqTo] = useState(31);
   const [importParts, setImportParts] = useState({
@@ -223,6 +229,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     setProbe(null);
     setValues(null);
     setExcelBaseline(null);
+    setBreakdowns(null);
     setSaved(false);
     setLastMode(null);
 
@@ -256,6 +263,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
       setProbe(json.probe ?? null);
       setDiagnostics(json.diagnostics ?? null);
       setValues(json.values ?? null);
+      setBreakdowns(json.breakdowns ?? null);
       setExcelBaseline(json.excelBaseline ?? null);
       setLastMode(json.mode);
       setSaved(!json.dryRun);
@@ -268,8 +276,11 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           : json.dryRun
             ? " (non enregistré)"
             : "";
+      const bdHint = json.breakdowns
+        ? ` · ${Object.keys(json.breakdowns.byAssignee ?? {}).length} resp., ${Object.keys(json.breakdowns.byRequester ?? {}).length} dem.`
+        : "";
       setResult(
-        `${label} ${json.mode} OK — ${json.year}-S${String(json.week).padStart(2, "0")}${saved}`,
+        `${label} ${json.mode} OK — ${json.year}-S${String(json.week).padStart(2, "0")}${saved}${bdHint}`,
       );
 
       if (!json.dryRun) {
@@ -297,6 +308,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           saveFields,
           forceOpenLive: saveFields.demandesNonResoluesHebdo,
           applyValues: values,
+          applyBreakdowns: breakdowns ?? undefined,
         }),
       });
       const json = await res.json();
@@ -305,6 +317,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         return;
       }
       setValues(json.values ?? values);
+      setBreakdowns(json.breakdowns ?? breakdowns);
       setExcelBaseline(json.excelBaseline ?? excelBaseline);
       setWarnings(json.warnings ?? []);
       setSaved(true);
@@ -313,6 +326,55 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         `Base mise à jour — ${json.weekId} : ${(json.savedFields ?? []).join(", ") || "aucun champ"}`,
       );
       await loadMeta();
+    });
+  }
+
+  function clearSelectionForWeek() {
+    if (
+      !window.confirm(
+        `Effacer les cases cochées pour ${composedWeekId} ?\nLes autres données de la semaine resteront intactes.`,
+      )
+    ) {
+      return;
+    }
+    setResult(null);
+    setError(null);
+    setWarnings([]);
+    startTransition(async () => {
+      const res = await fetch("/api/jira/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "clear",
+          year,
+          week,
+          saveFields,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setError(json.error ?? "Effacement échoué");
+        return;
+      }
+      setWarnings(json.warnings ?? []);
+      setSaved(false);
+      setLastMode("clear");
+      setResult(
+        `Effacé — ${json.weekId} : ${(json.cleared ?? []).join(", ") || "rien"}`,
+      );
+      await loadMeta();
+    });
+  }
+
+  function setAllSaveFields(value: boolean) {
+    setSaveFields({
+      demandesItHebdo: value,
+      demandesNonResoluesHebdo: value,
+      ticketsHorsSlaCloture: value,
+      ticketsHorsSlaPriseEnCharge: value,
+      ticketsByType: value,
+      ticketsByAssignee: value,
+      ticketsByRequester: value,
     });
   }
 
@@ -641,8 +703,9 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           Tester une semaine
         </h2>
         <p className="text-sm text-[var(--muted)]">
-          Choisissez l’année / semaine, testez, puis cochez uniquement les KPI
-          à écrire en base (les autres restent inchangés).
+          Cochez ce que vous voulez synchroniser ou effacer : KPI et
+          ventilations (responsables, demandeurs, types). Seules les cases
+          cochées sont touchées.
         </p>
 
         <div className="flex flex-wrap items-end gap-3">
@@ -679,10 +742,29 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           </p>
         </div>
 
-        <fieldset className="space-y-2 rounded-lg border border-[var(--line)] bg-[var(--wash)] p-3">
+        <fieldset className="space-y-3 rounded-lg border border-[var(--line)] bg-[var(--wash)] p-3">
           <legend className="px-1 text-xs uppercase tracking-wider text-[var(--muted)]">
-            Enregistrer en base
+            Sélection
           </legend>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setAllSaveFields(true)}
+              className="rounded border border-[var(--line)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--ink-soft)] hover:bg-[var(--paper)]"
+            >
+              Tout cocher
+            </button>
+            <button
+              type="button"
+              onClick={() => setAllSaveFields(false)}
+              className="rounded border border-[var(--line)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--ink-soft)] hover:bg-[var(--paper)]"
+            >
+              Tout décocher
+            </button>
+          </div>
+          <p className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--muted)]">
+            KPI hebdo
+          </p>
           <div className="grid gap-2 sm:grid-cols-2">
             <SaveCheck
               label="Tickets créés"
@@ -712,18 +794,30 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
                 setSaveFields((f) => ({ ...f, demandesNonResoluesHebdo: v }))
               }
             />
+          </div>
+          <p className="pt-1 text-xs font-medium uppercase tracking-[0.12em] text-[var(--muted)]">
+            Ventilations tickets
+          </p>
+          <div className="grid gap-2 sm:grid-cols-3">
             <SaveCheck
-              label="Répartition type / assigné"
-              checked={saveFields.ticketsBreakdown}
+              label="Responsables"
+              checked={saveFields.ticketsByAssignee}
               onChange={(v) =>
-                setSaveFields((f) => ({ ...f, ticketsBreakdown: v }))
+                setSaveFields((f) => ({ ...f, ticketsByAssignee: v }))
               }
             />
             <SaveCheck
-              label="Répartition demandeurs"
+              label="Demandeurs"
               checked={saveFields.ticketsByRequester}
               onChange={(v) =>
                 setSaveFields((f) => ({ ...f, ticketsByRequester: v }))
+              }
+            />
+            <SaveCheck
+              label="Types de demande"
+              checked={saveFields.ticketsByType}
+              onChange={(v) =>
+                setSaveFields((f) => ({ ...f, ticketsByType: v }))
               }
             />
           </div>
@@ -734,9 +828,17 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
             type="button"
             disabled={pending || !connected || !weekValid}
             onClick={() => runQuery({ dryRun: true, useMock: false })}
+            className="rounded-md border border-[var(--line)] px-4 py-2 text-sm disabled:opacity-50"
+          >
+            {pending ? "Calcul…" : "Tester (sans enregistrer)"}
+          </button>
+          <button
+            type="button"
+            disabled={pending || !connected || !weekValid || !anySaveField}
+            onClick={() => runQuery({ dryRun: false, useMock: false })}
             className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
-            {pending ? "Calcul…" : "Tester cette semaine"}
+            Synchroniser la sélection
           </button>
           <button
             type="button"
@@ -746,15 +848,15 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
             onClick={() => applySelectionToDb()}
             className="rounded-md border border-[var(--line)] px-4 py-2 text-sm disabled:opacity-50"
           >
-            Appliquer la sélection à la base
+            Appliquer le dernier test
           </button>
           <button
             type="button"
-            disabled={pending || !connected || !weekValid || !anySaveField}
-            onClick={() => runQuery({ dryRun: false, useMock: false })}
-            className="rounded-md border border-[var(--line)] px-4 py-2 text-sm disabled:opacity-50"
+            disabled={pending || !weekValid || !anySaveField}
+            onClick={() => clearSelectionForWeek()}
+            className="rounded-md border border-[var(--crit)]/40 px-4 py-2 text-sm text-[var(--crit)] disabled:opacity-50"
           >
-            Re-fetch Jira + enregistrer
+            Effacer la sélection
           </button>
           <button
             type="button"
@@ -795,6 +897,53 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
               hint="> 24h ouvrées (Bruxelles)"
               baseline={excelBaseline?.ticketsHorsSlaPriseEnCharge}
             />
+          </div>
+        )}
+
+        {breakdowns && (
+          <div className="grid gap-3 text-sm sm:grid-cols-3">
+            <div className="rounded-lg border border-[var(--line)] bg-[var(--paper)]/60 p-3">
+              <p className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
+                Responsables
+              </p>
+              <p className="mt-1 text-[var(--ink-soft)]">
+                {Object.keys(breakdowns.byAssignee).length
+                  ? Object.entries(breakdowns.byAssignee)
+                      .sort((a, b) => b[1] - a[1])
+                      .slice(0, 4)
+                      .map(([n, c]) => `${n} (${c})`)
+                      .join(" · ")
+                  : "—"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--line)] bg-[var(--paper)]/60 p-3">
+              <p className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
+                Demandeurs
+              </p>
+              <p className="mt-1 text-[var(--ink-soft)]">
+                {Object.keys(breakdowns.byRequester).length
+                  ? Object.entries(breakdowns.byRequester)
+                      .sort((a, b) => b[1] - a[1])
+                      .slice(0, 4)
+                      .map(([n, c]) => `${n} (${c})`)
+                      .join(" · ")
+                  : "—"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--line)] bg-[var(--paper)]/60 p-3">
+              <p className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
+                Types
+              </p>
+              <p className="mt-1 text-[var(--ink-soft)]">
+                {Object.keys(breakdowns.byType).length
+                  ? Object.entries(breakdowns.byType)
+                      .sort((a, b) => b[1] - a[1])
+                      .slice(0, 4)
+                      .map(([n, c]) => `${n} (${c})`)
+                      .join(" · ")
+                  : "—"}
+              </p>
+            </div>
           </div>
         )}
 

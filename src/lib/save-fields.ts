@@ -5,8 +5,11 @@ export type SaveFieldKey =
   | "demandesNonResoluesHebdo"
   | "ticketsHorsSlaCloture"
   | "ticketsHorsSlaPriseEnCharge"
-  | "ticketsBreakdown"
-  | "ticketsByRequester";
+  | "ticketsByType"
+  | "ticketsByAssignee"
+  | "ticketsByRequester"
+  /** @deprecated utiliser ticketsByType + ticketsByAssignee */
+  | "ticketsBreakdown";
 
 export type SaveFields = Partial<Record<SaveFieldKey, boolean>>;
 
@@ -15,11 +18,27 @@ export const DEFAULT_SAVE_FIELDS: SaveFields = {
   demandesNonResoluesHebdo: false,
   ticketsHorsSlaCloture: true,
   ticketsHorsSlaPriseEnCharge: true,
-  ticketsBreakdown: true,
+  ticketsByType: true,
+  ticketsByAssignee: true,
   ticketsByRequester: true,
 };
 
-/** Ne garde que les champs cochés pour l’écriture en base. */
+/** Résout les flags ventilations (gère l’ancien ticketsBreakdown). */
+export function resolveBreakdownFlags(saveFields?: SaveFields | null): {
+  type: boolean;
+  assignee: boolean;
+  requester: boolean;
+} {
+  const flags = { ...DEFAULT_SAVE_FIELDS, ...(saveFields ?? {}) };
+  const legacy = flags.ticketsBreakdown;
+  return {
+    type: flags.ticketsByType ?? legacy ?? true,
+    assignee: flags.ticketsByAssignee ?? legacy ?? true,
+    requester: flags.ticketsByRequester ?? true,
+  };
+}
+
+/** Ne garde que les champs KPI cochés pour l’écriture en base. */
 export function pickSavePatch(
   full: Partial<WeeklyRow>,
   saveFields?: SaveFields | null,
@@ -57,25 +76,52 @@ export function pickSavePatch(
   return patch;
 }
 
-export function describeSaveFields(saveFields?: SaveFields | null): string[] {
+/** Remet à null les KPI cochés (effacement). */
+export function pickClearKpiPatch(
+  saveFields?: SaveFields | null,
+): Partial<WeeklyRow> {
   const flags = { ...DEFAULT_SAVE_FIELDS, ...(saveFields ?? {}) };
-  const labels: Array<[SaveFieldKey, string]> = [
-    ["demandesItHebdo", "tickets créés"],
-    ["demandesNonResoluesHebdo", "non résolus"],
-    ["ticketsHorsSlaCloture", "hors SLA clôture"],
-    ["ticketsHorsSlaPriseEnCharge", "hors SLA prise en charge"],
-    ["ticketsBreakdown", "répartition type/assigné"],
-    ["ticketsByRequester", "répartition demandeurs"],
-  ];
-  return labels.filter(([k]) => flags[k]).map(([, label]) => label);
+  const patch: Partial<WeeklyRow> = {
+    jiraSyncedAt: new Date().toISOString(),
+  };
+  if (flags.demandesItHebdo) patch.demandesItHebdo = null;
+  if (flags.demandesNonResoluesHebdo) {
+    patch.demandesNonResoluesHebdo = null;
+    patch.openFrozenAt = null;
+  }
+  if (flags.ticketsHorsSlaCloture) patch.ticketsHorsSlaCloture = null;
+  if (flags.ticketsHorsSlaPriseEnCharge) {
+    patch.ticketsHorsSlaPriseEnCharge = null;
+  }
+  return patch;
 }
 
-/** Sync plage : n’écrit que les demandeurs (aucun KPI hebdo). */
-export const REQUESTER_ONLY_SAVE_FIELDS: SaveFields = {
-  demandesItHebdo: false,
-  demandesNonResoluesHebdo: false,
-  ticketsHorsSlaCloture: false,
-  ticketsHorsSlaPriseEnCharge: false,
-  ticketsBreakdown: false,
-  ticketsByRequester: true,
-};
+export function describeSaveFields(saveFields?: SaveFields | null): string[] {
+  const flags = { ...DEFAULT_SAVE_FIELDS, ...(saveFields ?? {}) };
+  const bd = resolveBreakdownFlags(flags);
+  const labels: string[] = [];
+  if (flags.demandesItHebdo) labels.push("tickets créés");
+  if (flags.demandesNonResoluesHebdo) labels.push("non résolus");
+  if (flags.ticketsHorsSlaCloture) labels.push("hors SLA clôture");
+  if (flags.ticketsHorsSlaPriseEnCharge) {
+    labels.push("hors SLA prise en charge");
+  }
+  if (bd.type) labels.push("types");
+  if (bd.assignee) labels.push("responsables");
+  if (bd.requester) labels.push("demandeurs");
+  return labels;
+}
+
+export function anySaveFieldSelected(saveFields?: SaveFields | null): boolean {
+  const flags = { ...DEFAULT_SAVE_FIELDS, ...(saveFields ?? {}) };
+  const bd = resolveBreakdownFlags(flags);
+  return Boolean(
+    flags.demandesItHebdo ||
+      flags.demandesNonResoluesHebdo ||
+      flags.ticketsHorsSlaCloture ||
+      flags.ticketsHorsSlaPriseEnCharge ||
+      bd.type ||
+      bd.assignee ||
+      bd.requester,
+  );
+}
