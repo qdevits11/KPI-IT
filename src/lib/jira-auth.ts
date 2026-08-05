@@ -1,7 +1,15 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
 import { cookies } from "next/headers";
+import {
+  clearJiraCipherFromSupabase,
+  loadJiraCipherFromSupabase,
+  saveJiraCipherToSupabase,
+  supabaseConfigured,
+} from "./supabase-db";
 
 export const JIRA_COOKIE = "kpi_jira_session";
+
+export type JiraConnectionSource = "supabase" | "cookie" | "env";
 
 export interface JiraConnection {
   baseUrl: string;
@@ -170,33 +178,72 @@ export function normalizeCustomFieldId(raw: string): string {
   return v;
 }
 
+async function readCookieCipher(): Promise<string | null> {
+  try {
+    const jar = await cookies();
+    return jar.get(JIRA_COOKIE)?.value ?? null;
+  } catch {
+    // Hors contexte requête (cron, scripts)
+    return null;
+  }
+}
+
+async function writeCookieCipher(cipher: string): Promise<void> {
+  try {
+    const jar = await cookies();
+    jar.set(JIRA_COOKIE, cipher, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 90,
+    });
+  } catch {
+    // ignore
+  }
+}
+
+async function clearCookieCipher(): Promise<void> {
+  try {
+    const jar = await cookies();
+    jar.delete(JIRA_COOKIE);
+  } catch {
+    // ignore
+  }
+}
+
+/** Compte stocké côté navigateur (ancien mode mono-appareil). */
 export async function readJiraConnection(): Promise<JiraConnection | null> {
-  const jar = await cookies();
-  const raw = jar.get(JIRA_COOKIE)?.value;
+  const raw = await readCookieCipher();
   if (!raw) return null;
   return decryptConnection(raw);
 }
 
+/**
+ * Persiste email + token (chiffrés) dans Supabase pour partage multi-appareils.
+ * Cookie local conservé en cache ; sans Supabase → cookie seul (dev).
+ */
 export async function writeJiraConnection(conn: JiraConnection): Promise<void> {
-  const jar = await cookies();
-  jar.set(JIRA_COOKIE, encryptConnection(conn), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 90,
-  });
+  const cipher = encryptConnection(conn);
+  if (supabaseConfigured()) {
+    const ok = await saveJiraCipherToSupabase(cipher);
+    if (!ok) {
+      console.warn(
+        "KPI: échec d’écriture du compte Jira dans Supabase — cookie local uniquement.",
+      );
+    }
+  }
+  await writeCookieCipher(cipher);
 }
 
 export async function clearJiraConnection(): Promise<void> {
-  const jar = await cookies();
-  jar.delete(JIRA_COOKIE);
+  if (supabaseConfigured()) {
+    await clearJiraCipherFromSupabase();
+  }
+  await clearCookieCipher();
 }
 
-export async function resolveJiraConnection(): Promise<JiraConnection | null> {
-  const fromCookie = await readJiraConnection();
-  if (fromCookie) return fromCookie;
-
+function connectionFromEnv(): JiraConnection | null {
   const baseUrl = process.env.JIRA_BASE_URL?.replace(/\/$/, "");
   const email = process.env.JIRA_EMAIL;
   const apiToken = process.env.JIRA_API_TOKEN;
@@ -236,6 +283,60 @@ export async function resolveJiraConnection(): Promise<JiraConnection | null> {
     ),
     connectedAt: "env",
   });
+}
+
+/**
+ * Ordre : Supabase (partagé) → cookie local (migration) → variables d’env.
+ * Un cookie trouvé alors que Supabase est vide est migré automatiquement.
+ */
+export async function resolveJiraConnection(): Promise<JiraConnection | null> {
+  if (supabaseConfigured()) {
+    const cipher = await loadJiraCipherFromSupabase();
+    if (cipher) {
+      const fromSb = decryptConnection(cipher);
+      if (fromSb) return fromSb;
+    }
+  }
+
+  const fromCookie = await readJiraConnection();
+  if (fromCookie) {
+    if (supabaseConfigured()) {
+      const cipher = encryptConnection(fromCookie);
+      const ok = await saveJiraCipherToSupabase(cipher);
+      if (ok) {
+        console.info(
+          "KPI: compte Jira migré du cookie navigateur vers Supabase.",
+        );
+      }
+    }
+    return fromCookie;
+  }
+
+  return connectionFromEnv();
+}
+
+/** D’où vient le compte actuellement utilisé (pour l’UI Sync Jira). */
+export async function resolveJiraConnectionSource(): Promise<{
+  connection: JiraConnection | null;
+  source: JiraConnectionSource | null;
+}> {
+  if (supabaseConfigured()) {
+    const cipher = await loadJiraCipherFromSupabase();
+    if (cipher) {
+      const fromSb = decryptConnection(cipher);
+      if (fromSb) return { connection: fromSb, source: "supabase" };
+    }
+  }
+
+  const fromCookie = await readJiraConnection();
+  if (fromCookie) {
+    return { connection: fromCookie, source: "cookie" };
+  }
+
+  const fromEnv = connectionFromEnv();
+  if (fromEnv) return { connection: fromEnv, source: "env" };
+
+  return { connection: null, source: null };
 }
 
 export function sanitizeConnection(

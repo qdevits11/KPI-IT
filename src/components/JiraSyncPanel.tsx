@@ -81,7 +81,10 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
   const [weekId, setWeekId] = useState(initialWeek);
   const [weeks, setWeeks] = useState<WeekOption[]>([]);
   const [connected, setConnected] = useState(false);
-  const [source, setSource] = useState<"account" | "env" | null>(null);
+  const [source, setSource] = useState<"supabase" | "cookie" | "env" | null>(
+    null,
+  );
+  const [supabaseReady, setSupabaseReady] = useState(false);
   const [connection, setConnection] = useState<ConnectionView | null>(null);
   const [jql, setJql] = useState<JqlPreview | null>(null);
   const [dateRange, setDateRange] = useState<{
@@ -170,6 +173,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
 
     setConnected(Boolean(connect.connected));
     setSource(connect.source);
+    setSupabaseReady(Boolean(connect.supabaseConfigured));
     setConnection(connect.connection);
     setJql(sync.previewJql);
     setDateRange(sync.dateRange ?? null);
@@ -648,7 +652,13 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
             {connected ? (
               <span className="text-[var(--ok)]">
                 Connecté
-                {source === "env" ? " (env)" : ""}
+                {source === "supabase"
+                  ? " (Supabase)"
+                  : source === "cookie"
+                    ? " (cookie local)"
+                    : source === "env"
+                      ? " (env)"
+                      : ""}
                 {connection ? ` — ${connection.email}` : ""}
               </span>
             ) : (
@@ -658,7 +668,11 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         </div>
 
         <p className="text-xs text-[var(--muted)]">
-          Token API :{" "}
+          Email + token API enregistrés{" "}
+          {supabaseReady
+            ? "chiffrés dans Supabase (partagés entre périphériques)."
+            : "dans un cookie navigateur (appareil uniquement — configurez SUPABASE_* sur Vercel pour partager)."}{" "}
+          Token :{" "}
           <a
             className="text-[var(--accent)] underline"
             href="https://id.atlassian.com/manage-profile/security/api-tokens"
@@ -781,7 +795,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           >
             Connecter le compte
           </button>
-          {connected && source === "account" && (
+          {connected && (source === "supabase" || source === "cookie") && (
             <button
               type="button"
               onClick={() => void disconnect()}

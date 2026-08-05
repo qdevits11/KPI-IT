@@ -3,21 +3,21 @@ import {
   clearJiraConnection,
   DEFAULT_JIRA_SETTINGS,
   normalizeCustomFieldId,
-  readJiraConnection,
-  resolveJiraConnection,
+  resolveJiraConnectionSource,
   sanitizeConnection,
   writeJiraConnection,
   type JiraConnection,
 } from "@/lib/jira-auth";
 import { testJiraConnection } from "@/lib/jira";
+import { supabaseConfigured } from "@/lib/supabase-db";
 
 export async function GET() {
-  const cookie = await readJiraConnection();
-  const resolved = await resolveJiraConnection();
+  const { connection, source } = await resolveJiraConnectionSource();
   return NextResponse.json({
-    connected: Boolean(resolved),
-    source: cookie ? "account" : resolved ? "env" : null,
-    connection: resolved ? sanitizeConnection(resolved) : null,
+    connected: Boolean(connection),
+    source,
+    supabaseConfigured: supabaseConfigured(),
+    connection: connection ? sanitizeConnection(connection) : null,
     defaults: DEFAULT_JIRA_SETTINGS,
   });
 }
@@ -98,6 +98,7 @@ export async function POST(request: Request) {
     ok: true,
     connected: true,
     displayName: test.displayName,
+    source: supabaseConfigured() ? "supabase" : "cookie",
     connection: sanitizeConnection(conn),
   });
 }

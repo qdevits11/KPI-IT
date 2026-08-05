@@ -11,6 +11,8 @@ import { blobConfigured } from "./db-persist";
 
 export const KPI_APP_STATE_ID = "default";
 export const KPI_APP_STATE_TABLE = "kpi_app_state";
+export const KPI_JIRA_CONN_ID = "default";
+export const KPI_JIRA_CONN_TABLE = "kpi_jira_connection";
 
 export function supabaseConfigured(): boolean {
   return Boolean(
@@ -83,6 +85,70 @@ export async function saveDbToSupabase(db: AppDatabase): Promise<boolean> {
     return true;
   } catch (err) {
     console.warn("Écriture Supabase KPI impossible:", err);
+    return false;
+  }
+}
+
+/** Cipher AES-GCM du compte Jira (email + token), partagé entre périphériques. */
+export async function loadJiraCipherFromSupabase(): Promise<string | null> {
+  const sb = getServiceClient();
+  if (!sb) return null;
+  try {
+    const { data, error } = await sb
+      .from(KPI_JIRA_CONN_TABLE)
+      .select("cipher")
+      .eq("id", KPI_JIRA_CONN_ID)
+      .maybeSingle();
+    if (error) {
+      console.warn("Lecture Supabase Jira impossible:", error.message);
+      return null;
+    }
+    const cipher = data?.cipher;
+    return typeof cipher === "string" && cipher.length > 0 ? cipher : null;
+  } catch (err) {
+    console.warn("Lecture Supabase Jira impossible:", err);
+    return null;
+  }
+}
+
+export async function saveJiraCipherToSupabase(cipher: string): Promise<boolean> {
+  const sb = getServiceClient();
+  if (!sb) return false;
+  try {
+    const { error } = await sb.from(KPI_JIRA_CONN_TABLE).upsert(
+      {
+        id: KPI_JIRA_CONN_ID,
+        cipher,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" },
+    );
+    if (error) {
+      console.warn("Écriture Supabase Jira impossible:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("Écriture Supabase Jira impossible:", err);
+    return false;
+  }
+}
+
+export async function clearJiraCipherFromSupabase(): Promise<boolean> {
+  const sb = getServiceClient();
+  if (!sb) return false;
+  try {
+    const { error } = await sb
+      .from(KPI_JIRA_CONN_TABLE)
+      .delete()
+      .eq("id", KPI_JIRA_CONN_ID);
+    if (error) {
+      console.warn("Suppression Supabase Jira impossible:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("Suppression Supabase Jira impossible:", err);
     return false;
   }
 }
