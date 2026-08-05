@@ -237,7 +237,7 @@ export function OpenTicketsView({
         <div className="space-y-2 rounded-md border border-[var(--crit)]/30 bg-[var(--crit)]/10 px-3 py-3 text-sm text-[var(--crit)]">
           <p>{error}</p>
           <Link
-            href="/jira"
+            href="/admin/jira"
             className="inline-block text-[var(--accent-deep)] underline-offset-2 hover:underline"
           >
             Ouvrir Sync Jira →

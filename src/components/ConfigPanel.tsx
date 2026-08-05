@@ -203,7 +203,7 @@ export function ConfigPanel() {
     <div className="mx-auto max-w-xl space-y-8">
       <header className="space-y-2">
         <h1 className="font-[family-name:var(--font-display)] text-3xl text-[var(--ink)]">
-          Configuration
+          Personnes & droits
         </h1>
         <p className="text-sm text-[var(--muted)]">
           Responsables d&apos;encodage manuel et droits d&apos;accès
@@ -221,7 +221,7 @@ export function ConfigPanel() {
             <strong className="font-medium text-[var(--ink-soft)]">
               Administrateur
             </strong>{" "}
-            (Configuration, Sync Jira, Formules) et/ou{" "}
+            (pages Admin) et/ou{" "}
             <strong className="font-medium text-[var(--ink-soft)]">
               Responsable KPI
             </strong>{" "}

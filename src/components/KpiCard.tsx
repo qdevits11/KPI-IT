@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { KpiValue } from "@/lib/types";
 import { formatKpiValue, statusLabel, sourceLabel } from "@/lib/format";
 
@@ -27,12 +26,6 @@ export function KpiCard({ kpi }: { kpi: KpiValue }) {
       {kpi.target !== null && (
         <p className="mt-2 text-xs text-[var(--muted)]">Cible : ≤ {kpi.target}</p>
       )}
-      <Link
-        href={`/formules#${kpi.formulaId}`}
-        className="mt-3 inline-block text-xs text-[var(--accent)] underline-offset-2 hover:underline"
-      >
-        Voir la formule
-      </Link>
     </article>
   );
 }

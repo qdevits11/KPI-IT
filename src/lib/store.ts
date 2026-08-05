@@ -7,8 +7,12 @@ import type {
   PhishingEvent,
   WeeklyRow,
 } from "./types";
-import { weekId } from "./types";
-import { seedDatabase, createEmptyWeek } from "./seed";
+import {
+  APP_SCHEMA_VERSION,
+  emptyAppSettings,
+  weekId,
+} from "./types";
+import { createEmptyDatabase, createEmptyWeek } from "./seed";
 import {
   isoWeekPartsFromDate,
   mondayOfIsoWeek,
@@ -87,6 +91,7 @@ async function writeDiskQuiet(db: AppDatabase): Promise<void> {
 
 async function migrateAndMaybePersist(db: AppDatabase): Promise<AppDatabase> {
   let dirty = migrateLogDates(db);
+  if (migrateSchema(db)) dirty = true;
   if (migrateSettings(db)) dirty = true;
   if (migrateTicketRequester(db)) dirty = true;
   setMemory(db);
@@ -111,7 +116,7 @@ async function readDbFromDisk(): Promise<AppDatabase | null> {
  * 1. mémoire
  * 2. Supabase (si configuré) — source de vérité
  * 3. disque / Blob (migration ou fallback local)
- * 4. seed Excel
+ * 4. base vide (Jira + encodage peuplent les données)
  */
 async function ensureDb(): Promise<AppDatabase> {
   if (memoryDb && memoryDbPath === cacheKey()) {
@@ -125,7 +130,7 @@ async function ensureDb(): Promise<AppDatabase> {
       return migrateAndMaybePersist(fromSb);
     }
 
-    // Première connexion : migrer disque/Blob puis seed
+    // Première connexion : migrer disque/Blob puis base vide
     const fromDisk = await readDbFromDisk();
     if (fromDisk) {
       await saveDbToSupabase(fromDisk);
@@ -138,10 +143,10 @@ async function ensureDb(): Promise<AppDatabase> {
       return migrateAndMaybePersist(fromBlob);
     }
 
-    const seeded = seedDatabase();
-    await saveDbToSupabase(seeded);
-    await writeDiskQuiet(seeded);
-    return setMemory(seeded);
+    const empty = createEmptyDatabase();
+    await saveDbToSupabase(empty);
+    await writeDiskQuiet(empty);
+    return setMemory(empty);
   }
 
   const fromDisk = await readDbFromDisk();
@@ -162,14 +167,16 @@ async function ensureDb(): Promise<AppDatabase> {
     );
   }
 
-  const seeded = seedDatabase();
-  setMemory(seeded);
-  await writeDiskQuiet(seeded);
-  await saveDbToBlobIfAbsent(seeded);
-  return seeded;
+  const empty = createEmptyDatabase();
+  setMemory(empty);
+  await writeDiskQuiet(empty);
+  await saveDbToBlobIfAbsent(empty);
+  return empty;
 }
 
 async function writeDb(db: AppDatabase): Promise<void> {
+  db.revision = (Number(db.revision) || 0) + 1;
+  db.schemaVersion = APP_SCHEMA_VERSION;
   setMemory(db);
   if (supabaseConfigured()) {
     const ok = await saveDbToSupabase(db);
@@ -186,11 +193,13 @@ async function writeDb(db: AppDatabase): Promise<void> {
   }
 }
 
-/** Force re-seed from Excel JSON (dev / import) */
-export async function resetFromSeed(): Promise<AppDatabase> {
-  const seeded = seedDatabase();
-  await writeDb(seeded);
-  return seeded;
+/** Réinitialise la base (vide) — action admin destructive. */
+export async function resetDatabase(): Promise<AppDatabase> {
+  const empty = createEmptyDatabase();
+  // writeDb incrémente revision ; partir de 0 → revision 1
+  empty.revision = 0;
+  await writeDb(empty);
+  return empty;
 }
 
 export async function getDatabase(): Promise<AppDatabase> {
@@ -293,17 +302,43 @@ function migrateLogDates(db: AppDatabase): boolean {
   return changed;
 }
 
+function migrateSchema(db: AppDatabase): boolean {
+  let changed = false;
+  if (typeof db.schemaVersion !== "number" || db.schemaVersion < 1) {
+    db.schemaVersion = APP_SCHEMA_VERSION;
+    changed = true;
+  } else if (db.schemaVersion < APP_SCHEMA_VERSION) {
+    db.schemaVersion = APP_SCHEMA_VERSION;
+    changed = true;
+  }
+  if (typeof db.revision !== "number" || !Number.isFinite(db.revision)) {
+    db.revision = 1;
+    changed = true;
+  }
+  return changed;
+}
+
 function migrateSettings(db: AppDatabase): boolean {
   let changed = false;
   if (!db.settings) {
     db.settings = {
-      companyName: "Coverseal / Becoflex",
-      jiraConfigured: false,
+      ...emptyAppSettings(),
       responsibles: [...DEFAULT_RESPONSIBLES],
       accessUsers: normalizeAccessUsers(null),
-      peopleDirectory: {},
     };
     return true;
+  }
+  const legacy = db.settings as AppDatabase["settings"] & {
+    companyName?: string;
+    jiraConfigured?: boolean;
+  };
+  if ("companyName" in legacy) {
+    delete legacy.companyName;
+    changed = true;
+  }
+  if ("jiraConfigured" in legacy) {
+    delete legacy.jiraConfigured;
+    changed = true;
   }
   if (!Array.isArray(db.settings.responsibles) || db.settings.responsibles.length === 0) {
     db.settings.responsibles = [...DEFAULT_RESPONSIBLES];

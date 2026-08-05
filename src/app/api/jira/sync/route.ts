@@ -22,7 +22,6 @@ import {
 } from "@/lib/store";
 import { buildWeekDashboard } from "@/lib/formulas";
 import { weekId, parseWeekId } from "@/lib/types";
-import excelSeed from "@/data/seed-from-excel.json";
 import { isIsoWeekCompleted } from "@/lib/open-snapshot";
 import type { WeeklyRow } from "@/lib/types";
 import {
@@ -64,27 +63,6 @@ async function persistBreakdowns(
   }
 }
 
-function excelBaseline(year: number, week: number) {
-  const row = (
-    excelSeed as {
-      weeks: Array<{
-        year: number;
-        week: number;
-        demandesItHebdo: number | null;
-        demandesNonResoluesHebdo: number | null;
-        ticketsHorsSlaCloture: number | null;
-        ticketsHorsSlaPriseEnCharge: number | null;
-      }>;
-    }
-  ).weeks.find((w) => w.year === year && w.week === week);
-  if (!row) return null;
-  return {
-    demandesItHebdo: row.demandesItHebdo,
-    demandesNonResoluesHebdo: row.demandesNonResoluesHebdo,
-    ticketsHorsSlaCloture: row.ticketsHorsSlaCloture,
-    ticketsHorsSlaPriseEnCharge: row.ticketsHorsSlaPriseEnCharge,
-  };
-}
 
 /**
  * Pour une semaine terminée déjà figée : on garde le stock dimanche 23:59.
@@ -397,8 +375,7 @@ export async function POST(request: Request) {
         values: body.applyValues,
         breakdowns: body.applyBreakdowns ?? null,
         savedFields: saved,
-        excelBaseline: excelBaseline(year, week),
-        dashboard: buildWeekDashboard(db, row),
+                dashboard: buildWeekDashboard(db, row),
         warnings: [
           ...policy.warnings,
           `Base mise à jour pour ${id} : ${saved.join(", ") || "(aucun champ)"}.`,
@@ -460,8 +437,7 @@ export async function POST(request: Request) {
         values,
         breakdowns,
         savedFields: dryRun ? [] : describeSaveFields(mergedFields),
-        excelBaseline: excelBaseline(year, week),
-        dashboard: dryRun ? null : buildWeekDashboard(db, row),
+                dashboard: dryRun ? null : buildWeekDashboard(db, row),
         jql: result.jql,
         warnings: merged.warnings,
         probe: result.probe,
@@ -533,8 +509,7 @@ export async function POST(request: Request) {
       values,
       breakdowns,
       savedFields: dryRun ? [] : describeSaveFields(mergedFields),
-      excelBaseline: excelBaseline(year, week),
-      dashboard: dryRun ? null : buildWeekDashboard(db, row),
+            dashboard: dryRun ? null : buildWeekDashboard(db, row),
       jql: result.jql,
       warnings: merged.warnings,
       probe: result.probe,

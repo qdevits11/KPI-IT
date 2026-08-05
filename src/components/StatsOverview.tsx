@@ -60,7 +60,7 @@ export function StatsOverview({ initialYear = 2026 }: { initialYear?: number }) 
           </h1>
           <p className="mt-2 max-w-xl text-sm text-[var(--muted)]">
             Volumes annuels par assigné Jira, demandeur et type de demande —
-            issus du seed Excel et des syncs Jira. Pour le stock{" "}
+            issus des syncs Jira. Pour le stock{" "}
             <Link
               href="/tickets-ouverts"
               className="font-medium text-[var(--accent-deep)] hover:underline"

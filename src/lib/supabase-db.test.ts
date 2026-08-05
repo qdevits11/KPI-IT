@@ -30,9 +30,9 @@ function sampleDb(): AppDatabase {
     ticketsByType: {},
     ticketsByAssignee: {},
     ticketsByRequester: { "2026-S31": { Alice: 2 } },
+    schemaVersion: 2,
+    revision: 1,
     settings: {
-      companyName: "Test",
-      jiraConfigured: false,
       responsibles: ["A"],
       accessUsers: [],
       peopleDirectory: {},

@@ -3,26 +3,30 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const LINKS = [
-  { href: "/statistiques", label: "Vue d’ensemble", exact: true },
-  { href: "/tickets-ouverts", label: "Ouverts (live)" },
-  { href: "/statistiques/par-assigne", label: "Par assigné" },
-  { href: "/statistiques/par-demandeur", label: "Par demandeur" },
-  { href: "/statistiques/par-type", label: "Par type" },
-];
+export type SubNavLink = {
+  href: string;
+  label: string;
+  exact?: boolean;
+};
 
-export function StatsNav() {
+export function SubNav({
+  links,
+  label,
+}: {
+  links: SubNavLink[];
+  label: string;
+}) {
   const pathname = usePathname();
 
   return (
     <nav
-      aria-label="Sous-menus statistiques"
+      aria-label={label}
       className="flex flex-wrap gap-1 border-b border-[var(--line)] pb-3"
     >
-      {LINKS.map((link) => {
+      {links.map((link) => {
         const active = link.exact
           ? pathname === link.href
-          : pathname.startsWith(link.href);
+          : pathname === link.href || pathname.startsWith(`${link.href}/`);
         return (
           <Link
             key={link.href}

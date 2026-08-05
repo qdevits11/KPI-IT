@@ -93,7 +93,7 @@ export function TicketActionsPanel({
           la sync garde son propre compte.
         </p>
         <Link
-          href="/jira"
+          href="/admin/jira"
           className="mt-2 inline-block font-medium text-[var(--accent-deep)] hover:underline"
         >
           Ouvrir Sync Jira →
@@ -118,7 +118,7 @@ export function TicketActionsPanel({
           {error}{" "}
           {needOAuth && (
             <Link
-              href="/jira"
+              href="/admin/jira"
               className="underline text-[var(--accent-deep)]"
             >
               Sync Jira

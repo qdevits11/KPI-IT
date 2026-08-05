@@ -295,14 +295,12 @@ function CurrentWeekStatus({
 
 export function Dashboard({
   initialWeek,
-  lockToCurrentWeek = false,
 }: {
   initialWeek: string;
-  lockToCurrentWeek?: boolean;
 }) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const weekFromUrl = lockToCurrentWeek ? null : searchParams.get("week");
+  const weekFromUrl = searchParams.get("week");
   const weekId =
     weekFromUrl && /^\d{4}-S\d{2}$/.test(weekFromUrl)
       ? weekFromUrl
@@ -330,7 +328,7 @@ export function Dashboard({
   }, [weekId, load]);
 
   function selectWeek(id: string) {
-    router.replace(`/?week=${encodeURIComponent(id)}`, { scroll: false });
+    router.replace(`/semaine?week=${encodeURIComponent(id)}`, { scroll: false });
   }
 
   function refreshFromJira() {
@@ -359,7 +357,7 @@ export function Dashboard({
       if (!res.ok || !json.ok) {
         setError(
           json.error ??
-            "Sync Jira impossible — connectez un compte sur Sync Jira.",
+            "Sync Jira impossible — configurez le compte dans Admin → Intégration Jira.",
         );
         return;
       }
@@ -389,15 +387,14 @@ export function Dashboard({
             Service IT — Becoflex / Coverseal
           </p>
           <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl text-[var(--ink)] sm:text-4xl">
-            {lockToCurrentWeek ? "Semaine en cours" : "KPI hebdomadaires"}
+            Semaine
           </h1>
           <p className="mt-2 max-w-xl text-sm text-[var(--muted)]">
-            {lockToCurrentWeek
-              ? "Vue live de la semaine ISO actuelle : tickets Jira, stock non résolu et encodages manuels."
-              : "Chiffres calculés comme dans KPI.xlsx : COUNTIFS / SUMIFS / YTD sur les journaux et le ticketing."}
+            KPI hebdomadaires : tickets Jira, stock non résolu, encodages manuels
+            et cumuls YTD.
           </p>
         </div>
-        {data && !lockToCurrentWeek && (
+        {data && (
           <WeekSelector
             weeks={data.weeks}
             value={weekId}
@@ -407,25 +404,13 @@ export function Dashboard({
         )}
       </div>
 
-      {data?.meta && lockToCurrentWeek && (
+      {data?.meta?.isCurrentWeek && (
         <CurrentWeekStatus
           data={data}
           onRefresh={refreshFromJira}
           pending={pending}
           syncMessage={syncMessage}
         />
-      )}
-
-      {data?.meta?.isCurrentWeek && !lockToCurrentWeek && (
-        <p className="text-sm text-[var(--muted)]">
-          Vous consultez la semaine en cours.{" "}
-          <Link
-            href="/semaine"
-            className="font-medium text-[var(--accent-deep)] hover:text-[var(--accent)]"
-          >
-            Voir l’état dédié →
-          </Link>
-        </p>
       )}
 
       {error && (
@@ -531,7 +516,7 @@ export function Dashboard({
                   Ventilation hebdo
                 </p>
                 <Link
-                  href="/statistiques"
+                  href="/analyse/tickets"
                   className="text-xs font-medium text-[var(--accent-deep)] hover:text-[var(--accent)]"
                 >
                   Stats annuelles →

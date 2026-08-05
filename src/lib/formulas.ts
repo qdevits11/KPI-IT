@@ -11,14 +11,12 @@ import type {
 import { weekId } from "./types";
 
 /**
- * Formules calquées sur KPI.xlsx (feuille 2026 + feuilles de détail).
+ * Définitions des KPI (sources Jira, encodage manuel, cumuls YTD).
  *
  * YTD Demandes IT : L_n = K_n + L_(n-1)  (cumul des hebdo)
- * YTD Non résolues : N_n = M_n + N_(n-1)  (cumul des stocks hebdo — comme Excel)
- * Automations métiers : COUNTIFS(année, semaine) sur feuille « Automatisations métiers »
- * Améliorations Odoo : COUNTIFS(année, semaine) sur « Automatisations Odoo »
- * Échecs phishing : SUMIFS(Nbr échecs) sur « Tests Phishing »
- * Maintenances : COUNTIFS(année, semaine) sur « Maintenances Production »
+ * YTD Non résolues : N_n = M_n + N_(n-1)  (cumul des stocks hebdo)
+ * Automations métiers / Odoo / Maintenances : COUNT par année+semaine sur les journaux
+ * Échecs phishing : SUM des échecs par année+semaine
  */
 export const FORMULAS: FormulaDefinition[] = [
   {
@@ -37,7 +35,6 @@ export const FORMULAS: FormulaDefinition[] = [
       },
     ],
     example: "Semaine 31 : N tickets > 48h ouvrées",
-    excelSheet: "2026",
   },
   {
     id: "hors_sla_prise_en_charge",
@@ -55,7 +52,6 @@ export const FORMULAS: FormulaDefinition[] = [
       },
     ],
     example: "Semaine 31 : N tickets > 24h ouvrées",
-    excelSheet: "2026",
   },
   {
     id: "automations_metier",
@@ -64,7 +60,7 @@ export const FORMULAS: FormulaDefinition[] = [
     description:
       "Nombre d'automatisations métiers livrées cette semaine (lignes du journal).",
     formula:
-      "COUNTIFS(Automatisations métiers!Année, année, Automatisations métiers!Semaine, semaine)",
+      "COUNT(journaux automations métiers WHERE année AND semaine)",
     inputs: [
       {
         name: "lignes journal",
@@ -73,7 +69,6 @@ export const FORMULAS: FormulaDefinition[] = [
       },
     ],
     example: "Semaine 19 : 3 (FLUX B2C, N8N Mahieu, N8N Odoo→SMC)",
-    excelSheet: "Automatisations métiers",
   },
   {
     id: "ameliorations_odoo",
@@ -81,7 +76,7 @@ export const FORMULAS: FormulaDefinition[] = [
     name: "Améliorations dans Odoo",
     description: "Nombre d'améliorations / automatisations Odoo livrées cette semaine.",
     formula:
-      "COUNTIFS(Automatisations Odoo!Année, année, Automatisations Odoo!Semaine, semaine)",
+      "COUNT(journaux automations Odoo WHERE année AND semaine)",
     inputs: [
       {
         name: "lignes journal",
@@ -90,7 +85,6 @@ export const FORMULAS: FormulaDefinition[] = [
       },
     ],
     example: "Semaine 22 : 1 (Rapport Logistique)",
-    excelSheet: "Automatisations Odoo",
   },
   {
     id: "echecs_phishing",
@@ -98,7 +92,7 @@ export const FORMULAS: FormulaDefinition[] = [
     name: "Échecs tests phishing",
     description: "Somme des échecs (Nbr échecs) des tests de phishing de la semaine.",
     formula:
-      "SUMIFS(Tests Phishing!Nbr échecs, Année, année, Semaine, semaine)",
+      "SUM(échecs phishing WHERE année AND semaine)",
     inputs: [
       {
         name: "Nbr échecs",
@@ -107,7 +101,6 @@ export const FORMULAS: FormulaDefinition[] = [
       },
     ],
     example: "Semaine 31 : 0 échec",
-    excelSheet: "Tests Phishing",
   },
   {
     id: "maintenances_production",
@@ -115,7 +108,7 @@ export const FORMULAS: FormulaDefinition[] = [
     name: "Maintenances production",
     description: "Nombre d'interventions de maintenance production sur la semaine.",
     formula:
-      "COUNTIFS(Maintenances Production!Année, année, Maintenances Production!Semaine, semaine)",
+      "COUNT(journaux maintenances WHERE année AND semaine)",
     inputs: [
       {
         name: "lignes journal",
@@ -124,7 +117,6 @@ export const FORMULAS: FormulaDefinition[] = [
       },
     ],
     example: "Semaine 19 : 1 (Redémarrage Smartscans)",
-    excelSheet: "Maintenances Production",
   },
   {
     id: "demandes_it_hebdo",
@@ -142,14 +134,13 @@ export const FORMULAS: FormulaDefinition[] = [
       },
     ],
     example: "Semaine 31 : 15",
-    excelSheet: "2026",
   },
   {
     id: "demandes_it_ytd",
     category: "ticketing",
     name: "Demandes IT (YTD)",
     description:
-      "Cumul année des demandes IT hebdomadaires (comme Excel : L_n = K_n + L_(n-1)).",
+      "Cumul année des demandes IT hebdomadaires (L_n = K_n + L_(n-1)).",
     formula: "Σ demandesItHebdo depuis semaine 1 jusqu'à la semaine courante",
     inputs: [
       {
@@ -159,14 +150,13 @@ export const FORMULAS: FormulaDefinition[] = [
       },
     ],
     example: "Semaine 31 : 1090",
-    excelSheet: "2026",
   },
   {
     id: "demandes_non_resolues_hebdo",
     category: "ticketing",
     name: "Demandes non résolues (hebdo)",
     description:
-      "Snapshot des tickets encore ouverts. Semaine en cours = live à la sync. Semaines passées = figé dimanche 23:59 Europe/Brussels (cron), sinon valeur Excel/manuelle conservée.",
+      "Snapshot des tickets encore ouverts. Semaine en cours = live à la sync. Semaines passées = figé dimanche 23:59 Europe/Brussels (cron).",
     formula:
       "JQL: project = CSD AND status NOT IN (Partenaire, Canceled, Done)",
     inputs: [
@@ -177,24 +167,22 @@ export const FORMULAS: FormulaDefinition[] = [
       },
     ],
     example: "Semaine 31 : 48",
-    excelSheet: "2026",
   },
   {
     id: "demandes_non_resolues_ytd",
     category: "ticketing",
     name: "Demandes non résolues (YTD)",
     description:
-      "Cumul Excel des stocks hebdo : N_n = M_n + N_(n-1). Conservé pour parité avec le fichier.",
+      "Cumul des stocks hebdo : N_n = M_n + N_(n-1).",
     formula: "Σ demandesNonResoluesHebdo depuis semaine 1 jusqu'à n",
     inputs: [
       {
         name: "demandesNonResoluesHebdo (≤ n)",
         source: "calcule",
-        description: "Somme cumulative comme dans KPI.xlsx",
+        description: "Somme cumulative des stocks hebdomadaires",
       },
     ],
     example: "Semaine 31 : 1617",
-    excelSheet: "2026",
   },
 ];
 
@@ -245,7 +233,7 @@ function sumPhishingFailures(
     .reduce((s, e) => s + (e.failures || 0), 0);
 }
 
-/** YTD = somme des valeurs hebdo de la semaine 1 à n (parité Excel) */
+/** YTD = somme des valeurs hebdo de la semaine 1 à n */
 export function ytdSum(
   weeks: WeeklyRow[],
   year: number,
@@ -414,7 +402,7 @@ export function buildWeekDashboard(
   };
 }
 
-/** Vue annuelle type feuille Excel « 2026 » — une ligne par semaine. */
+/** Vue annuelle — une ligne par semaine. */
 export function buildYearOverview(
   db: AppDatabase,
   year: number,

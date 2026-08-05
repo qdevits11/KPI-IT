@@ -225,7 +225,7 @@ export function TicketStatsView({
               Aucune donnée pour cette dimension en {year}.
               {dimension === "requester"
                 ? " Synchronisez Jira pour peupler les demandeurs (reporter)."
-                : " Vérifiez le seed Excel ou une sync Jira."}
+                : " Vérifiez une sync Jira dans Admin → Opérations."}
             </p>
           ) : view === "chart" ? (
             <StatsEvolutionChart

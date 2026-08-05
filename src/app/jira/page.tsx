@@ -1,24 +1,14 @@
-import { Suspense } from "react";
-import { JiraSyncPanel } from "@/components/JiraSyncPanel";
-import { requireAdminUser } from "@/lib/access";
-import { currentWeekId } from "@/lib/store";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export default async function JiraPage({
+export default async function JiraRedirect({
   searchParams,
 }: {
   searchParams: Promise<{ week?: string }>;
 }) {
-  await requireAdminUser();
   const params = await searchParams;
-  const week =
+  const qs =
     params.week && /^\d{4}-S\d{2}$/.test(params.week)
-      ? params.week
-      : currentWeekId();
-  return (
-    <Suspense fallback={<p className="text-sm text-[var(--muted)]">Chargement…</p>}>
-      <JiraSyncPanel initialWeek={week} />
-    </Suspense>
-  );
+      ? `?week=${encodeURIComponent(params.week)}`
+      : "";
+  redirect(`/admin/operations${qs}`);
 }

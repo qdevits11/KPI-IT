@@ -1,7 +1,5 @@
-import { StatsOverview } from "@/components/StatsOverview";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export default function StatistiquesPage() {
-  return <StatsOverview initialYear={2026} />;
+export default function StatistiquesRedirect() {
+  redirect("/analyse/tickets");
 }

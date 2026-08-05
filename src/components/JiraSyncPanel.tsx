@@ -42,12 +42,6 @@ interface WeekValues {
   ticketsHorsSlaPriseEnCharge: number;
 }
 
-interface ExcelBaseline {
-  demandesItHebdo: number | null;
-  demandesNonResoluesHebdo: number | null;
-  ticketsHorsSlaCloture: number | null;
-  ticketsHorsSlaPriseEnCharge: number | null;
-}
 
 const DEFAULT_FORM = {
   baseUrl: "https://coverseal.atlassian.net",
@@ -76,7 +70,17 @@ function parseInitialWeek(initialWeek: string): { year: number; week: number } {
   return { year: now.getFullYear(), week: 1 };
 }
 
-export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
+export type JiraPanelSection = "all" | "settings" | "operations";
+
+export function JiraSyncPanel({
+  initialWeek,
+  section = "all",
+}: {
+  initialWeek: string;
+  section?: JiraPanelSection;
+}) {
+  const showSettings = section === "all" || section === "settings";
+  const showOperations = section === "all" || section === "operations";
   const initial = parseInitialWeek(initialWeek);
   const [year, setYear] = useState(initial.year);
   const [week, setWeek] = useState(initial.week);
@@ -96,9 +100,6 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
   } | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [values, setValues] = useState<WeekValues | null>(null);
-  const [excelBaseline, setExcelBaseline] = useState<ExcelBaseline | null>(
-    null,
-  );
   const [lastMode, setLastMode] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [diagnostics, setDiagnostics] = useState<{
@@ -258,7 +259,6 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     setDiagnostics(null);
     setProbe(null);
     setValues(null);
-    setExcelBaseline(null);
     setBreakdowns(null);
     setSaved(false);
     setLastMode(null);
@@ -294,7 +294,6 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
       setDiagnostics(json.diagnostics ?? null);
       setValues(json.values ?? null);
       setBreakdowns(json.breakdowns ?? null);
-      setExcelBaseline(json.excelBaseline ?? null);
       setLastMode(json.mode);
       setSaved(!json.dryRun);
       setWeekId(json.weekId ?? composedWeekId);
@@ -348,7 +347,6 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
       }
       setValues(json.values ?? values);
       setBreakdowns(json.breakdowns ?? breakdowns);
-      setExcelBaseline(json.excelBaseline ?? excelBaseline);
       setWarnings(json.warnings ?? []);
       setSaved(true);
       setLastMode("apply");
@@ -589,19 +587,31 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
   const anyImportPart =
     importParts.assignee || importParts.requester || importParts.type;
 
+  const title =
+    section === "settings"
+      ? "Intégration Jira"
+      : section === "operations"
+        ? "Opérations données"
+        : "Connexion & sync Jira";
+  const subtitle =
+    section === "settings"
+      ? "Credentials, JQL, champs custom et seuils SLA partagés par toutes les syncs."
+      : section === "operations"
+        ? "Synchronisez une semaine ou importez les ventilations tickets sur une plage."
+        : "Testez n’importe quelle année / semaine ISO : créés, non résolus, hors SLA.";
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="font-[family-name:var(--font-display)] text-3xl text-[var(--ink)]">
-            Connexion & sync Jira
+            {title}
           </h1>
           <p className="mt-2 max-w-xl text-sm text-[var(--muted)]">
-            Testez n’importe quelle année / semaine ISO : créés, non résolus,
-            hors SLA clôture (48h) et hors SLA prise en charge (24h).
+            {subtitle}
           </p>
         </div>
-        {weeks.length > 0 && (
+        {showOperations && weeks.length > 0 && (
           <WeekSelector
             weeks={weeks}
             value={
@@ -612,7 +622,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         )}
       </div>
 
-      {storage && (
+      {showSettings && storage && (
         <p
           className={`rounded-lg border px-4 py-3 text-sm ${
             storage.backend === "supabase" && storage.ok
@@ -647,6 +657,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         </p>
       )}
 
+      {showSettings && (
       <section className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-[family-name:var(--font-display)] text-xl">
@@ -816,6 +827,10 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         </div>
       </section>
 
+      )}
+
+      {showOperations && (
+      <>
       <section className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
         <h2 className="font-[family-name:var(--font-display)] text-xl">
           Tester une semaine
@@ -995,25 +1010,21 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
               label="Tickets créés"
               value={values.demandesItHebdo}
               hint="Demandes IT — Hebdo"
-              baseline={excelBaseline?.demandesItHebdo}
             />
             <KpiTile
               label="Non résolus"
               value={values.demandesNonResoluesHebdo}
               hint="Live si semaine en cours · figé dimanche 23:59 sinon"
-              baseline={excelBaseline?.demandesNonResoluesHebdo}
             />
             <KpiTile
               label="Hors SLA clôture"
               value={values.ticketsHorsSlaCloture}
               hint="> 48h ouvrées (Bruxelles)"
-              baseline={excelBaseline?.ticketsHorsSlaCloture}
             />
             <KpiTile
               label="Hors SLA prise en charge"
               value={values.ticketsHorsSlaPriseEnCharge}
               hint="> 24h ouvrées (Bruxelles)"
-              baseline={excelBaseline?.ticketsHorsSlaPriseEnCharge}
             />
           </div>
         )}
@@ -1065,13 +1076,6 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           </div>
         )}
 
-        {values && excelBaseline && (
-          <p className="text-xs text-[var(--muted)]">
-            Comparaison Excel sous chaque KPI. Les « non résolus » des semaines
-            passées sont figés le dimanche 23:59 (cron Bruxelles) et ne sont
-            plus écrasés par un test live.
-          </p>
-        )}
 
         {values && (
           <p className="text-xs text-[var(--muted)]">
@@ -1125,7 +1129,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           <strong>par demandeur</strong> et/ou <strong>par type</strong> à
           partir des tickets créés. Les assignés viennent du champ{" "}
           <code className="text-xs">assignee</code> (pas de la liste
-          Configuration). Les KPI hebdo ne sont pas modifiés.
+          Admin → Personnes). Les KPI hebdo ne sont pas modifiés.
         </p>
 
         <div className="flex flex-wrap items-end gap-3">
@@ -1284,6 +1288,8 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           />
         </section>
       )}
+      </>
+      )}
     </div>
   );
 }
@@ -1314,18 +1320,11 @@ function KpiTile({
   label,
   value,
   hint,
-  baseline,
 }: {
   label: string;
   value: number;
   hint: string;
-  baseline?: number | null;
 }) {
-  const hasBaseline = baseline != null;
-  const match = hasBaseline && baseline === value;
-  const diff =
-    hasBaseline && baseline !== value ? value - (baseline as number) : null;
-
   return (
     <div className="rounded-lg border border-[var(--line)] bg-[var(--wash)] px-4 py-3">
       <p className="text-xs uppercase tracking-wider text-[var(--muted)]">
@@ -1335,18 +1334,6 @@ function KpiTile({
         {value}
       </p>
       <p className="mt-1 text-xs text-[var(--muted)]">{hint}</p>
-      {hasBaseline && (
-        <p
-          className={`mt-2 text-xs ${match ? "text-[var(--ok)]" : "text-[var(--warn)]"}`}
-        >
-          Excel : {baseline}
-          {match
-            ? " · OK"
-            : diff != null
-              ? ` · écart ${diff > 0 ? "+" : ""}${diff}`
-              : ""}
-        </p>
-      )}
     </div>
   );
 }

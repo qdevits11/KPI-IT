@@ -72,7 +72,7 @@ const KINDS: Array<{
 ];
 
 export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
-  const [kind, setKind] = useState<EntryKind | null>(null);
+  const [kind, setKind] = useState<EntryKind>("metier");
   const [weekId, setWeekId] = useState(initialWeek);
   const [weeks, setWeeks] = useState<WeekOption[]>([]);
   const [week, setWeek] = useState<WeeklyRow | null>(null);
@@ -126,7 +126,7 @@ export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
     const allowRetour = Boolean(entries.permissions?.weekRetour);
     setCanEditRetour(allowRetour);
     if (!allowRetour) {
-      setKind((prev) => (prev === "retour" ? null : prev));
+      setKind((prev) => (prev === "retour" ? "metier" : prev));
     }
   }, []);
 
@@ -155,7 +155,7 @@ export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
   }
 
   function backToChoices() {
-    setKind(null);
+    setKind("metier");
     setMessage(null);
     setError(null);
     resetFields(false);

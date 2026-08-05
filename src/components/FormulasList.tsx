@@ -15,12 +15,11 @@ export function FormulasList() {
     <div className="space-y-10">
       <div>
         <h1 className="font-[family-name:var(--font-display)] text-3xl text-[var(--ink)]">
-          Formules & sources
+          Documentation — Formules & sources
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">
-          Alignées sur <code className="text-[var(--accent)]">Becoflex/KPI.xlsx</code> —
-          chaque indicateur du tableau de bord correspond à une formule Excel
-          (COUNTIFS, SUMIFS, cumul YTD).
+          Chaque indicateur du tableau de bord correspond à une source Jira, un
+          encodage manuel ou un cumul calculé (COUNT, SUM, YTD).
         </p>
       </div>
 
@@ -38,14 +37,7 @@ export function FormulasList() {
                   id={f.id}
                   className="scroll-mt-24 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5"
                 >
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <h3 className="text-lg text-[var(--ink)]">{f.name}</h3>
-                    {f.excelSheet && (
-                      <span className="text-xs uppercase tracking-wider text-[var(--muted)]">
-                        Feuille : {f.excelSheet}
-                      </span>
-                    )}
-                  </div>
+                  <h3 className="text-lg text-[var(--ink)]">{f.name}</h3>
                   <p className="mt-1 text-sm text-[var(--muted)]">
                     {f.description}
                   </p>

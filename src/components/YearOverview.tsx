@@ -127,7 +127,7 @@ export function YearOverview({ initialYear }: { initialYear: number }) {
             Chiffres {year}
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">
-            Comme la feuille Excel : une ligne par semaine, tous les indicateurs
+            Une ligne par semaine, tous les indicateurs
             et les retours (fluctuation + recommandations).
           </p>
         </div>
@@ -246,7 +246,7 @@ export function YearOverview({ initialYear }: { initialYear: number }) {
                   >
                     <td className="sticky left-0 z-10 bg-[var(--surface)] px-3 py-2 font-medium text-[var(--ink)]">
                       <Link
-                        href={`/?week=${row.weekKey}`}
+                        href={`/semaine?week=${row.weekKey}`}
                         className="text-[var(--accent)] hover:underline"
                       >
                         S{String(row.week).padStart(2, "0")}

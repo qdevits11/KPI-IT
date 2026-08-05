@@ -134,7 +134,7 @@ export function isKpiResponsible(user: AppUser | null | undefined): boolean {
   return Boolean(user?.isKpiResponsible);
 }
 
-/** Configuration, Sync Jira, Formules */
+/** Admin (shell /admin et anciennes URLs). */
 export function canAccessAdminPages(user: AppUser | null | undefined): boolean {
   return isAdmin(user);
 }
@@ -144,16 +144,9 @@ export function canEditWeekRetour(user: AppUser | null | undefined): boolean {
   return isKpiResponsible(user);
 }
 
-export type AdminNavHref = "/configuration" | "/jira" | "/formules";
-
-export const ADMIN_NAV_HREFS: AdminNavHref[] = [
-  "/configuration",
-  "/jira",
-  "/formules",
-];
-
-export function isAdminNavHref(href: string): href is AdminNavHref {
-  return (ADMIN_NAV_HREFS as string[]).includes(href);
+/** Chemins réservés aux administrateurs (nav + garde). */
+export function isAdminNavHref(href: string): boolean {
+  return href === "/admin" || href.startsWith("/admin/");
 }
 
 export function formatUserBadges(user: AppUser): string {

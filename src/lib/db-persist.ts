@@ -1,12 +1,12 @@
 /**
  * Persistance multi-couches pour la base KPI.
  *
- * Sur Vercel le FS (`/tmp`) est éphémère : une nouvelle instance qui « reseed »
+ * Sur Vercel le FS (`/tmp`) est éphémère : une nouvelle instance vide
  * écrasait toutes les ventilations Jira (demandeurs, etc.).
  *
- * Ordre de lecture : mémoire → disque → Vercel Blob → seed Excel.
+ * Ordre de lecture : mémoire → disque → Vercel Blob → base vide.
  * Écriture : mémoire + disque + Blob (si token).
- * Un seed ne doit jamais écraser un Blob déjà peuplé.
+ * Une base vide ne doit jamais écraser un Blob déjà peuplé.
  */
 
 import { put, get, head } from "@vercel/blob";

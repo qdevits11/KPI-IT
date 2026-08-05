@@ -24,8 +24,8 @@ function hasValidSession(request: NextRequest): boolean {
 
 function safeNextPath(pathname: string, search: string): string {
   const full = `${pathname}${search}`;
-  if (!full.startsWith("/") || full.startsWith("//")) return "/";
-  if (full.startsWith("/login")) return "/";
+  if (!full.startsWith("/") || full.startsWith("//")) return "/semaine";
+  if (full.startsWith("/login")) return "/semaine";
   return full;
 }
 
@@ -41,7 +41,7 @@ export function proxy(request: NextRequest) {
       (pathname === "/login" || pathname.startsWith("/login/")) &&
       hasValidSession(request)
     ) {
-      return NextResponse.redirect(new URL("/", request.url));
+      return NextResponse.redirect(new URL("/semaine", request.url));
     }
     return NextResponse.next();
   }

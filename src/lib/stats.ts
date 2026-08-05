@@ -14,19 +14,19 @@ export const STAT_DIMENSIONS: Record<
     label: "Par assigné",
     description:
       "Tickets créés groupés par la personne assignée dans Jira (champ assignee).",
-    href: "/statistiques/par-assigne",
+    href: "/analyse/par-assigne",
   },
   requester: {
     label: "Par demandeur",
     description:
       "Nombre de tickets ouverts par chaque demandeur (reporter Jira).",
-    href: "/statistiques/par-demandeur",
+    href: "/analyse/par-demandeur",
   },
   type: {
     label: "Par type de demande",
     description:
       "Répartition des tickets créés selon le type / catégorie (composant, label…).",
-    href: "/statistiques/par-type",
+    href: "/analyse/par-type",
   },
 };
 

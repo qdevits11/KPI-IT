@@ -1,5 +1,5 @@
 /**
- * Date → année / mois / semaine ISO (aligné Excel KPI + sélecteur semaine).
+ * Date → année / mois / semaine ISO (sélecteur semaine).
  * Calcul en UTC-date (YYYY-MM-DD) pour rester stable côté navigateur / serveur.
  */
 
@@ -35,7 +35,7 @@ export function todayIsoDate(now = new Date()): string {
 
 /**
  * Semaine ISO à partir d'une date calendaire YYYY-MM-DD.
- * month = mois civil de la date (comme les feuilles Excel).
+ * month = mois civil de la date.
  */
 export function isoWeekPartsFromDate(isoDate: string): IsoWeekParts {
   const { y, m, d } = parseIsoDate(isoDate);

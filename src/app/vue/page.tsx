@@ -1,7 +1,5 @@
-import { YearOverview } from "@/components/YearOverview";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export default function VueAnnuellePage() {
-  return <YearOverview initialYear={2026} />;
+export default function VueRedirect() {
+  redirect("/analyse");
 }

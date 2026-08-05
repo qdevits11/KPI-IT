@@ -84,9 +84,9 @@ function fixture(): AppDatabase {
       "2026-S30": { "Alice Martin": 6, "Bruno Dupont": 2 },
       "2026-S31": { "Alice Martin": 5, "Claire Leroy": 4 },
     },
+    schemaVersion: 2,
+    revision: 1,
     settings: {
-      companyName: "Test",
-      jiraConfigured: false,
       responsibles: ["Gary", "Loic"],
       accessUsers: [],
       peopleDirectory: {},

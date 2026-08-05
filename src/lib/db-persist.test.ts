@@ -31,9 +31,9 @@ function sampleDb(requesters: Record<string, Record<string, number>>): AppDataba
     ticketsByType: {},
     ticketsByAssignee: {},
     ticketsByRequester: requesters,
+    schemaVersion: 2,
+    revision: 1,
     settings: {
-      companyName: "Test",
-      jiraConfigured: false,
       responsibles: ["A"],
       accessUsers: [],
       peopleDirectory: {},

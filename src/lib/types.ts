@@ -1,6 +1,9 @@
-/** Modèle aligné sur Becoflex/KPI.xlsx */
+/** Modèle KPI·IT — semaines Jira + journaux d’encodage manuel. */
 
 export type DataSource = "jira" | "manuel" | "calcule";
+
+/** Version du document JSON AppDatabase (migrations soft). */
+export const APP_SCHEMA_VERSION = 2;
 
 export interface WeekRef {
   year: number;
@@ -65,7 +68,6 @@ export interface PhishingEvent {
   month: number;
   week: number;
   failures: number;
-  /** Conservés pour compat seed Excel ; non saisis dans l'UI. */
   explanation?: string;
   responsible?: string;
 }
@@ -81,7 +83,31 @@ export type AppAccessUser = {
   updatedAt?: string;
 };
 
+export interface AppSettings {
+  /** Personnes autorisées comme responsable d'encodage (pas les assignés Jira). */
+  responsibles: string[];
+  /**
+   * Droits applicatifs (flags indépendants : admin et/ou responsable KPI).
+   * Géré dans Admin → Personnes & droits.
+   */
+  accessUsers: AppAccessUser[];
+  /** Photos de profil Jira (clé = displayName). */
+  peopleDirectory: PeopleDirectory;
+}
+
+export function emptyAppSettings(): AppSettings {
+  return {
+    responsibles: [],
+    accessUsers: [],
+    peopleDirectory: {},
+  };
+}
+
 export interface AppDatabase {
+  /** Version du schéma JSON (défaut 1 si absent → migré). */
+  schemaVersion: number;
+  /** Compteur monotone pour détecter les écritures concurrentes. */
+  revision: number;
   year: number;
   weeks: WeeklyRow[];
   automationsMetier: LogEvent[];
@@ -93,19 +119,7 @@ export interface AppDatabase {
   ticketsByAssignee: Record<string, Record<string, number>>;
   /** Ventilation par demandeur (reporter Jira). Clé = 2026-S31 */
   ticketsByRequester: Record<string, Record<string, number>>;
-  settings: {
-    companyName: string;
-    jiraConfigured: boolean;
-    /** Personnes autorisées comme responsable d'encodage (pas les assignés Jira). */
-    responsibles: string[];
-    /**
-     * Droits applicatifs (flags indépendants : admin et/ou responsable KPI).
-     * Géré dans Configuration → Droits d’accès.
-     */
-    accessUsers: AppAccessUser[];
-    /** Photos de profil Jira (clé = displayName). */
-    peopleDirectory: PeopleDirectory;
-  };
+  settings: AppSettings;
 }
 
 export type KpiCategory =
@@ -137,7 +151,6 @@ export interface FormulaDefinition {
   formula: string;
   inputs: { name: string; source: DataSource; description: string }[];
   example: string;
-  excelSheet?: string;
 }
 
 export interface WeekDashboard {
@@ -177,7 +190,7 @@ export interface TicketStatsPayload {
   weekTotals: Record<string, number>;
 }
 
-/** Ligne de la vue annuelle (équivalent feuille Excel « 2026 »). */
+/** Ligne de la vue annuelle. */
 export interface YearOverviewRow {
   year: number;
   month: number;

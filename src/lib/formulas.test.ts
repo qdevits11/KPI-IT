@@ -1,26 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { computeWeekKpis, ytdSum, FORMULAS } from "./formulas";
-import { seedDatabase } from "./seed";
+import { createFormulaTestDatabase } from "./test-fixture";
 import { weekId } from "./types";
 
-describe("formules alignées KPI.xlsx", () => {
-  const db = seedDatabase();
+describe("formules KPI", () => {
+  const db = createFormulaTestDatabase();
 
-  it("charge le seed Excel (52 semaines)", () => {
-    expect(db.weeks.length).toBe(52);
-    expect(db.automationsMetier.length).toBe(10);
-    expect(db.automationsOdoo.length).toBe(3);
-    expect(db.maintenances.length).toBe(4);
+  it("charge le jeu de test (31 semaines)", () => {
+    expect(db.weeks.length).toBe(31);
+    expect(db.automationsMetier.length).toBe(6);
+    expect(db.automationsOdoo.length).toBe(1);
+    expect(db.maintenances.length).toBe(1);
   });
 
-  it("COUNTIFS automations métiers semaine 19 = 3", () => {
+  it("COUNT automations métiers semaine 19 = 3", () => {
     const week = db.weeks.find((w) => w.week === 19)!;
     const kpis = computeWeekKpis(db, week);
     expect(kpis.find((k) => k.id === "automations_metier")?.value).toBe(3);
     expect(kpis.find((k) => k.id === "maintenances_production")?.value).toBe(1);
   });
 
-  it("COUNTIFS Odoo semaine 22 = 1", () => {
+  it("COUNT Odoo semaine 22 = 1", () => {
     const week = db.weeks.find((w) => w.week === 22)!;
     const kpis = computeWeekKpis(db, week);
     expect(kpis.find((k) => k.id === "ameliorations_odoo")?.value).toBe(1);
@@ -37,11 +37,11 @@ describe("formules alignées KPI.xlsx", () => {
     expect(ytd).toBe(1617);
   });
 
-  it("SUMIFS phishing semaine 31 = 0", () => {
+  it("SUM phishing semaine 31 = 0", () => {
     const week = db.weeks.find((w) => w.week === 31)!;
     const kpis = computeWeekKpis(db, week);
     expect(kpis.find((k) => k.id === "echecs_phishing")?.value).toBe(0);
-    expect(kpis.find((k) => k.id === "demandes_it_hebdo")?.value).toBe(15);
+    expect(kpis.find((k) => k.id === "demandes_it_hebdo")?.value).toBe(40);
     expect(kpis.find((k) => k.id === "demandes_it_ytd")?.value).toBe(1090);
   });
 
@@ -52,7 +52,7 @@ describe("formules alignées KPI.xlsx", () => {
     }
   });
 
-  it("weekId format Excel", () => {
+  it("weekId format", () => {
     expect(weekId({ year: 2026, month: 7, week: 31 })).toBe("2026-S31");
   });
 });

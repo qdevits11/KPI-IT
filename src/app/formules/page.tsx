@@ -1,9 +1,5 @@
-import { FormulasList } from "@/components/FormulasList";
-import { requireAdminUser } from "@/lib/access";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export default async function FormulesPage() {
-  await requireAdminUser();
-  return <FormulasList />;
+export default function FormulesRedirect() {
+  redirect("/admin/documentation");
 }

@@ -1,9 +1,5 @@
-import { ConfigPanel } from "@/components/ConfigPanel";
-import { requireAdminUser } from "@/lib/access";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export default async function ConfigurationPage() {
-  await requireAdminUser();
-  return <ConfigPanel />;
+export default function ConfigurationRedirect() {
+  redirect("/admin/personnes");
 }
