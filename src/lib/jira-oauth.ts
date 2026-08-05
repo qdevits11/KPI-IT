@@ -312,6 +312,13 @@ export async function persistOAuthUserLogin(opts: {
     connectedAt: new Date().toISOString(),
   });
 
+  try {
+    const { recordUserLogin } = await import("./store");
+    await recordUserLogin({ email, displayName, avatarUrl });
+  } catch {
+    // ignore
+  }
+
   return { email, displayName };
 }
 

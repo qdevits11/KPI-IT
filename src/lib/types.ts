@@ -78,8 +78,13 @@ import type { PeopleDirectory } from "./avatars";
 export type AppAccessUser = {
   email: string;
   displayName?: string;
+  avatarUrl?: string;
   isAdmin: boolean;
   isKpiResponsible: boolean;
+  /** Apparaît dans le sélecteur d’encodage manuel. */
+  isEncodingResponsible: boolean;
+  /** Dernière connexion réussie (OAuth ou email). */
+  lastLoginAt?: string;
   updatedAt?: string;
 };
 
@@ -87,8 +92,8 @@ export interface AppSettings {
   /** Personnes autorisées comme responsable d'encodage (pas les assignés Jira). */
   responsibles: string[];
   /**
-   * Droits applicatifs (flags indépendants : admin et/ou responsable KPI).
-   * Géré dans Admin → Personnes & droits.
+   * Droits applicatifs (admin / KPI / encodage).
+   * Géré dans Admin → Utilisateurs.
    */
   accessUsers: AppAccessUser[];
   /** Photos de profil Jira (clé = displayName). */

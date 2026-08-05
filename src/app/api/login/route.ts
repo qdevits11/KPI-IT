@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { normalizeEmail } from "@/lib/roles";
-import { getAccessRightsForEmail } from "@/lib/store";
+import {
+  getAccessRightsForEmail,
+  recordUserLogin,
+} from "@/lib/store";
 import { writeUserSession } from "@/lib/user-session";
 import { atlassianOAuthConfigured } from "@/lib/jira-oauth";
 
@@ -8,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * Connexion de secours par email (si OAuth non configuré).
- * L’email doit déjà figurer dans les droits d’accès.
+ * Enregistre l’utilisateur dans la liste admin (droits à cocher ensuite).
  */
 export async function POST(request: Request) {
   if (atlassianOAuthConfigured()) {
@@ -34,17 +37,12 @@ export async function POST(request: Request) {
     );
   }
 
+  await recordUserLogin({
+    email,
+    displayName: body.displayName?.trim() || undefined,
+  });
+
   const rights = await getAccessRightsForEmail(email);
-  if (!rights.isAdmin && !rights.isKpiResponsible) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error:
-          "Cet email n’a pas de droits KPI·IT. Demandez à un administrateur de l’ajouter dans Configuration.",
-      },
-      { status: 403 },
-    );
-  }
 
   await writeUserSession({
     email,

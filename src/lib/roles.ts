@@ -1,6 +1,6 @@
 /**
  * Droits d’accès KPI·IT — flags indépendants (cases à cocher).
- * Un utilisateur peut être admin ET responsable KPI.
+ * Un utilisateur peut cumuler admin, responsable KPI et responsable d’encodage.
  */
 
 import type { AppAccessUser } from "./types";
@@ -15,6 +15,7 @@ export interface AppUser {
   avatarUrl?: string;
   isAdmin: boolean;
   isKpiResponsible: boolean;
+  isEncodingResponsible: boolean;
 }
 
 export function normalizeEmail(email: string): string {
@@ -29,6 +30,18 @@ function parseEmailList(raw: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function emptyFlags(): {
+  isAdmin: boolean;
+  isKpiResponsible: boolean;
+  isEncodingResponsible: boolean;
+} {
+  return {
+    isAdmin: false,
+    isKpiResponsible: false,
+    isEncodingResponsible: false,
+  };
+}
+
 /** Liste initiale si la base n’a pas encore de droits. */
 export function defaultAccessUsers(): AppAccessUser[] {
   const now = new Date().toISOString();
@@ -36,7 +49,11 @@ export function defaultAccessUsers(): AppAccessUser[] {
 
   const upsert = (
     email: string,
-    flags: { isAdmin?: boolean; isKpiResponsible?: boolean },
+    flags: {
+      isAdmin?: boolean;
+      isKpiResponsible?: boolean;
+      isEncodingResponsible?: boolean;
+    },
   ) => {
     const e = normalizeEmail(email);
     if (!e) return;
@@ -44,15 +61,24 @@ export function defaultAccessUsers(): AppAccessUser[] {
     byEmail.set(e, {
       email: e,
       displayName: prev?.displayName,
+      avatarUrl: prev?.avatarUrl,
       isAdmin: Boolean(prev?.isAdmin || flags.isAdmin),
       isKpiResponsible: Boolean(
         prev?.isKpiResponsible || flags.isKpiResponsible,
       ),
+      isEncodingResponsible: Boolean(
+        prev?.isEncodingResponsible || flags.isEncodingResponsible,
+      ),
+      lastLoginAt: prev?.lastLoginAt,
       updatedAt: now,
     });
   };
 
-  upsert(DEFAULT_ADMIN_EMAIL, { isAdmin: true, isKpiResponsible: true });
+  upsert(DEFAULT_ADMIN_EMAIL, {
+    isAdmin: true,
+    isKpiResponsible: true,
+    isEncodingResponsible: true,
+  });
   for (const e of parseEmailList(process.env.KPI_ADMIN_EMAILS)) {
     upsert(e, { isAdmin: true });
   }
@@ -65,6 +91,16 @@ export function defaultAccessUsers(): AppAccessUser[] {
   );
 }
 
+function laterIso(a?: string, b?: string): string | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return a > b ? a : b;
+}
+
+/**
+ * Normalise la liste des comptes.
+ * Garantit au moins un admin sans effacer les utilisateurs déjà enregistrés.
+ */
 export function normalizeAccessUsers(
   users: AppAccessUser[] | undefined | null,
 ): AppAccessUser[] {
@@ -76,28 +112,53 @@ export function normalizeAccessUsers(
     const email = normalizeEmail(raw?.email ?? "");
     if (!email) continue;
     const prev = byEmail.get(email);
+    const flags = emptyFlags();
     byEmail.set(email, {
       email,
       displayName:
         raw.displayName?.trim() || prev?.displayName || undefined,
-      isAdmin: Boolean(raw.isAdmin || prev?.isAdmin),
+      avatarUrl: raw.avatarUrl?.trim() || prev?.avatarUrl || undefined,
+      isAdmin: Boolean(raw.isAdmin || prev?.isAdmin || flags.isAdmin),
       isKpiResponsible: Boolean(
-        raw.isKpiResponsible || prev?.isKpiResponsible,
+        raw.isKpiResponsible || prev?.isKpiResponsible || flags.isKpiResponsible,
       ),
-      updatedAt: raw.updatedAt || prev?.updatedAt,
+      isEncodingResponsible: Boolean(
+        raw.isEncodingResponsible ||
+          prev?.isEncodingResponsible ||
+          flags.isEncodingResponsible,
+      ),
+      lastLoginAt: laterIso(raw.lastLoginAt, prev?.lastLoginAt),
+      updatedAt: laterIso(raw.updatedAt, prev?.updatedAt),
     });
   }
-  const list = [...byEmail.values()];
+
+  let list = [...byEmail.values()];
   if (!list.some((u) => u.isAdmin)) {
-    return defaultAccessUsers();
+    for (const d of defaultAccessUsers()) {
+      const existing = list.find((u) => u.email === d.email);
+      if (existing) {
+        existing.isAdmin = true;
+        existing.isKpiResponsible =
+          existing.isKpiResponsible || d.isKpiResponsible;
+        existing.isEncodingResponsible =
+          existing.isEncodingResponsible || d.isEncodingResponsible;
+      } else {
+        list.push(d);
+      }
+    }
   }
+
   return list.sort((a, b) => a.email.localeCompare(b.email, "fr"));
 }
 
 export function buildAppUser(
   email: string,
   displayName?: string,
-  rights?: { isAdmin?: boolean; isKpiResponsible?: boolean },
+  rights?: {
+    isAdmin?: boolean;
+    isKpiResponsible?: boolean;
+    isEncodingResponsible?: boolean;
+  },
   avatarUrl?: string,
 ): AppUser {
   return {
@@ -106,15 +167,21 @@ export function buildAppUser(
     avatarUrl: avatarUrl?.trim() || undefined,
     isAdmin: Boolean(rights?.isAdmin),
     isKpiResponsible: Boolean(rights?.isKpiResponsible),
+    isEncodingResponsible: Boolean(rights?.isEncodingResponsible),
   };
 }
 
 export function rightsFromAccessEntry(
   entry: AppAccessUser | undefined,
-): { isAdmin: boolean; isKpiResponsible: boolean } {
+): {
+  isAdmin: boolean;
+  isKpiResponsible: boolean;
+  isEncodingResponsible: boolean;
+} {
   return {
     isAdmin: Boolean(entry?.isAdmin),
     isKpiResponsible: Boolean(entry?.isKpiResponsible),
+    isEncodingResponsible: Boolean(entry?.isEncodingResponsible),
   };
 }
 
@@ -132,6 +199,12 @@ export function isAdmin(user: AppUser | null | undefined): boolean {
 
 export function isKpiResponsible(user: AppUser | null | undefined): boolean {
   return Boolean(user?.isKpiResponsible);
+}
+
+export function isEncodingResponsible(
+  user: AppUser | null | undefined,
+): boolean {
+  return Boolean(user?.isEncodingResponsible);
 }
 
 /** Admin (shell /admin et anciennes URLs). */
@@ -153,6 +226,15 @@ export function formatUserBadges(user: AppUser): string {
   const bits: string[] = [];
   if (user.isAdmin) bits.push("admin");
   if (user.isKpiResponsible) bits.push("KPI");
+  if (user.isEncodingResponsible) bits.push("encodage");
   if (bits.length === 0) bits.push("user");
   return bits.join(" · ");
+}
+
+/** Libellé d’encodage (nom affiché, sinon partie locale de l’email). */
+export function encodingLabel(user: AppAccessUser): string {
+  const name = user.displayName?.trim();
+  if (name) return name;
+  const local = user.email.split("@")[0]?.trim();
+  return local || user.email;
 }

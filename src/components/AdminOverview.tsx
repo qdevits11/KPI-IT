@@ -121,8 +121,8 @@ export function AdminOverview() {
         {[
           {
             href: "/admin/personnes",
-            title: "Personnes & droits",
-            desc: "Admins, responsables KPI, liste d’encodage",
+            title: "Utilisateurs",
+            desc: "Droits admin, KPI et encodage",
           },
           {
             href: "/admin/jira",

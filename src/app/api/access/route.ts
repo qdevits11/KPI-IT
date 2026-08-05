@@ -12,7 +12,13 @@ export async function GET() {
   const gate = await requireAdminApi();
   if ("response" in gate) return gate.response;
   const accessUsers = await getAccessUsers();
-  return NextResponse.json({ accessUsers });
+  const sorted = [...accessUsers].sort((a, b) => {
+    const aLogin = a.lastLoginAt ?? "";
+    const bLogin = b.lastLoginAt ?? "";
+    if (aLogin !== bLogin) return bLogin.localeCompare(aLogin);
+    return a.email.localeCompare(b.email, "fr");
+  });
+  return NextResponse.json({ accessUsers: sorted });
 }
 
 export async function PUT(request: Request) {
@@ -22,8 +28,10 @@ export async function PUT(request: Request) {
   const body = (await request.json()) as {
     email?: string;
     displayName?: string;
+    avatarUrl?: string;
     isAdmin?: boolean;
     isKpiResponsible?: boolean;
+    isEncodingResponsible?: boolean;
   };
 
   if (!body.email?.trim()) {
@@ -34,8 +42,10 @@ export async function PUT(request: Request) {
     const accessUsers = await upsertAccessUser({
       email: body.email,
       displayName: body.displayName,
+      avatarUrl: body.avatarUrl,
       isAdmin: Boolean(body.isAdmin),
       isKpiResponsible: Boolean(body.isKpiResponsible),
+      isEncodingResponsible: Boolean(body.isEncodingResponsible),
     });
     return NextResponse.json({ accessUsers });
   } catch (err) {

@@ -4,6 +4,7 @@ import {
   canAccessAdminPages,
   canEditWeekRetour,
   isAdmin,
+  isEncodingResponsible,
   isKpiResponsible,
 } from "@/lib/roles";
 import { clearUserSession } from "@/lib/user-session";
@@ -20,6 +21,7 @@ export async function GET() {
       weekRetour: canEditWeekRetour(user),
       isAdmin: isAdmin(user),
       isKpiResponsible: isKpiResponsible(user),
+      isEncodingResponsible: isEncodingResponsible(user),
     },
     oauthConfigured: atlassianOAuthConfigured(),
   });

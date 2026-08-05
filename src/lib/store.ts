@@ -26,6 +26,7 @@ import {
   sortResponsibles,
 } from "./responsibles";
 import {
+  encodingLabel,
   findAccessUser,
   normalizeAccessUsers,
   normalizeEmail,
@@ -337,7 +338,13 @@ function migrateSettings(db: AppDatabase): boolean {
   }
   const before = JSON.stringify(db.settings.accessUsers ?? null);
   db.settings.accessUsers = normalizeAccessUsers(db.settings.accessUsers);
+  if (migrateEncodingFlagsFromResponsibles(db)) {
+    changed = true;
+  }
   if (JSON.stringify(db.settings.accessUsers) !== before) {
+    changed = true;
+  }
+  if (syncResponsiblesFromAccessUsers(db)) {
     changed = true;
   }
   if (!db.settings.peopleDirectory || typeof db.settings.peopleDirectory !== "object") {
@@ -345,6 +352,44 @@ function migrateSettings(db: AppDatabase): boolean {
     changed = true;
   }
   return changed;
+}
+
+/** Relie les anciens noms d’encodage aux comptes (par displayName). */
+function migrateEncodingFlagsFromResponsibles(db: AppDatabase): boolean {
+  const names = db.settings.responsibles ?? [];
+  if (!names.length) return false;
+  let changed = false;
+  for (const user of db.settings.accessUsers) {
+    if (user.isEncodingResponsible) continue;
+    const label = encodingLabel(user);
+    const match = names.some(
+      (n) =>
+        n.localeCompare(label, "fr", { sensitivity: "base" }) === 0 ||
+        (user.displayName &&
+          n.localeCompare(user.displayName, "fr", { sensitivity: "base" }) ===
+            0),
+    );
+    if (match) {
+      user.isEncodingResponsible = true;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/** Aligne settings.responsibles sur les comptes cochés « encodage ». */
+function syncResponsiblesFromAccessUsers(db: AppDatabase): boolean {
+  const fromUsers = sortResponsibles(
+    db.settings.accessUsers
+      .filter((u) => u.isEncodingResponsible)
+      .map((u) => encodingLabel(u)),
+  );
+  if (fromUsers.length === 0) return false;
+  const prev = JSON.stringify(db.settings.responsibles ?? []);
+  const next = JSON.stringify(fromUsers);
+  if (prev === next) return false;
+  db.settings.responsibles = fromUsers;
+  return true;
 }
 
 function migrateTicketRequester(db: AppDatabase): boolean {
@@ -357,6 +402,12 @@ function migrateTicketRequester(db: AppDatabase): boolean {
 
 export async function getResponsibles(): Promise<string[]> {
   const db = await ensureDb();
+  const fromUsers = sortResponsibles(
+    db.settings.accessUsers
+      .filter((u) => u.isEncodingResponsible)
+      .map((u) => encodingLabel(u)),
+  );
+  if (fromUsers.length > 0) return fromUsers;
   return sortResponsibles(db.settings.responsibles);
 }
 
@@ -398,27 +449,63 @@ export async function getAccessUsers(): Promise<AppAccessUser[]> {
   return normalizeAccessUsers(db.settings.accessUsers);
 }
 
-export async function getAccessRightsForEmail(
-  email: string,
-): Promise<{ isAdmin: boolean; isKpiResponsible: boolean }> {
+export async function getAccessRightsForEmail(email: string): Promise<{
+  isAdmin: boolean;
+  isKpiResponsible: boolean;
+  isEncodingResponsible: boolean;
+}> {
   const users = await getAccessUsers();
   return rightsFromAccessEntry(findAccessUser(users, email));
+}
+
+/** Enregistre / met à jour un utilisateur qui vient de se connecter. */
+export async function recordUserLogin(input: {
+  email: string;
+  displayName?: string;
+  avatarUrl?: string;
+}): Promise<AppAccessUser> {
+  const email = normalizeEmail(input.email);
+  if (!email || !email.includes("@")) {
+    throw new Error("Email invalide");
+  }
+  const db = await ensureDb();
+  const users = normalizeAccessUsers(db.settings.accessUsers);
+  const now = new Date().toISOString();
+  const idx = users.findIndex((u) => u.email === email);
+  const prev = idx >= 0 ? users[idx] : undefined;
+  const next: AppAccessUser = {
+    email,
+    displayName:
+      input.displayName?.trim() || prev?.displayName || undefined,
+    avatarUrl: input.avatarUrl?.trim() || prev?.avatarUrl || undefined,
+    isAdmin: Boolean(prev?.isAdmin),
+    isKpiResponsible: Boolean(prev?.isKpiResponsible),
+    isEncodingResponsible: Boolean(prev?.isEncodingResponsible),
+    lastLoginAt: now,
+    updatedAt: now,
+  };
+  const draft =
+    idx >= 0
+      ? users.map((u, i) => (i === idx ? next : u))
+      : [...users, next];
+  db.settings.accessUsers = draft.sort((a, b) =>
+    a.email.localeCompare(b.email, "fr"),
+  );
+  await writeDb(db);
+  return next;
 }
 
 export async function upsertAccessUser(input: {
   email: string;
   displayName?: string;
+  avatarUrl?: string;
   isAdmin: boolean;
   isKpiResponsible: boolean;
+  isEncodingResponsible: boolean;
 }): Promise<AppAccessUser[]> {
   const email = normalizeEmail(input.email);
   if (!email || !email.includes("@")) {
     throw new Error("Email invalide");
-  }
-  if (!input.isAdmin && !input.isKpiResponsible) {
-    throw new Error(
-      "Cochez au moins un droit (Administrateur ou Responsable KPI)",
-    );
   }
 
   const db = await ensureDb();
@@ -429,8 +516,11 @@ export async function upsertAccessUser(input: {
     email,
     displayName:
       input.displayName?.trim() || prev?.displayName || undefined,
+    avatarUrl: input.avatarUrl?.trim() || prev?.avatarUrl || undefined,
     isAdmin: Boolean(input.isAdmin),
     isKpiResponsible: Boolean(input.isKpiResponsible),
+    isEncodingResponsible: Boolean(input.isEncodingResponsible),
+    lastLoginAt: prev?.lastLoginAt,
     updatedAt: new Date().toISOString(),
   };
 
@@ -446,6 +536,7 @@ export async function upsertAccessUser(input: {
   db.settings.accessUsers = draft.sort((a, b) =>
     a.email.localeCompare(b.email, "fr"),
   );
+  syncResponsiblesFromAccessUsers(db);
   await writeDb(db);
   return db.settings.accessUsers;
 }
@@ -463,6 +554,7 @@ export async function removeAccessUser(email: string): Promise<AppAccessUser[]> 
     throw new Error("Impossible de retirer le dernier administrateur");
   }
   db.settings.accessUsers = draft;
+  syncResponsiblesFromAccessUsers(db);
   await writeDb(db);
   return db.settings.accessUsers;
 }

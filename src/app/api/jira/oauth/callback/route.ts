@@ -110,9 +110,16 @@ export async function GET(request: Request) {
       connectedAt: new Date().toISOString(),
     };
 
-    if (identity.displayName && identity.avatarUrl) {
-      try {
-        const { mergePeopleFromJira } = await import("@/lib/store");
+    try {
+      const { mergePeopleFromJira, recordUserLogin } = await import(
+        "@/lib/store"
+      );
+      await recordUserLogin({
+        email: identity.email,
+        displayName: identity.displayName,
+        avatarUrl: identity.avatarUrl,
+      });
+      if (identity.displayName && identity.avatarUrl) {
         await mergePeopleFromJira([
           {
             displayName: identity.displayName,
@@ -120,9 +127,9 @@ export async function GET(request: Request) {
             updatedAt: new Date().toISOString(),
           },
         ]);
-      } catch {
-        // ignore
       }
+    } catch {
+      // ignore — la session est tout de même créée
     }
 
     const response = NextResponse.redirect(`${origin}${next}`);
