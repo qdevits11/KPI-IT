@@ -132,3 +132,23 @@ export interface WeekDashboard {
   ticketsByType: Record<string, number>;
   ticketsByAssignee: Record<string, number>;
 }
+
+/** Ligne de la vue annuelle (équivalent feuille Excel « 2026 »). */
+export interface YearOverviewRow {
+  year: number;
+  month: number;
+  week: number;
+  weekKey: string;
+  horsSlaCloture: number | null;
+  horsSlaPriseEnCharge: number | null;
+  automationsMetier: number;
+  ameliorationsOdoo: number;
+  echecsPhishing: number;
+  maintenances: number;
+  demandesItHebdo: number | null;
+  demandesItYtd: number;
+  nonResoluesHebdo: number | null;
+  nonResoluesYtd: number;
+  fluctuation: string;
+  recommandations: string;
+}

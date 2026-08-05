@@ -6,6 +6,7 @@ import type {
   PhishingEvent,
   WeekDashboard,
   WeeklyRow,
+  YearOverviewRow,
 } from "./types";
 import { weekId } from "./types";
 
@@ -410,6 +411,39 @@ export function buildWeekDashboard(
     ticketsByType: db.ticketsByType[id] ?? {},
     ticketsByAssignee: db.ticketsByAssignee[id] ?? {},
   };
+}
+
+/** Vue annuelle type feuille Excel « 2026 » — une ligne par semaine. */
+export function buildYearOverview(
+  db: AppDatabase,
+  year: number,
+): YearOverviewRow[] {
+  return db.weeks
+    .filter((w) => w.year === year)
+    .sort((a, b) => a.week - b.week)
+    .map((w) => {
+      const kpis = computeWeekKpis(db, w);
+      const val = (id: string) =>
+        kpis.find((k) => k.id === id)?.value ?? null;
+      return {
+        year: w.year,
+        month: w.month,
+        week: w.week,
+        weekKey: weekId(w),
+        horsSlaCloture: val("hors_sla_cloture"),
+        horsSlaPriseEnCharge: val("hors_sla_prise_en_charge"),
+        automationsMetier: val("automations_metier") ?? 0,
+        ameliorationsOdoo: val("ameliorations_odoo") ?? 0,
+        echecsPhishing: val("echecs_phishing") ?? 0,
+        maintenances: val("maintenances_production") ?? 0,
+        demandesItHebdo: val("demandes_it_hebdo"),
+        demandesItYtd: val("demandes_it_ytd") ?? 0,
+        nonResoluesHebdo: val("demandes_non_resolues_hebdo"),
+        nonResoluesYtd: val("demandes_non_resolues_ytd") ?? 0,
+        fluctuation: w.informations ?? "",
+        recommandations: w.reaction ?? "",
+      };
+    });
 }
 
 export function getFormula(id: string): FormulaDefinition | undefined {

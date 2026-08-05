@@ -30,7 +30,7 @@ export default function RootLayout({
     <html lang="fr" className={`${display.variable} ${body.variable} h-full`}>
       <body className="min-h-full flex flex-col font-[family-name:var(--font-body)] antialiased">
         <AppNav />
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
+        <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
           {children}
         </main>
         <footer className="border-t border-[var(--line)] py-4 text-center text-xs text-[var(--muted)]">

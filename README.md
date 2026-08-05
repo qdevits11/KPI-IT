@@ -18,6 +18,8 @@ Granularité **hebdomadaire**. Feuille année + journaux de détail :
 | Non résolues hebdo / YTD | Jira / calculé | Snapshot + cumul Excel |
 | Tickets par type / responsable | Jira / Excel | Ventilation |
 
+**Vue annuelle** (`/vue`) : tableau type Excel (une ligne / semaine) avec filtres par type (SLA, métier, Odoo, phishing, maintenance, ticketing, remarques) et totaux année.
+
 **Encodage manuel** (`/saisie`) :
 - Automatisations métiers / Odoo / maintenances (date, explication, responsable)
 - Tests phishing ratés (date, nbr échecs)

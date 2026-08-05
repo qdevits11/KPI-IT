@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { KpiValue, LogEvent, PhishingEvent, WeeklyRow } from "@/lib/types";
 import { CATEGORY_LABELS } from "@/lib/formulas";
 import { WeekSelector } from "./WeekSelector";
@@ -98,7 +99,13 @@ function EventList({ title, items }: { title: string; items: LogEvent[] }) {
 }
 
 export function Dashboard({ initialWeek }: { initialWeek: string }) {
-  const [weekId, setWeekId] = useState(initialWeek);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const weekFromUrl = searchParams.get("week");
+  const weekId =
+    weekFromUrl && /^\d{4}-S\d{2}$/.test(weekFromUrl)
+      ? weekFromUrl
+      : initialWeek;
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -119,16 +126,9 @@ export function Dashboard({ initialWeek }: { initialWeek: string }) {
     });
   }, [weekId, load]);
 
-  // Prefer a week with data when landing on empty future week
-  useEffect(() => {
-    if (!data) return;
-    if (
-      data.week.demandesItHebdo == null &&
-      data.weeks.some((w) => w.id === "2026-S31")
-    ) {
-      // keep current; user can pick
-    }
-  }, [data]);
+  function selectWeek(id: string) {
+    router.replace(`/?week=${encodeURIComponent(id)}`, { scroll: false });
+  }
 
   const grouped = CATEGORY_ORDER.map((cat) => ({
     cat,
@@ -152,7 +152,7 @@ export function Dashboard({ initialWeek }: { initialWeek: string }) {
           </p>
         </div>
         {data && (
-          <WeekSelector weeks={data.weeks} value={weekId} onChange={setWeekId} />
+          <WeekSelector weeks={data.weeks} value={weekId} onChange={selectWeek} />
         )}
       </div>
 
