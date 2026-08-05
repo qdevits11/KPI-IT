@@ -127,3 +127,44 @@ describe("mockCreatedBreakdown", () => {
     expect(r.createdCount).toBeGreaterThan(0);
   });
 });
+
+describe("categoryOf", () => {
+  it("lit le composant, le label, le type ou un customfield", async () => {
+    const { categoryOf } = await import("./jira");
+    const base = {
+      key: "CSD-1",
+      fields: {
+        created: "2026-08-01T10:00:00.000Z",
+        resolutiondate: null,
+        components: [{ name: "Odoo" }],
+        labels: ["Infra"],
+        issuetype: { name: "Task" },
+        customfield_10010: { value: "Elfsquad" },
+      },
+    };
+    expect(
+      categoryOf(base, { categoryField: "component", categoryCustomFieldId: "" }),
+    ).toBe("Odoo");
+    expect(
+      categoryOf(base, { categoryField: "label", categoryCustomFieldId: "" }),
+    ).toBe("Infra");
+    expect(
+      categoryOf(base, {
+        categoryField: "issuetype",
+        categoryCustomFieldId: "",
+      }),
+    ).toBe("Task");
+    expect(
+      categoryOf(base, {
+        categoryField: "custom",
+        categoryCustomFieldId: "customfield_10010",
+      }),
+    ).toBe("Elfsquad");
+    expect(
+      categoryOf(
+        { ...base, fields: { ...base.fields, components: [] } },
+        { categoryField: "component", categoryCustomFieldId: "" },
+      ),
+    ).toBe("Non catégorisé");
+  });
+});

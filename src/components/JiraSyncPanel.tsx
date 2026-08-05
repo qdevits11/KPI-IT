@@ -18,6 +18,7 @@ interface ConnectionView {
   slaPriseEnChargeHours: number;
   slaClotureHours: number;
   categoryField: string;
+  categoryCustomFieldId?: string;
   hasToken: boolean;
 }
 
@@ -56,7 +57,8 @@ const DEFAULT_FORM = {
   datePriseEnChargeFieldId: "customfield_10284",
   slaPriseEnChargeHours: 24,
   slaClotureHours: 48,
-  categoryField: "component" as "component" | "label" | "issuetype",
+  categoryField: "component" as "component" | "label" | "issuetype" | "custom",
+  categoryCustomFieldId: "",
 };
 
 function parseInitialWeek(initialWeek: string): { year: number; week: number } {
@@ -181,6 +183,8 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         slaPriseEnChargeHours: connect.connection.slaPriseEnChargeHours,
         slaClotureHours: connect.connection.slaClotureHours,
         categoryField: connect.connection.categoryField,
+        categoryCustomFieldId:
+          connect.connection.categoryCustomFieldId ?? "",
         apiToken: "",
       }));
     }
@@ -714,6 +718,35 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
               setForm({ ...form, slaClotureHours: Number(v) || 48 })
             }
           />
+          <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+            <span className="text-[var(--muted)]">
+              Source catégorie / type de demande
+            </span>
+            <select
+              className="rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-2 text-[var(--ink)]"
+              value={form.categoryField}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  categoryField: e.target.value as typeof form.categoryField,
+                })
+              }
+            >
+              <option value="component">Composant Jira (components)</option>
+              <option value="label">Premier label</option>
+              <option value="issuetype">Type de ticket (issuetype)</option>
+              <option value="custom">Champ custom (customfield_…)</option>
+            </select>
+          </label>
+          {form.categoryField === "custom" && (
+            <Field
+              label="ID champ catégorie (customfield_…)"
+              value={form.categoryCustomFieldId}
+              onChange={(v) => setForm({ ...form, categoryCustomFieldId: v })}
+              placeholder="customfield_10001"
+              wide
+            />
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">

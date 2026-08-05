@@ -68,6 +68,9 @@ export async function POST(request: Request) {
     slaClotureHours:
       Number(body.slaClotureHours) || DEFAULT_JIRA_SETTINGS.slaClotureHours,
     categoryField: body.categoryField || DEFAULT_JIRA_SETTINGS.categoryField,
+    categoryCustomFieldId:
+      body.categoryCustomFieldId?.trim() ||
+      DEFAULT_JIRA_SETTINGS.categoryCustomFieldId,
     connectedAt: new Date().toISOString(),
   };
 

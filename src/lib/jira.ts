@@ -196,8 +196,11 @@ function normalizeIssues(raw: unknown[] | undefined): JiraIssue[] {
         reporter: fieldsObj.reporter as JiraIssue["fields"]["reporter"],
         creator: fieldsObj.creator as JiraIssue["fields"]["creator"],
         labels: fieldsObj.labels as string[] | undefined,
-        components: fieldsObj.components as { name: string }[] | undefined,
         ...fieldsObj,
+        // Parse robuste après le spread (string[] ou {name}[])
+        components: normalizeComponentNames(fieldsObj.components).map(
+          (name) => ({ name }),
+        ),
       },
     });
   }
@@ -506,17 +509,105 @@ function personName(user: JiraUser | null | undefined, fallback: string): string
   return name || fallback;
 }
 
-function categoryOf(
+function normalizeComponentNames(raw: unknown): string[] {
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  const names: string[] = [];
+  for (const item of raw) {
+    if (typeof item === "string" && item.trim()) {
+      names.push(item.trim());
+      continue;
+    }
+    const obj = asRecord(item);
+    if (!obj) continue;
+    const name =
+      (typeof obj.name === "string" && obj.name.trim()) ||
+      (typeof obj.value === "string" && obj.value.trim()) ||
+      "";
+    if (name) names.push(name);
+  }
+  return names;
+}
+
+function customFieldCategoryValue(
   issue: JiraIssue,
-  field: JiraConnection["categoryField"],
+  fieldId: string,
+): string | null {
+  if (!fieldId) return null;
+  const raw = issue.fields[fieldId];
+  if (raw == null || raw === "") return null;
+  if (typeof raw === "string") return raw.trim() || null;
+  if (typeof raw === "number" || typeof raw === "boolean") return String(raw);
+  if (Array.isArray(raw)) {
+    const parts = raw
+      .map((item) => {
+        if (typeof item === "string") return item.trim();
+        const obj = asRecord(item);
+        if (!obj) return "";
+        return (
+          (typeof obj.value === "string" && obj.value.trim()) ||
+          (typeof obj.name === "string" && obj.name.trim()) ||
+          (typeof obj.label === "string" && obj.label.trim()) ||
+          ""
+        );
+      })
+      .filter(Boolean);
+    return parts[0] ?? null;
+  }
+  const obj = asRecord(raw);
+  if (!obj) return null;
+  if (typeof obj.value === "string" && obj.value.trim()) return obj.value.trim();
+  if (typeof obj.name === "string" && obj.name.trim()) return obj.name.trim();
+  if (typeof obj.label === "string" && obj.label.trim()) return obj.label.trim();
+  // Option cascaded / child
+  const child = asRecord(obj.child);
+  if (child && typeof child.value === "string" && child.value.trim()) {
+    return child.value.trim();
+  }
+  return null;
+}
+
+export function categoryOf(
+  issue: JiraIssue,
+  connection: Pick<JiraConnection, "categoryField" | "categoryCustomFieldId">,
 ): string {
+  const field = connection.categoryField;
   if (field === "issuetype") {
-    return issue.fields.issuetype?.name ?? "Non catégorisé";
+    return issue.fields.issuetype?.name?.trim() || "Non catégorisé";
   }
   if (field === "label") {
-    return issue.fields.labels?.[0] ?? "Non catégorisé";
+    const labels = issue.fields.labels;
+    const first =
+      Array.isArray(labels) && typeof labels[0] === "string"
+        ? labels[0].trim()
+        : "";
+    return first || "Non catégorisé";
   }
-  return issue.fields.components?.[0]?.name ?? "Non catégorisé";
+  if (field === "custom") {
+    return (
+      customFieldCategoryValue(issue, connection.categoryCustomFieldId) ||
+      "Non catégorisé"
+    );
+  }
+  const components = normalizeComponentNames(issue.fields.components);
+  return components[0] || "Non catégorisé";
+}
+
+/** Échantillon pour diagnostiquer une sync 100 % « Non catégorisé ». */
+function categoryProbeSample(
+  issues: JiraIssue[],
+  connection: JiraConnection,
+): string {
+  const sample = issues.slice(0, 3).map((issue) => {
+    const comps = normalizeComponentNames(issue.fields.components);
+    const labels = Array.isArray(issue.fields.labels)
+      ? issue.fields.labels.filter((l): l is string => typeof l === "string")
+      : [];
+    const custom = connection.categoryCustomFieldId
+      ? customFieldCategoryValue(issue, connection.categoryCustomFieldId)
+      : null;
+    return `${issue.key || "?"}[comp=${comps.join("|") || "∅"} label=${labels[0] || "∅"} type=${issue.fields.issuetype?.name || "∅"}${custom != null ? ` custom=${custom}` : ""}]`;
+  });
+  return sample.join(" · ");
 }
 
 function customFieldValue(
@@ -588,16 +679,13 @@ export async function fetchJiraWeekStats(
 
   // Compteurs d'abord (approximate-count) — plus fiable que search/jql
   // qui renvoie parfois issues:[] (bug connu Atlassian / mauvais format).
+  // *all pour les créés : components/labels/custom parfois absents avec liste courte.
   const [createdCountApprox, openCount, createdIssues, pecIssues, resolvedIssues] =
     await Promise.all([
       countJql(connection, jql.created),
       countJql(connection, jql.open),
-      searchAll(
-        connection,
-        jql.created,
-        "created,resolutiondate,assignee,reporter,labels,components,issuetype",
-      ).catch((err: Error) => {
-        warnings.push(`Search créés: ${err.message.slice(0, 160)}`);
+      searchAll(connection, jql.created, "*all").catch((err: Error) => {
+        warnings.push(`Search créés (*all): ${err.message.slice(0, 160)}`);
         return [] as JiraIssue[];
       }),
       searchAll(connection, jql.priseEnCharge, "*all").catch((err: Error) => {
@@ -612,21 +700,36 @@ export async function fetchJiraWeekStats(
       }),
     ]);
 
+  let createdForBreakdown = createdIssues;
+  if (createdForBreakdown.length === 0) {
+    createdForBreakdown = await searchAll(
+      connection,
+      jql.created,
+      "created,resolutiondate,assignee,reporter,labels,components,issuetype" +
+        (connection.categoryCustomFieldId
+          ? `,${connection.categoryCustomFieldId}`
+          : ""),
+    ).catch((err: Error) => {
+      warnings.push(`Search créés (fields): ${err.message.slice(0, 160)}`);
+      return [] as JiraIssue[];
+    });
+  }
+
   // Compteur créés : pagination exacte si complète, sinon approximate-count
-  let createdCount = createdIssues.length;
-  if (createdIssues.length === 0 && createdCountApprox > 0) {
+  let createdCount = createdForBreakdown.length;
+  if (createdForBreakdown.length === 0 && createdCountApprox > 0) {
     createdCount = createdCountApprox;
     warnings.push(
       `Search/jql a renvoyé 0 issue mais approximate-count = ${createdCountApprox}. Compteur KPI utilisé ; répartition type/assigné indisponible.`,
     );
   } else if (
-    createdCountApprox > createdIssues.length &&
-    createdIssues.length > 0
+    createdCountApprox > createdForBreakdown.length &&
+    createdForBreakdown.length > 0
   ) {
     // Pagination probablement tronquée
     createdCount = createdCountApprox;
     warnings.push(
-      `Pagination search (${createdIssues.length}) < approximate-count (${createdCountApprox}) — compteur approx utilisé.`,
+      `Pagination search (${createdForBreakdown.length}) < approximate-count (${createdCountApprox}) — compteur approx utilisé.`,
     );
   }
 
@@ -676,8 +779,8 @@ export async function fetchJiraWeekStats(
   const byType: Record<string, number> = {};
   const byAssignee: Record<string, number> = {};
   const byRequester: Record<string, number> = {};
-  for (const issue of createdIssues) {
-    const cat = categoryOf(issue, connection.categoryField);
+  for (const issue of createdForBreakdown) {
+    const cat = categoryOf(issue, connection);
     byType[cat] = (byType[cat] ?? 0) + 1;
     const who = personName(issue.fields.assignee, "Non assigné");
     byAssignee[who] = (byAssignee[who] ?? 0) + 1;
@@ -686,6 +789,21 @@ export async function fetchJiraWeekStats(
       "Inconnu",
     );
     byRequester[requester] = (byRequester[requester] ?? 0) + 1;
+  }
+
+  if (
+    createdForBreakdown.length > 0 &&
+    Object.keys(byType).length === 1 &&
+    byType["Non catégorisé"]
+  ) {
+    warnings.push(
+      `Tous les tickets sont « Non catégorisé » (source=${connection.categoryField}` +
+        (connection.categoryField === "custom"
+          ? `/${connection.categoryCustomFieldId || "?"}`
+          : "") +
+        `). Échantillon: ${categoryProbeSample(createdForBreakdown, connection)}. ` +
+        `Changez la source de catégorie (composant / label / type / champ custom) puis reconnectez.`,
+    );
   }
 
   warnings.push(
@@ -711,7 +829,7 @@ export async function fetchJiraWeekStats(
       openCount,
       pecCandidates: pecIssues.length,
       resolvedCandidates: resolvedIssues.length,
-      sampleCreatedKeys: createdIssues
+      sampleCreatedKeys: createdForBreakdown
         .map((i) => i.key)
         .filter(Boolean)
         .slice(0, 8),
@@ -853,7 +971,7 @@ export async function fetchJiraCreatedBreakdown(
   const byAssignee: Record<string, number> = {};
   const byRequester: Record<string, number> = {};
   for (const issue of createdIssues) {
-    const cat = categoryOf(issue, connection.categoryField);
+    const cat = categoryOf(issue, connection);
     byType[cat] = (byType[cat] ?? 0) + 1;
     const who = personName(issue.fields.assignee, "Non assigné");
     byAssignee[who] = (byAssignee[who] ?? 0) + 1;
@@ -871,6 +989,21 @@ export async function fetchJiraCreatedBreakdown(
   ) {
     warnings.push(
       "Tous les tickets sont « Non assigné » — vérifiez le champ assignee dans Jira.",
+    );
+  }
+
+  if (
+    createdIssues.length > 0 &&
+    Object.keys(byType).length === 1 &&
+    byType["Non catégorisé"]
+  ) {
+    warnings.push(
+      `Tous les tickets sont « Non catégorisé » (source=${connection.categoryField}` +
+        (connection.categoryField === "custom"
+          ? `/${connection.categoryCustomFieldId || "?"}`
+          : "") +
+        `). Échantillon: ${categoryProbeSample(createdIssues, connection)}. ` +
+        `Changez la source de catégorie puis reconnectez.`,
     );
   }
 

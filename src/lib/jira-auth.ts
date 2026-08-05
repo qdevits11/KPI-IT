@@ -25,7 +25,14 @@ export interface JiraConnection {
   slaPriseEnChargeHours: number;
   /** Seuil SLA clôture (heures ouvrées) — n8n: 48 */
   slaClotureHours: number;
-  categoryField: "component" | "label" | "issuetype";
+  /**
+   * Source de la « catégorie / type de demande ».
+   * - component | label | issuetype
+   * - custom → lit categoryCustomFieldId (ex. customfield_10001)
+   */
+  categoryField: "component" | "label" | "issuetype" | "custom";
+  /** ID API du champ custom (si categoryField = custom) */
+  categoryCustomFieldId: string;
   connectedAt: string;
 }
 
@@ -37,6 +44,7 @@ export const DEFAULT_JIRA_SETTINGS = {
   slaPriseEnChargeHours: 24,
   slaClotureHours: 48,
   categoryField: "component" as const,
+  categoryCustomFieldId: "",
 };
 
 function secretKey(): Buffer {
@@ -81,6 +89,19 @@ function normalizeConnection(
   },
 ): JiraConnection | null {
   if (!partial.baseUrl || !partial.email || !partial.apiToken) return null;
+
+  const rawCategory = (partial.categoryField ?? "").trim();
+  const rawCustom =
+    typeof partial.categoryCustomFieldId === "string"
+      ? partial.categoryCustomFieldId.trim()
+      : "";
+  const categoryField = normalizeCategoryField(rawCategory, rawCustom);
+  const categoryCustomFieldId =
+    rawCustom ||
+    (rawCategory.toLowerCase().startsWith("customfield_")
+      ? rawCategory
+      : DEFAULT_JIRA_SETTINGS.categoryCustomFieldId);
+
   return {
     baseUrl: partial.baseUrl.replace(/\/$/, ""),
     email: partial.email,
@@ -98,9 +119,23 @@ function normalizeConnection(
       DEFAULT_JIRA_SETTINGS.slaPriseEnChargeHours,
     slaClotureHours:
       partial.slaClotureHours ?? DEFAULT_JIRA_SETTINGS.slaClotureHours,
-    categoryField: partial.categoryField || DEFAULT_JIRA_SETTINGS.categoryField,
+    categoryField,
+    categoryCustomFieldId,
     connectedAt: partial.connectedAt || new Date().toISOString(),
   };
+}
+
+/** Accepte aussi un customfield_… passé directement dans categoryField (env). */
+function normalizeCategoryField(
+  raw: string | undefined,
+  customId?: string,
+): JiraConnection["categoryField"] {
+  const v = (raw ?? "").trim().toLowerCase();
+  if (v === "label" || v === "labels") return "label";
+  if (v === "issuetype" || v === "type") return "issuetype";
+  if (v === "custom" || v.startsWith("customfield_")) return "custom";
+  if (customId?.trim().toLowerCase().startsWith("customfield_")) return "custom";
+  return "component";
 }
 
 export async function readJiraConnection(): Promise<JiraConnection | null> {
@@ -159,6 +194,11 @@ export async function resolveJiraConnection(): Promise<JiraConnection | null> {
     categoryField:
       (process.env.JIRA_CATEGORY_FIELD as JiraConnection["categoryField"]) ||
       DEFAULT_JIRA_SETTINGS.categoryField,
+    categoryCustomFieldId:
+      process.env.JIRA_CATEGORY_CUSTOM_FIELD ||
+      (process.env.JIRA_CATEGORY_FIELD?.startsWith("customfield_")
+        ? process.env.JIRA_CATEGORY_FIELD
+        : DEFAULT_JIRA_SETTINGS.categoryCustomFieldId),
     connectedAt: "env",
   });
 }
@@ -176,6 +216,7 @@ export function sanitizeConnection(
     slaPriseEnChargeHours: conn.slaPriseEnChargeHours,
     slaClotureHours: conn.slaClotureHours,
     categoryField: conn.categoryField,
+    categoryCustomFieldId: conn.categoryCustomFieldId,
     connectedAt: conn.connectedAt,
     hasToken: true,
   };
