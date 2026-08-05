@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import type { KpiValue, LogEvent, PhishingEvent, WeeklyRow } from "@/lib/types";
 import { CATEGORY_LABELS } from "@/lib/formulas";
 import { WeekSelector } from "./WeekSelector";
@@ -24,6 +25,7 @@ interface Payload {
   };
   ticketsByType: Record<string, number>;
   ticketsByAssignee: Record<string, number>;
+  ticketsByRequester: Record<string, number>;
 }
 
 const CATEGORY_ORDER = [
@@ -243,10 +245,25 @@ export function Dashboard({ initialWeek }: { initialWeek: string }) {
               )}
             </div>
             <div className="space-y-8 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">
+                  Ventilation hebdo
+                </p>
+                <Link
+                  href="/statistiques"
+                  className="text-xs font-medium text-[var(--accent-deep)] hover:text-[var(--accent)]"
+                >
+                  Stats annuelles →
+                </Link>
+              </div>
               <Breakdown title="Tickets par type" data={data.ticketsByType} />
               <Breakdown
                 title="Tickets par responsable"
                 data={data.ticketsByAssignee}
+              />
+              <Breakdown
+                title="Tickets par demandeur"
+                data={data.ticketsByRequester ?? {}}
               />
             </div>
           </section>

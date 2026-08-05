@@ -102,6 +102,7 @@ export async function GET(request: Request) {
         weekKey(year, week),
         stats.byType,
         stats.byAssignee,
+        stats.byRequester,
       );
       extras = {
         demandesItHebdo: stats.patch.demandesItHebdo,

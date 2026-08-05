@@ -80,6 +80,8 @@ export interface AppDatabase {
   /** Clé = 2026-S31 */
   ticketsByType: Record<string, Record<string, number>>;
   ticketsByAssignee: Record<string, Record<string, number>>;
+  /** Ventilation par demandeur (reporter Jira). Clé = 2026-S31 */
+  ticketsByRequester: Record<string, Record<string, number>>;
   settings: {
     companyName: string;
     jiraConfigured: boolean;
@@ -131,6 +133,30 @@ export interface WeekDashboard {
   };
   ticketsByType: Record<string, number>;
   ticketsByAssignee: Record<string, number>;
+  ticketsByRequester: Record<string, number>;
+}
+
+/** Dimension d'analyse des tickets. */
+export type TicketStatDimension = "assignee" | "requester" | "type";
+
+/** Une ligne d'agrégat (personne, demandeur ou type). */
+export interface TicketStatRow {
+  name: string;
+  total: number;
+  /** Clé semaine → nombre */
+  byWeek: Record<string, number>;
+  share: number;
+}
+
+export interface TicketStatsPayload {
+  year: number;
+  dimension: TicketStatDimension;
+  label: string;
+  description: string;
+  weeks: string[];
+  rows: TicketStatRow[];
+  grandTotal: number;
+  weekTotals: Record<string, number>;
 }
 
 /** Ligne de la vue annuelle (équivalent feuille Excel « 2026 »). */

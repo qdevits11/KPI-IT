@@ -1,0 +1,266 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import type { TicketStatDimension, TicketStatsPayload } from "@/lib/types";
+
+interface StatsResponse {
+  year: number;
+  years: number[];
+  stats: TicketStatsPayload;
+}
+
+function weekLabel(weekKey: string): string {
+  const m = weekKey.match(/S(\d{2})$/);
+  return m ? `S${m[1]}` : weekKey;
+}
+
+function pct(share: number): string {
+  return `${(share * 100).toFixed(1)} %`;
+}
+
+export function TicketStatsView({
+  dimension,
+  initialYear = 2026,
+}: {
+  dimension: TicketStatDimension;
+  initialYear?: number;
+}) {
+  const [year, setYear] = useState(initialYear);
+  const [data, setData] = useState<StatsResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const [query, setQuery] = useState("");
+  const [showMatrix, setShowMatrix] = useState(false);
+
+  const load = useCallback(
+    async (y: number) => {
+      setError(null);
+      const res = await fetch(
+        `/api/stats?year=${encodeURIComponent(String(y))}&dimension=${encodeURIComponent(dimension)}`,
+      );
+      if (!res.ok) {
+        setError("Impossible de charger les statistiques");
+        return;
+      }
+      setData((await res.json()) as StatsResponse);
+    },
+    [dimension],
+  );
+
+  useEffect(() => {
+    startTransition(() => {
+      void load(year);
+    });
+  }, [year, load]);
+
+  const filtered = useMemo(() => {
+    if (!data) return [];
+    const q = query.trim().toLowerCase();
+    if (!q) return data.stats.rows;
+    return data.stats.rows.filter((r) => r.name.toLowerCase().includes(q));
+  }, [data, query]);
+
+  const maxTotal = useMemo(
+    () => Math.max(...filtered.map((r) => r.total), 1),
+    [filtered],
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-[family-name:var(--font-display)] text-2xl text-[var(--ink)] sm:text-3xl">
+            {data?.stats.label ?? "Statistiques tickets"}
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-[var(--muted)]">
+            {data?.stats.description ??
+              "Analyse des tickets créés sur l’année sélectionnée."}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
+            Année
+            <select
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 text-[var(--ink)]"
+            >
+              {(data?.years ?? [year]).map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
+            Filtrer
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Nom…"
+              className="w-40 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 text-[var(--ink)] sm:w-48"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => setShowMatrix((v) => !v)}
+            className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--ink-soft)] transition-colors hover:bg-[var(--wash)]"
+          >
+            {showMatrix ? "Vue classement" : "Matrice hebdo"}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <p className="rounded-md border border-[var(--crit)]/30 bg-[var(--crit)]/10 px-3 py-2 text-sm text-[var(--crit)]">
+          {error}
+        </p>
+      )}
+      {pending && !data && (
+        <p className="text-sm text-[var(--muted)]">Chargement…</p>
+      )}
+
+      {data && (
+        <>
+          <div className="flex flex-wrap gap-6 text-sm">
+            <div>
+              <p className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">
+                Total année
+              </p>
+              <p className="mt-0.5 font-[family-name:var(--font-display)] text-2xl tabular-nums text-[var(--ink)]">
+                {data.stats.grandTotal.toLocaleString("fr-BE")}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">
+                Entrées
+              </p>
+              <p className="mt-0.5 font-[family-name:var(--font-display)] text-2xl tabular-nums text-[var(--ink)]">
+                {data.stats.rows.length}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">
+                Semaines
+              </p>
+              <p className="mt-0.5 font-[family-name:var(--font-display)] text-2xl tabular-nums text-[var(--ink)]">
+                {data.stats.weeks.length}
+              </p>
+            </div>
+          </div>
+
+          {data.stats.rows.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface)]/60 px-4 py-8 text-center text-sm text-[var(--muted)]">
+              Aucune donnée pour cette dimension en {year}.
+              {dimension === "requester"
+                ? " Synchronisez Jira pour peupler les demandeurs (reporter)."
+                : " Vérifiez le seed Excel ou une sync Jira."}
+            </p>
+          ) : showMatrix ? (
+            <div className="overflow-x-auto rounded-xl border border-[var(--line)] bg-[var(--surface)]">
+              <table className="min-w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--line)] bg-[var(--wash)]/50 text-left text-xs uppercase tracking-[0.1em] text-[var(--muted)]">
+                    <th className="sticky left-0 z-10 bg-[var(--wash)] px-3 py-2 font-medium">
+                      Nom
+                    </th>
+                    {data.stats.weeks.map((wk) => (
+                      <th
+                        key={wk}
+                        className="px-2 py-2 text-center font-medium tabular-nums"
+                        title={wk}
+                      >
+                        {weekLabel(wk)}
+                      </th>
+                    ))}
+                    <th className="px-3 py-2 text-right font-medium">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((row) => (
+                    <tr
+                      key={row.name}
+                      className="border-b border-[var(--line)]/60 hover:bg-[var(--wash)]/40"
+                    >
+                      <td className="sticky left-0 z-10 bg-[var(--surface)] px-3 py-1.5 font-medium text-[var(--ink)]">
+                        {row.name}
+                      </td>
+                      {data.stats.weeks.map((wk) => {
+                        const n = row.byWeek[wk] ?? 0;
+                        return (
+                          <td
+                            key={wk}
+                            className={`px-2 py-1.5 text-center tabular-nums ${
+                              n === 0
+                                ? "text-[var(--muted)]/50"
+                                : "text-[var(--ink-soft)]"
+                            }`}
+                          >
+                            {n || "·"}
+                          </td>
+                        );
+                      })}
+                      <td className="px-3 py-1.5 text-right font-medium tabular-nums text-[var(--ink)]">
+                        {row.total}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="bg-[var(--wash)]/60 font-medium">
+                    <td className="sticky left-0 z-10 bg-[var(--wash)] px-3 py-2 text-[var(--ink)]">
+                      Total
+                    </td>
+                    {data.stats.weeks.map((wk) => (
+                      <td
+                        key={wk}
+                        className="px-2 py-2 text-center tabular-nums text-[var(--ink)]"
+                      >
+                        {data.stats.weekTotals[wk] ?? 0}
+                      </td>
+                    ))}
+                    <td className="px-3 py-2 text-right tabular-nums text-[var(--ink)]">
+                      {data.stats.grandTotal}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <ul className="space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 sm:p-5">
+              {filtered.map((row, i) => (
+                <li
+                  key={row.name}
+                  className="grid grid-cols-[auto_1fr_auto] items-center gap-3 text-sm"
+                  style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }}
+                >
+                  <span className="w-6 tabular-nums text-xs text-[var(--muted)]">
+                    {i + 1}
+                  </span>
+                  <div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-[var(--ink)]">{row.name}</span>
+                      <span className="tabular-nums text-[var(--muted)]">
+                        {pct(row.share)}
+                      </span>
+                    </div>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded bg-[var(--wash)]">
+                      <div
+                        className="h-full rounded bg-[var(--accent)] transition-all duration-500"
+                        style={{
+                          width: `${(row.total / maxTotal) * 100}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <span className="min-w-[3rem] text-right font-medium tabular-nums text-[var(--ink)]">
+                    {row.total}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

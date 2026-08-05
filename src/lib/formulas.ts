@@ -410,6 +410,7 @@ export function buildWeekDashboard(
     },
     ticketsByType: db.ticketsByType[id] ?? {},
     ticketsByAssignee: db.ticketsByAssignee[id] ?? {},
+    ticketsByRequester: db.ticketsByRequester?.[id] ?? {},
   };
 }
 

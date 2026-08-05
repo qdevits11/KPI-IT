@@ -110,4 +110,11 @@ describe("mockJiraWeekStats", () => {
     expect(typeof r.patch.ticketsHorsSlaCloture).toBe("number");
     expect(typeof r.patch.ticketsHorsSlaPriseEnCharge).toBe("number");
   });
+
+  it("expose les ventilations type / responsable / demandeur", () => {
+    const r = mockJiraWeekStats(2026, 12);
+    expect(Object.keys(r.byType).length).toBeGreaterThan(0);
+    expect(Object.keys(r.byAssignee).length).toBeGreaterThan(0);
+    expect(Object.keys(r.byRequester).length).toBeGreaterThan(0);
+  });
 });

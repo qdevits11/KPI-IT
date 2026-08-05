@@ -37,6 +37,7 @@ async function ensureDb(): Promise<AppDatabase> {
     const db = JSON.parse(raw) as AppDatabase;
     let dirty = migrateLogDates(db);
     if (migrateSettings(db)) dirty = true;
+    if (migrateTicketRequester(db)) dirty = true;
     if (dirty) {
       await writeDb(db);
     }
@@ -186,6 +187,14 @@ function migrateSettings(db: AppDatabase): boolean {
   return false;
 }
 
+function migrateTicketRequester(db: AppDatabase): boolean {
+  if (!db.ticketsByRequester) {
+    db.ticketsByRequester = {};
+    return true;
+  }
+  return false;
+}
+
 export async function getResponsibles(): Promise<string[]> {
   const db = await ensureDb();
   return sortResponsibles(db.settings.responsibles);
@@ -292,9 +301,12 @@ export async function setTicketsBreakdown(
   weekKey: string,
   byType: Record<string, number>,
   byAssignee: Record<string, number>,
+  byRequester: Record<string, number> = {},
 ): Promise<void> {
   const db = await ensureDb();
+  if (!db.ticketsByRequester) db.ticketsByRequester = {};
   db.ticketsByType[weekKey] = byType;
   db.ticketsByAssignee[weekKey] = byAssignee;
+  db.ticketsByRequester[weekKey] = byRequester;
   await writeDb(db);
 }

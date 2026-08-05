@@ -28,6 +28,7 @@ def main():
         "maintenances": [],
         "ticketsByType": {},
         "ticketsByAssignee": {},
+        "ticketsByRequester": {},
     }
     ws = wb["2026"]
     for r in range(5, 57):

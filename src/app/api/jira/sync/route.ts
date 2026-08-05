@@ -324,6 +324,7 @@ export async function POST(request: Request) {
             weekKey(year, week),
             result.byType,
             result.byAssignee,
+            result.byRequester,
           );
         }
         merged.warnings.push(
@@ -398,6 +399,7 @@ export async function POST(request: Request) {
           weekKey(year, week),
           result.byType,
           result.byAssignee,
+          result.byRequester,
         );
       }
       merged.warnings.push(

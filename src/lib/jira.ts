@@ -17,6 +17,7 @@ interface JiraIssue {
     resolutiondate: string | null;
     issuetype?: { name: string };
     assignee?: { displayName: string } | null;
+    reporter?: { displayName: string } | null;
     labels?: string[];
     components?: { name: string }[];
     [custom: string]: unknown;
@@ -185,6 +186,7 @@ function normalizeIssues(raw: unknown[] | undefined): JiraIssue[] {
             : null,
         issuetype: fieldsObj.issuetype as JiraIssue["fields"]["issuetype"],
         assignee: fieldsObj.assignee as JiraIssue["fields"]["assignee"],
+        reporter: fieldsObj.reporter as JiraIssue["fields"]["reporter"],
         labels: fieldsObj.labels as string[] | undefined,
         components: fieldsObj.components as { name: string }[] | undefined,
         ...fieldsObj,
@@ -518,6 +520,7 @@ export interface JiraWeekSyncResult {
   patch: Partial<WeeklyRow>;
   byType: Record<string, number>;
   byAssignee: Record<string, number>;
+  byRequester: Record<string, number>;
   jql: WeekJqlBundle;
   warnings: string[];
   probe: JiraProbeResult;
@@ -575,7 +578,7 @@ export async function fetchJiraWeekStats(
       searchAll(
         connection,
         jql.created,
-        "created,resolutiondate,assignee,labels,components,issuetype",
+        "created,resolutiondate,assignee,reporter,labels,components,issuetype",
       ).catch((err: Error) => {
         warnings.push(`Search créés: ${err.message.slice(0, 160)}`);
         return [] as JiraIssue[];
@@ -655,11 +658,14 @@ export async function fetchJiraWeekStats(
 
   const byType: Record<string, number> = {};
   const byAssignee: Record<string, number> = {};
+  const byRequester: Record<string, number> = {};
   for (const issue of createdIssues) {
     const cat = categoryOf(issue, connection.categoryField);
     byType[cat] = (byType[cat] ?? 0) + 1;
     const who = issue.fields.assignee?.displayName ?? "Non assigné";
     byAssignee[who] = (byAssignee[who] ?? 0) + 1;
+    const requester = issue.fields.reporter?.displayName ?? "Inconnu";
+    byRequester[requester] = (byRequester[requester] ?? 0) + 1;
   }
 
   warnings.push(
@@ -676,6 +682,7 @@ export async function fetchJiraWeekStats(
     },
     byType,
     byAssignee,
+    byRequester,
     jql,
     warnings,
     probe,
@@ -732,6 +739,13 @@ export function mockJiraWeekStats(
       "Loic Voumard": Math.round(created * 0.3),
       "Devits Quentin": Math.round(created * 0.25),
       "Dominique Kudas": Math.max(0, created - Math.round(created * 0.95)),
+    },
+    byRequester: {
+      "Alice Martin": Math.round(created * 0.3),
+      "Bruno Dupont": Math.round(created * 0.25),
+      "Claire Leroy": Math.round(created * 0.2),
+      "David Nguyen": Math.round(created * 0.15),
+      Autre: Math.max(0, created - Math.round(created * 0.9)),
     },
     jql,
     warnings: ["Mode démo — données fictives"],

@@ -56,6 +56,7 @@ interface ExcelSeed {
   }>;
   ticketsByType: Record<string, Record<string, number>>;
   ticketsByAssignee: Record<string, Record<string, number>>;
+  ticketsByRequester?: Record<string, Record<string, number>>;
 }
 
 function emptyWeek(year: number, month: number, week: number): WeeklyRow {
@@ -126,6 +127,7 @@ export function seedDatabase(): AppDatabase {
     maintenances: toLog(excel.maintenances, "maint"),
     ticketsByType: excel.ticketsByType,
     ticketsByAssignee: excel.ticketsByAssignee,
+    ticketsByRequester: excel.ticketsByRequester ?? {},
     settings: {
       companyName: "Coverseal / Becoflex",
       jiraConfigured: false,
