@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { buildWeekMailText, buildWeekMailHtml } from "./mail";
+import {
+  buildWeekMailText,
+  buildWeekMailHtml,
+  OFFICE365_SMTP,
+} from "./mail";
+
+describe("OFFICE365_SMTP", () => {
+  it("cible smtp.office365.com et noreply@coverseal.com", () => {
+    expect(OFFICE365_SMTP.host).toBe("smtp.office365.com");
+    expect(OFFICE365_SMTP.user).toBe("noreply@coverseal.com");
+    expect(OFFICE365_SMTP.from).toContain("noreply@coverseal.com");
+  });
+});
 
 const sample = {
   year: 2026,
