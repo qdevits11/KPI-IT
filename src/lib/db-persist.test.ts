@@ -1,14 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppDatabase } from "./types";
 
-const putMock = vi.fn();
-const getMock = vi.fn();
-const headMock = vi.fn();
+const { putMock, getMock, headMock } = vi.hoisted(() => ({
+  putMock: vi.fn(),
+  getMock: vi.fn(),
+  headMock: vi.fn(),
+}));
 
 vi.mock("@vercel/blob", () => ({
-  put: (...args: unknown[]) => putMock(...args),
-  get: (...args: unknown[]) => getMock(...args),
-  head: (...args: unknown[]) => headMock(...args),
+  put: (...args: unknown[]) => putMock(...(args as [string, string, object])),
+  get: (...args: unknown[]) => getMock(...(args as [string, object])),
+  head: (...args: unknown[]) => headMock(...(args as [string])),
 }));
 
 import {

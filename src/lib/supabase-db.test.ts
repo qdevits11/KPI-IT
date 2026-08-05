@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppDatabase } from "./types";
 
-const fromMock = vi.fn();
-const createClientMock = vi.fn(() => ({ from: fromMock }));
+const { fromMock, createClientMock } = vi.hoisted(() => {
+  const fromMock = vi.fn();
+  const createClientMock = vi.fn(() => ({ from: fromMock }));
+  return { fromMock, createClientMock };
+});
 
 vi.mock("@supabase/supabase-js", () => ({
-  createClient: (...args: unknown[]) => createClientMock(...args),
+  createClient: (...args: unknown[]) =>
+    createClientMock(...(args as [string, string])),
 }));
 
 import {
