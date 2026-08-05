@@ -39,20 +39,30 @@ function sourceFor(
   return db.ticketsByType ?? {};
 }
 
-/** Semaines de l’année présentes en base, triées. */
-export function weeksForYear(db: AppDatabase, year: number): string[] {
-  const fromWeeks = db.weeks
-    .filter((w) => w.year === year)
-    .map((w) => weekId(w));
-  const fromBreakdown = new Set<string>();
-  for (const key of [
-    ...Object.keys(db.ticketsByType ?? {}),
-    ...Object.keys(db.ticketsByAssignee ?? {}),
-    ...Object.keys(db.ticketsByRequester ?? {}),
-  ]) {
-    if (key.startsWith(`${year}-S`)) fromBreakdown.add(key);
+/** Semaines de l’année avec au moins une ventilation pour la dimension. */
+export function weeksForYear(
+  db: AppDatabase,
+  year: number,
+  source?: Record<string, Record<string, number>>,
+): string[] {
+  if (source) {
+    const fromSource = Object.keys(source)
+      .filter((k) => k.startsWith(`${year}-S`))
+      .filter((k) => Object.values(source[k] ?? {}).some((n) => n > 0));
+    if (fromSource.length > 0) {
+      return fromSource.sort();
+    }
   }
-  return [...new Set([...fromWeeks, ...fromBreakdown])].sort();
+
+  const fromWeeks = db.weeks
+    .filter((w) => w.year === year && (w.demandesItHebdo ?? 0) > 0)
+    .map((w) => weekId(w));
+  if (fromWeeks.length > 0) return [...new Set(fromWeeks)].sort();
+
+  return db.weeks
+    .filter((w) => w.year === year)
+    .map((w) => weekId(w))
+    .sort();
 }
 
 /**
@@ -68,7 +78,7 @@ export function buildTicketStats(
   const hideZeros = options?.hideZeros !== false;
   const meta = STAT_DIMENSIONS[dimension];
   const source = sourceFor(db, dimension);
-  const weeks = weeksForYear(db, year);
+  const weeks = weeksForYear(db, year, source);
 
   const names = new Set<string>();
   for (const wk of weeks) {

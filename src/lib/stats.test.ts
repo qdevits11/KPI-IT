@@ -100,10 +100,11 @@ describe("buildStatsOverview", () => {
 });
 
 describe("weeksForYear", () => {
-  it("unionne semaines base et ventilations", () => {
+  it("ne garde que les semaines avec volume > 0 dans la source", () => {
     const db = fixture();
     db.ticketsByType["2026-S29"] = { Odoo: 1 };
-    expect(weeksForYear(db, 2026)).toEqual([
+    db.ticketsByType["2026-S32"] = { Odoo: 0 };
+    expect(weeksForYear(db, 2026, db.ticketsByType)).toEqual([
       "2026-S29",
       "2026-S30",
       "2026-S31",
