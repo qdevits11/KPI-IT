@@ -85,7 +85,7 @@ export async function POST(request: Request) {
       {
         ok: false,
         error:
-          "SMTP non configuré. Sur Vercel : SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, SMTP_TO.",
+          "SMTP Office 365 non configuré. Sur Vercel : SMTP_USER=noreply@coverseal.com, SMTP_PASS, SMTP_TO (hôte défaut smtp.office365.com).",
       },
       { status: 400 },
     );

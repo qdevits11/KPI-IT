@@ -1,12 +1,21 @@
 import nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
 
+/** Défauts Microsoft 365 / Exchange Online */
+export const OFFICE365_SMTP = {
+  host: "smtp.office365.com",
+  port: 587,
+  from: "KPI IT <noreply@coverseal.com>",
+  user: "noreply@coverseal.com",
+} as const;
+
 export interface SmtpConfig {
   host: string;
   port: number;
   secure: boolean;
-  user?: string;
-  pass?: string;
+  requireTLS: boolean;
+  user: string;
+  pass: string;
   from: string;
   to: string[];
 }
@@ -22,24 +31,40 @@ export interface WeekMailValues {
   ticketsHorsSlaPriseEnCharge: number;
 }
 
-export function getSmtpConfig(): SmtpConfig | null {
-  const host = process.env.SMTP_HOST?.trim();
-  const from = process.env.SMTP_FROM?.trim();
-  const toRaw = process.env.SMTP_TO?.trim() ?? process.env.MAIL_TO?.trim();
-  if (!host || !from || !toRaw) return null;
+function extractEmail(from: string): string | null {
+  const angled = from.match(/<([^>]+)>/);
+  if (angled) return angled[1].trim();
+  if (from.includes("@")) return from.trim();
+  return null;
+}
 
-  const port = Number(process.env.SMTP_PORT ?? "587");
+export function getSmtpConfig(): SmtpConfig | null {
+  const from =
+    process.env.SMTP_FROM?.trim() || OFFICE365_SMTP.from;
+  const toRaw = process.env.SMTP_TO?.trim() ?? process.env.MAIL_TO?.trim();
+  const pass = process.env.SMTP_PASS?.trim();
+  const user =
+    process.env.SMTP_USER?.trim() ||
+    extractEmail(from) ||
+    OFFICE365_SMTP.user;
+
+  // Office 365 exige auth ; sans mot de passe = non configuré
+  if (!toRaw || !pass) return null;
+
+  const port = Number(process.env.SMTP_PORT ?? OFFICE365_SMTP.port);
   const secure =
     process.env.SMTP_SECURE === "true" ||
     process.env.SMTP_SECURE === "1" ||
     port === 465;
 
   return {
-    host,
-    port: Number.isFinite(port) ? port : 587,
+    host: process.env.SMTP_HOST?.trim() || OFFICE365_SMTP.host,
+    port: Number.isFinite(port) ? port : OFFICE365_SMTP.port,
     secure,
-    user: process.env.SMTP_USER?.trim() || undefined,
-    pass: process.env.SMTP_PASS?.trim() || undefined,
+    // STARTTLS sur 587 — requis pour smtp.office365.com
+    requireTLS: !secure,
+    user,
+    pass,
     from,
     to: toRaw
       .split(/[,;]/)
@@ -57,14 +82,46 @@ function createTransport(cfg: SmtpConfig): Transporter {
     host: cfg.host,
     port: cfg.port,
     secure: cfg.secure,
-    auth:
-      cfg.user && cfg.pass
-        ? {
-            user: cfg.user,
-            pass: cfg.pass,
-          }
-        : undefined,
+    requireTLS: cfg.requireTLS,
+    auth: {
+      user: cfg.user,
+      pass: cfg.pass,
+    },
+    tls: {
+      // Office 365 / modernes
+      minVersion: "TLSv1.2",
+    },
   });
+}
+
+function formatSmtpError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const lower = raw.toLowerCase();
+
+  if (
+    lower.includes("authentication unsuccessful") ||
+    lower.includes("invalid login") ||
+    lower.includes("535")
+  ) {
+    return (
+      "Auth Office 365 refusée. Vérifiez le mot de passe de noreply@coverseal.com, " +
+      "et que « Authenticated SMTP » est activé pour cette boîte " +
+      "(admin M365 → utilisateur → Mail → applications mail)."
+    );
+  }
+  if (lower.includes("5.7.57") || lower.includes("client was not authenticated")) {
+    return (
+      "SMTP AUTH désactivé pour noreply@coverseal.com. " +
+      "Activez Authenticated SMTP dans le centre d’admin Microsoft 365."
+    );
+  }
+  if (lower.includes("sender") && lower.includes("not allowed")) {
+    return (
+      "L’expéditeur doit être la boîte authentifiée (noreply@coverseal.com) " +
+      "ou un alias avec droit « Envoyer en tant que »."
+    );
+  }
+  return raw;
 }
 
 export function buildWeekMailHtml(v: WeekMailValues): string {
@@ -151,7 +208,7 @@ export async function sendWeekReport(
   const cfg = getSmtpConfig();
   if (!cfg) {
     throw new Error(
-      "SMTP non configuré. Définissez SMTP_HOST, SMTP_FROM et SMTP_TO.",
+      "SMTP Office 365 non configuré. Sur Vercel : SMTP_PASS (noreply@coverseal.com) + SMTP_TO.",
     );
   }
 
@@ -162,18 +219,24 @@ export async function sendWeekReport(
 
   const weekLabel = `${values.year}-S${String(values.week).padStart(2, "0")}`;
   const transport = createTransport(cfg);
-  const info = await transport.sendMail({
-    from: cfg.from,
-    to: to.join(", "),
-    subject: `KPI IT — Semaine ${weekLabel}`,
-    text: buildWeekMailText(values),
-    html: buildWeekMailHtml(values),
-  });
 
-  return {
-    messageId: info.messageId ?? "",
-    to,
-  };
+  try {
+    const info = await transport.sendMail({
+      from: cfg.from,
+      sender: cfg.user,
+      to: to.join(", "),
+      subject: `KPI IT — Semaine ${weekLabel}`,
+      text: buildWeekMailText(values),
+      html: buildWeekMailHtml(values),
+    });
+
+    return {
+      messageId: info.messageId ?? "",
+      to,
+    };
+  } catch (err) {
+    throw new Error(formatSmtpError(err));
+  }
 }
 
 export async function verifySmtp(): Promise<{ ok: boolean; error?: string }> {
@@ -181,7 +244,8 @@ export async function verifySmtp(): Promise<{ ok: boolean; error?: string }> {
   if (!cfg) {
     return {
       ok: false,
-      error: "SMTP non configuré (SMTP_HOST, SMTP_FROM, SMTP_TO).",
+      error:
+        "SMTP Office 365 non configuré. Définissez SMTP_PASS + SMTP_TO (hôte par défaut smtp.office365.com, expéditeur noreply@coverseal.com).",
     };
   }
   try {
@@ -191,7 +255,7 @@ export async function verifySmtp(): Promise<{ ok: boolean; error?: string }> {
   } catch (err) {
     return {
       ok: false,
-      error: err instanceof Error ? err.message : "Vérification SMTP échouée",
+      error: formatSmtpError(err),
     };
   }
 }

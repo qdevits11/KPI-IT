@@ -538,24 +538,27 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
 
       <section className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
         <h2 className="font-[family-name:var(--font-display)] text-xl">
-          Envoyer par email (SMTP)
+          Envoyer par email (Office 365)
         </h2>
         <p className="text-sm text-[var(--muted)]">
-          Utilise votre serveur SMTP existant (variables{" "}
-          <code className="text-xs">SMTP_*</code> sur Vercel). Sync la semaine
-          choisie puis envoie les 4 KPI.
+          Expéditeur <code className="text-xs">noreply@coverseal.com</code> via{" "}
+          <code className="text-xs">smtp.office365.com</code>. Sur Vercel :
+          <code className="text-xs"> SMTP_USER</code>,{" "}
+          <code className="text-xs">SMTP_PASS</code>,{" "}
+          <code className="text-xs">SMTP_TO</code>. Activez « Authenticated
+          SMTP » sur la boîte noreply.
         </p>
         {smtp ? (
           <p className="text-xs text-[var(--muted)]">
             {smtp.configured ? (
               <>
-                SMTP : {smtp.host}
+                Office 365 : {smtp.host}
                 {smtp.from ? ` · de ${smtp.from}` : ""}
               </>
             ) : (
               <span className="text-[var(--warn)]">
-                SMTP non configuré — ajoutez SMTP_HOST, SMTP_FROM, SMTP_TO (et
-                auth) dans Vercel.
+                Non configuré — ajoutez SMTP_PASS + SMTP_TO sur Vercel (user =
+                noreply@coverseal.com).
               </span>
             )}
           </p>
