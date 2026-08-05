@@ -134,14 +134,27 @@ function formatSyncedAt(iso: string | null): string {
   }
 }
 
+/** Sync complète depuis la page Semaine en cours (KPI + non résolus + ventilations). */
+const CURRENT_WEEK_SYNC_FIELDS = {
+  demandesItHebdo: true,
+  demandesNonResoluesHebdo: true,
+  ticketsHorsSlaCloture: true,
+  ticketsHorsSlaPriseEnCharge: true,
+  ticketsByType: true,
+  ticketsByAssignee: true,
+  ticketsByRequester: true,
+} as const;
+
 function CurrentWeekStatus({
   data,
   onRefresh,
   pending,
+  syncMessage,
 }: {
   data: Payload;
   onRefresh: () => void;
   pending: boolean;
+  syncMessage: string | null;
 }) {
   const { week, meta, kpis } = data;
   const val = (id: string) => kpis.find((k) => k.id === id)?.value ?? null;
@@ -160,7 +173,7 @@ function CurrentWeekStatus({
   if (meta.isLive) {
     statusLabel = "En cours · live";
     statusHint =
-      "Les non-résolus suivent le stock Jira à chaque sync. Figement dimanche 23:59 Bruxelles.";
+      "Actualiser relance une sync Jira complète (créés, non résolus, SLA, ventilations). Figement dimanche 23:59 Bruxelles.";
     statusClass =
       "border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent-deep)]";
   } else if (meta.isCurrentWeek && meta.openFrozenAt) {
@@ -220,34 +233,25 @@ function CurrentWeekStatus({
       </div>
 
       <div className="flex flex-col gap-3 border-t border-[var(--line)] pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-[var(--muted)]">
-          Dernière sync Jira :{" "}
-          <span className="text-[var(--ink-soft)]">
-            {formatSyncedAt(meta.jiraSyncedAt)}
-          </span>
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={pending}
-            className="rounded-md border border-[var(--line)] bg-[var(--wash)] px-3 py-1.5 text-sm text-[var(--ink)] transition-colors hover:border-[var(--accent)] disabled:opacity-50"
-          >
-            {pending ? "Actualisation…" : "Actualiser"}
-          </button>
-          <Link
-            href={`/jira?week=${encodeURIComponent(meta.currentWeekId)}`}
-            className="rounded-md bg-[var(--ink)] px-3 py-1.5 text-sm text-[var(--paper)] transition-opacity hover:opacity-90"
-          >
-            Sync Jira
-          </Link>
-          <Link
-            href="/saisie"
-            className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm text-[var(--ink)] transition-colors hover:border-[var(--accent)]"
-          >
-            Encodage
-          </Link>
+        <div className="space-y-1">
+          <p className="text-sm text-[var(--muted)]">
+            Dernière sync Jira :{" "}
+            <span className="text-[var(--ink-soft)]">
+              {formatSyncedAt(meta.jiraSyncedAt)}
+            </span>
+          </p>
+          {syncMessage && (
+            <p className="text-sm text-[var(--ok)]">{syncMessage}</p>
+          )}
         </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={pending}
+          className="rounded-md bg-[var(--ink)] px-3 py-1.5 text-sm text-[var(--paper)] transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          {pending ? "Sync Jira…" : "Actualiser"}
+        </button>
       </div>
     </section>
   );
@@ -269,6 +273,7 @@ export function Dashboard({
       : initialWeek;
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const load = useCallback(async (id: string) => {
@@ -291,9 +296,45 @@ export function Dashboard({
     router.replace(`/?week=${encodeURIComponent(id)}`, { scroll: false });
   }
 
-  function refresh() {
-    startTransition(() => {
-      void load(weekId);
+  function refreshFromJira() {
+    setSyncMessage(null);
+    setError(null);
+    startTransition(async () => {
+      const res = await fetch("/api/jira/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          weekId,
+          dryRun: false,
+          forceOpenLive: true,
+          saveFields: CURRENT_WEEK_SYNC_FIELDS,
+        }),
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        savedFields?: string[];
+        values?: {
+          demandesItHebdo?: number;
+          demandesNonResoluesHebdo?: number;
+        };
+      };
+      if (!res.ok || !json.ok) {
+        setError(
+          json.error ??
+            "Sync Jira impossible — connectez un compte sur Sync Jira.",
+        );
+        return;
+      }
+      const saved = json.savedFields?.length
+        ? json.savedFields.join(", ")
+        : "KPI Jira";
+      const open =
+        json.values?.demandesNonResoluesHebdo != null
+          ? ` · non résolus = ${json.values.demandesNonResoluesHebdo}`
+          : "";
+      setSyncMessage(`Sync OK — ${saved}${open}`);
+      await load(weekId);
     });
   }
 
@@ -330,7 +371,12 @@ export function Dashboard({
       </div>
 
       {data?.meta && lockToCurrentWeek && (
-        <CurrentWeekStatus data={data} onRefresh={refresh} pending={pending} />
+        <CurrentWeekStatus
+          data={data}
+          onRefresh={refreshFromJira}
+          pending={pending}
+          syncMessage={syncMessage}
+        />
       )}
 
       {data?.meta?.isCurrentWeek && !lockToCurrentWeek && (
