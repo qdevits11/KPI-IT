@@ -18,7 +18,10 @@ Granularité **hebdomadaire**. Feuille année + journaux de détail :
 | Non résolues hebdo / YTD | Jira / calculé | Snapshot + cumul Excel |
 | Tickets par type / responsable | Jira / Excel | Ventilation |
 
-**Encodage manuel** (`/saisie`) : uniquement les 4 journaux ci-dessus. Tout le reste (SLA, demandes, non résolus, ventilation) vient de Jira.
+**Encodage manuel** (`/saisie`) :
+- Automatisations métiers / Odoo / maintenances (date, explication, responsable)
+- Tests phishing ratés (date, nbr échecs)
+- **Retour semaine** : remarque sur la fluctuation des chiffres + recommandations
 
 **Responsables** (`/configuration`) : liste fermée (par défaut Gary, Quentin, Loic, Dominique) — sélectionnable à l’encodage, extensible dans Configuration.
 

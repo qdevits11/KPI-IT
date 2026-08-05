@@ -181,21 +181,29 @@ export function Dashboard({ initialWeek }: { initialWeek: string }) {
       {data && (
         <>
           {(data.week.informations || data.week.reaction) && (
-            <section className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5 space-y-2">
+            <section className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5 space-y-3">
               <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
-                Remarques
+                Retour sur la semaine
               </h2>
               {data.week.informations && (
-                <p className="text-sm text-[var(--ink-soft)]">
-                  <span className="text-[var(--muted)]">Infos : </span>
-                  {data.week.informations}
-                </p>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
+                    Fluctuation des chiffres
+                  </p>
+                  <p className="mt-1 text-sm text-[var(--ink-soft)] whitespace-pre-wrap">
+                    {data.week.informations}
+                  </p>
+                </div>
               )}
               {data.week.reaction && (
-                <p className="text-sm text-[var(--ink-soft)]">
-                  <span className="text-[var(--muted)]">Réaction : </span>
-                  {data.week.reaction}
-                </p>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
+                    Recommandations
+                  </p>
+                  <p className="mt-1 text-sm text-[var(--ink-soft)] whitespace-pre-wrap">
+                    {data.week.reaction}
+                  </p>
+                </div>
               )}
             </section>
           )}

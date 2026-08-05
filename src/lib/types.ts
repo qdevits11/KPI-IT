@@ -33,7 +33,9 @@ export interface WeeklyRow extends WeekRef {
    * null = pas encore figé (semaine courante = snapshot live à la sync).
    */
   openFrozenAt: string | null;
+  /** Remarque sur la fluctuation des chiffres (retour semaine). */
   informations: string;
+  /** Recommandations pour améliorer le service (retour semaine). */
   reaction: string;
   jiraSyncedAt: string | null;
   updatedAt: string | null;
