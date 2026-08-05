@@ -387,6 +387,51 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     if (failed && lastError) setError(lastError);
   }
 
+  async function clearRequesters(scope: "range" | "year") {
+    const from = Math.min(reqFrom, reqTo);
+    const to = Math.max(reqFrom, reqTo);
+    const label =
+      scope === "year"
+        ? `toute l’année ${year}`
+        : `S${String(from).padStart(2, "0")}–S${String(to).padStart(2, "0")} (${year})`;
+    if (
+      !window.confirm(
+        `Effacer les demandeurs pour ${label} ?\nLes KPI, types et responsables ne seront pas touchés.`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setResult(null);
+    setReqBusy(true);
+    try {
+      const res = await fetch("/api/jira/sync-requesters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          scope === "year"
+            ? { action: "clear", year }
+            : { action: "clear", year, weekFrom: from, weekTo: to },
+        ),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setError(json.error ?? "Effacement échoué");
+        return;
+      }
+      setReqProgress(null);
+      setResult(
+        `Demandeurs effacés (${label}) : ${json.removed ?? 0} semaine(s) retirée(s), ${json.remaining ?? 0} restante(s).`,
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Erreur lors de l’effacement",
+      );
+    } finally {
+      setReqBusy(false);
+    }
+  }
+
   const weekValid = year >= 2000 && year <= 2100 && week >= 1 && week <= 53;
   const anySaveField = Object.values(saveFields).some(Boolean);
   const rangeValid =
@@ -819,6 +864,22 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           >
             Import démo (fictif)
           </button>
+          <button
+            type="button"
+            disabled={pending || reqBusy || !rangeValid}
+            onClick={() => void clearRequesters("range")}
+            className="rounded-md border border-[var(--crit)]/40 px-4 py-2 text-sm text-[var(--crit)] disabled:opacity-50"
+          >
+            Effacer la plage
+          </button>
+          <button
+            type="button"
+            disabled={pending || reqBusy || year < 2000}
+            onClick={() => void clearRequesters("year")}
+            className="rounded-md border border-[var(--crit)]/40 px-4 py-2 text-sm text-[var(--crit)] disabled:opacity-50"
+          >
+            Effacer toute l’année
+          </button>
         </div>
 
         {reqProgress && (
@@ -837,6 +898,13 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
               {reqBusy ? "…" : " — terminé"}
             </p>
           </div>
+        )}
+
+        {result && result.toLowerCase().includes("demandeur") && (
+          <p className="text-sm text-[var(--ok)]">{result}</p>
+        )}
+        {error && (
+          <p className="text-sm text-[var(--crit)]">{error}</p>
         )}
       </section>
 

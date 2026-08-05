@@ -323,3 +323,52 @@ export async function setTicketsByRequester(
   db.ticketsByRequester[weekKey] = byRequester;
   await writeDb(db);
 }
+
+/**
+ * Efface les ventilations demandeurs.
+ * - sans filtre : tout
+ * - year : uniquement l’année
+ * - weekFrom/weekTo : plage ISO dans l’année
+ */
+export async function clearTicketsByRequester(options?: {
+  year?: number;
+  weekFrom?: number;
+  weekTo?: number;
+}): Promise<{ removed: number; remaining: number }> {
+  const db = await ensureDb();
+  if (!db.ticketsByRequester) db.ticketsByRequester = {};
+  const before = Object.keys(db.ticketsByRequester).length;
+
+  if (
+    options?.year == null &&
+    options?.weekFrom == null &&
+    options?.weekTo == null
+  ) {
+    db.ticketsByRequester = {};
+  } else {
+    const year = options.year;
+    const from = options.weekFrom ?? 1;
+    const to = options.weekTo ?? 53;
+    const lo = Math.min(from, to);
+    const hi = Math.max(from, to);
+    const next: Record<string, Record<string, number>> = {};
+    for (const [key, value] of Object.entries(db.ticketsByRequester)) {
+      const m = key.match(/^(\d{4})-S(\d{2})$/);
+      if (!m) {
+        next[key] = value;
+        continue;
+      }
+      const y = Number(m[1]);
+      const w = Number(m[2]);
+      const inYear = year == null || y === year;
+      const inRange = w >= lo && w <= hi;
+      if (inYear && inRange) continue;
+      next[key] = value;
+    }
+    db.ticketsByRequester = next;
+  }
+
+  await writeDb(db);
+  const remaining = Object.keys(db.ticketsByRequester).length;
+  return { removed: before - remaining, remaining };
+}

@@ -5,21 +5,72 @@ import {
   weekKey,
 } from "@/lib/jira";
 import { resolveJiraConnection } from "@/lib/jira-auth";
-import { ensureWeek, setTicketsByRequester } from "@/lib/store";
+import {
+  clearTicketsByRequester,
+  ensureWeek,
+  setTicketsByRequester,
+} from "@/lib/store";
 
 /**
  * Sync légère d’une semaine : uniquement les demandeurs (reporter).
- * Aucun KPI hebdo ni type/assigné n’est modifié.
+ * Ou action « clear » pour effacer les demandeurs (démo / plage).
  *
- * Body: { year, week, useMock?, dryRun? }
+ * Body sync : { year, week, useMock?, dryRun? }
+ * Body clear : { action: "clear", year?, weekFrom?, weekTo? }
  */
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
+    action?: string;
     year?: number;
     week?: number;
+    weekFrom?: number;
+    weekTo?: number;
     useMock?: boolean;
     dryRun?: boolean;
   };
+
+  if (body.action === "clear") {
+    const year =
+      body.year != null && Number.isFinite(Number(body.year))
+        ? Math.trunc(Number(body.year))
+        : undefined;
+    const weekFrom =
+      body.weekFrom != null && Number.isFinite(Number(body.weekFrom))
+        ? Math.trunc(Number(body.weekFrom))
+        : undefined;
+    const weekTo =
+      body.weekTo != null && Number.isFinite(Number(body.weekTo))
+        ? Math.trunc(Number(body.weekTo))
+        : undefined;
+
+    if (year != null && (year < 2000 || year > 2100)) {
+      return NextResponse.json(
+        { ok: false, error: "Année invalide" },
+        { status: 400 },
+      );
+    }
+
+    try {
+      const result = await clearTicketsByRequester({ year, weekFrom, weekTo });
+      return NextResponse.json({
+        ok: true,
+        mode: "clear",
+        year: year ?? null,
+        weekFrom: weekFrom ?? null,
+        weekTo: weekTo ?? null,
+        ...result,
+      });
+    } catch (err) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            err instanceof Error ? err.message : "Erreur effacement demandeurs",
+        },
+        { status: 500 },
+      );
+    }
+  }
 
   const year = Math.trunc(Number(body.year));
   const week = Math.trunc(Number(body.week));
@@ -92,7 +143,11 @@ export async function POST(request: Request) {
       byRequester: result.byRequester,
       warnings: result.warnings,
       sampleCreatedKeys: result.sampleCreatedKeys,
-      jql: { created: result.jql.created, start: result.jql.start, endExclusive: result.jql.endExclusive },
+      jql: {
+        created: result.jql.created,
+        start: result.jql.start,
+        endExclusive: result.jql.endExclusive,
+      },
     });
   } catch (err) {
     return NextResponse.json(
