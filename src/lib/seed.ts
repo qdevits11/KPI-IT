@@ -6,6 +6,7 @@ import type {
   WeeklyRow,
 } from "./types";
 import { mondayOfIsoWeek } from "./dates";
+import { DEFAULT_RESPONSIBLES } from "./responsibles";
 
 function uid(prefix: string, i: number): string {
   return `${prefix}-${i}`;
@@ -128,6 +129,7 @@ export function seedDatabase(): AppDatabase {
     settings: {
       companyName: "Coverseal / Becoflex",
       jiraConfigured: false,
+      responsibles: [...DEFAULT_RESPONSIBLES],
     },
   };
 }

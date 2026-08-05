@@ -14,6 +14,12 @@ import {
   todayIsoDate,
   weekIdFromDate,
 } from "./dates";
+import {
+  canonicalResponsible,
+  DEFAULT_RESPONSIBLES,
+  normalizeResponsibleName,
+  sortResponsibles,
+} from "./responsibles";
 
 /** Sur Vercel le FS du projet est en lecture seule → /tmp ; en local → data/ */
 function dbPath(): string {
@@ -29,7 +35,9 @@ async function ensureDb(): Promise<AppDatabase> {
   try {
     const raw = await fs.readFile(file, "utf-8");
     const db = JSON.parse(raw) as AppDatabase;
-    if (migrateLogDates(db)) {
+    let dirty = migrateLogDates(db);
+    if (migrateSettings(db)) dirty = true;
+    if (dirty) {
       await writeDb(db);
     }
     return db;
@@ -162,16 +170,79 @@ function migrateLogDates(db: AppDatabase): boolean {
   return changed;
 }
 
+function migrateSettings(db: AppDatabase): boolean {
+  if (!db.settings) {
+    db.settings = {
+      companyName: "Coverseal / Becoflex",
+      jiraConfigured: false,
+      responsibles: [...DEFAULT_RESPONSIBLES],
+    };
+    return true;
+  }
+  if (!Array.isArray(db.settings.responsibles) || db.settings.responsibles.length === 0) {
+    db.settings.responsibles = [...DEFAULT_RESPONSIBLES];
+    return true;
+  }
+  return false;
+}
+
+export async function getResponsibles(): Promise<string[]> {
+  const db = await ensureDb();
+  return sortResponsibles(db.settings.responsibles);
+}
+
+export async function addResponsible(name: string): Promise<string[]> {
+  const db = await ensureDb();
+  const clean = normalizeResponsibleName(name);
+  if (!clean) {
+    throw new Error("Nom vide");
+  }
+  const exists = db.settings.responsibles.some(
+    (a) => a.localeCompare(clean, "fr", { sensitivity: "base" }) === 0,
+  );
+  if (!exists) {
+    db.settings.responsibles.push(clean);
+    db.settings.responsibles = sortResponsibles(db.settings.responsibles);
+    await writeDb(db);
+  }
+  return sortResponsibles(db.settings.responsibles);
+}
+
+export async function removeResponsible(name: string): Promise<string[]> {
+  const db = await ensureDb();
+  const before = db.settings.responsibles.length;
+  db.settings.responsibles = db.settings.responsibles.filter(
+    (a) => a.localeCompare(name.trim(), "fr", { sensitivity: "base" }) !== 0,
+  );
+  if (db.settings.responsibles.length === before) {
+    throw new Error("Personne introuvable");
+  }
+  if (db.settings.responsibles.length === 0) {
+    throw new Error("Il faut au moins un responsable");
+  }
+  await writeDb(db);
+  return sortResponsibles(db.settings.responsibles);
+}
+
 export async function addLogEvent(
   collection: LogCollection,
   event: Omit<LogEvent, "id" | "year" | "month" | "week"> &
     Partial<Pick<LogEvent, "year" | "month" | "week">>,
 ): Promise<LogEvent> {
   const db = await ensureDb();
+  const canonical = canonicalResponsible(
+    event.responsible,
+    db.settings.responsibles,
+  );
+  if (!canonical) {
+    throw new Error(
+      `Responsable non autorisé. Choisissez parmi : ${db.settings.responsibles.join(", ")}`,
+    );
+  }
   const derived = withDerivedWeek(event);
   const full: LogEvent = {
     explanation: derived.explanation,
-    responsible: derived.responsible,
+    responsible: canonical,
     date: derived.date,
     year: derived.year,
     month: derived.month,

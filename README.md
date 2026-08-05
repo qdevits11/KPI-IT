@@ -20,6 +20,8 @@ Granularité **hebdomadaire**. Feuille année + journaux de détail :
 
 **Encodage manuel** (`/saisie`) : uniquement les 4 journaux ci-dessus. Tout le reste (SLA, demandes, non résolus, ventilation) vient de Jira.
 
+**Responsables** (`/configuration`) : liste fermée (par défaut Gary, Quentin, Loic, Dominique) — sélectionnable à l’encodage, extensible dans Configuration.
+
 Données initiales importées depuis `data/seed-from-excel.json` (extrait de KPI.xlsx).
 
 ## Démarrage

@@ -68,6 +68,7 @@ export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
     phishing: PhishingEvent[];
     maintenances: LogEvent[];
   } | null>(null);
+  const [responsibles, setResponsibles] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -92,6 +93,9 @@ export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
       phishing: entries.phishing,
       maintenances: entries.maintenances,
     });
+    if (Array.isArray(entries.responsibles)) {
+      setResponsibles(entries.responsibles);
+    }
   }, []);
 
   useEffect(() => {
@@ -148,7 +152,8 @@ export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
         }),
       });
       if (!res.ok) {
-        setError("Enregistrement échoué");
+        const data = await res.json().catch(() => null);
+        setError(data?.error ?? "Enregistrement échoué");
         return;
       }
       const targetWeek = weekIdFromDate(date);
@@ -370,11 +375,10 @@ export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
                   onChange={setExplanation}
                   placeholder="Ex. Flux B2C, redémarrage Smartscans…"
                 />
-                <Field
-                  label="Responsable"
+                <ResponsibleSelect
                   value={responsible}
+                  options={responsibles}
                   onChange={setResponsible}
-                  placeholder="Ex. Quentin, Loic, Gary…"
                 />
               </>
             )}
@@ -458,6 +462,42 @@ export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
         </section>
       )}
     </div>
+  );
+}
+
+function ResponsibleSelect({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-1.5 text-sm">
+      <span className="font-medium text-[var(--ink-soft)]">Responsable</span>
+      <select
+        value={value}
+        required
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-lg border border-[var(--line)] bg-[var(--paper)] px-3 py-2.5 text-base text-[var(--ink)] outline-none transition-colors focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
+      >
+        <option value="" disabled>
+          Choisir…
+        </option>
+        {options.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
+        ))}
+      </select>
+      {options.length === 0 && (
+        <span className="text-xs text-[var(--crit)]">
+          Aucun responsable configuré — allez dans Configuration.
+        </span>
+      )}
+    </label>
   );
 }
 

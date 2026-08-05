@@ -12,6 +12,7 @@ import { buildWeekDashboard } from "@/lib/formulas";
 import { weekId } from "@/lib/types";
 import type { WeeklyRow } from "@/lib/types";
 import { isoWeekPartsFromDate, weekIdFromDate } from "@/lib/dates";
+import { canonicalResponsible } from "@/lib/responsibles";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -25,6 +26,7 @@ export async function GET(request: Request) {
     automationsOdoo: db.automationsOdoo,
     phishing: db.phishing,
     maintenances: db.maintenances,
+    responsibles: db.settings.responsibles,
   });
 }
 
@@ -68,6 +70,19 @@ export async function PUT(request: Request) {
     body.event.explanation &&
     body.event.responsible
   ) {
+    const dbCheck = await getDatabase();
+    const canonical = canonicalResponsible(
+      body.event.responsible,
+      dbCheck.settings.responsibles,
+    );
+    if (!canonical) {
+      return NextResponse.json(
+        {
+          error: `Responsable non autorisé. Choisissez parmi : ${dbCheck.settings.responsibles.join(", ")}`,
+        },
+        { status: 400 },
+      );
+    }
     const parts = isoWeekPartsFromDate(body.event.date);
     id = weekIdFromDate(body.event.date);
     await ensureWeek(id);
@@ -77,12 +92,17 @@ export async function PUT(request: Request) {
         : body.action === "addOdoo"
           ? "automationsOdoo"
           : "maintenances";
-    await addLogEvent(collection, {
-      date: body.event.date,
-      explanation: body.event.explanation,
-      responsible: body.event.responsible,
-      ...parts,
-    });
+    try {
+      await addLogEvent(collection, {
+        date: body.event.date,
+        explanation: body.event.explanation,
+        responsible: canonical,
+        ...parts,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur";
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
   } else if (body.action === "addPhishing" && body.event?.date) {
     const parts = isoWeekPartsFromDate(body.event.date);
     id = weekIdFromDate(body.event.date);
