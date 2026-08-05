@@ -26,6 +26,11 @@ import {
   saveDbToBlob,
   saveDbToBlobIfAbsent,
 } from "./db-persist";
+import {
+  loadDbFromSupabase,
+  saveDbToSupabase,
+  supabaseConfigured,
+} from "./supabase-db";
 
 /** Sur Vercel le FS du projet est en lecture seule → /tmp ; en local → data/ */
 function dbPath(): string {
@@ -34,6 +39,12 @@ function dbPath(): string {
     return path.join(dir, "db.json");
   }
   return path.join(process.cwd(), "data", "db.json");
+}
+
+/** Clé de cache : isole les tests KPI_DB_DIR et le mode Supabase. */
+function cacheKey(): string {
+  if (supabaseConfigured()) return `supabase:${dbPath()}`;
+  return `file:${dbPath()}`;
 }
 
 /** Cache processus : survit aux requêtes sur une instance chaude. */
@@ -48,8 +59,18 @@ export function resetDbCacheForTests(): void {
 
 function setMemory(db: AppDatabase): AppDatabase {
   memoryDb = db;
-  memoryDbPath = dbPath();
+  memoryDbPath = cacheKey();
   return db;
+}
+
+async function writeDiskQuiet(db: AppDatabase): Promise<void> {
+  const file = dbPath();
+  try {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, JSON.stringify(db, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("Persistance KPI disque indisponible:", err);
+  }
 }
 
 async function migrateAndMaybePersist(db: AppDatabase): Promise<AppDatabase> {
@@ -73,10 +94,42 @@ async function readDbFromDisk(): Promise<AppDatabase | null> {
   }
 }
 
+/**
+ * Ordre de lecture :
+ * 1. mémoire
+ * 2. Supabase (si configuré) — source de vérité
+ * 3. disque / Blob (migration ou fallback local)
+ * 4. seed Excel
+ */
 async function ensureDb(): Promise<AppDatabase> {
-  const file = dbPath();
-  if (memoryDb && memoryDbPath === file) {
+  if (memoryDb && memoryDbPath === cacheKey()) {
     return memoryDb;
+  }
+
+  if (supabaseConfigured()) {
+    const fromSb = await loadDbFromSupabase();
+    if (fromSb) {
+      await writeDiskQuiet(fromSb);
+      return migrateAndMaybePersist(fromSb);
+    }
+
+    // Première connexion : migrer disque/Blob puis seed
+    const fromDisk = await readDbFromDisk();
+    if (fromDisk) {
+      await saveDbToSupabase(fromDisk);
+      return migrateAndMaybePersist(fromDisk);
+    }
+    const fromBlob = await loadDbFromBlob();
+    if (fromBlob) {
+      await saveDbToSupabase(fromBlob);
+      await writeDiskQuiet(fromBlob);
+      return migrateAndMaybePersist(fromBlob);
+    }
+
+    const seeded = seedDatabase();
+    await saveDbToSupabase(seeded);
+    await writeDiskQuiet(seeded);
+    return setMemory(seeded);
   }
 
   const fromDisk = await readDbFromDisk();
@@ -84,48 +137,41 @@ async function ensureDb(): Promise<AppDatabase> {
     return migrateAndMaybePersist(fromDisk);
   }
 
-  // /tmp vide (nouvelle instance Vercel) → tenter le Blob durable
   const fromBlob = await loadDbFromBlob();
   if (fromBlob) {
-    try {
-      await fs.mkdir(path.dirname(file), { recursive: true });
-      await fs.writeFile(file, JSON.stringify(fromBlob, null, 2), "utf-8");
-    } catch {
-      // FS indisponible : on garde quand même le cache mémoire
-    }
+    await writeDiskQuiet(fromBlob);
     return migrateAndMaybePersist(fromBlob);
   }
 
   if (process.env.VERCEL && !blobConfigured()) {
     console.warn(
-      "KPI: BLOB_READ_WRITE_TOKEN absent — les syncs Jira (demandeurs, etc.) " +
-        "seront perdus à chaque cold start. Ajoutez un store Vercel Blob.",
+      "KPI: ni Supabase ni Blob configurés — les syncs Jira seront perdus " +
+        "à chaque cold start. Définissez SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY.",
     );
   }
 
   const seeded = seedDatabase();
   setMemory(seeded);
-  try {
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, JSON.stringify(seeded, null, 2), "utf-8");
-  } catch {
-    // Lecture seule : on sert le seed en mémoire
-  }
-  // Ne jamais écraser un Blob déjà peuplé avec le seed Excel (demandeurs vides)
+  await writeDiskQuiet(seeded);
   await saveDbToBlobIfAbsent(seeded);
   return seeded;
 }
 
 async function writeDb(db: AppDatabase): Promise<void> {
   setMemory(db);
-  const file = dbPath();
-  try {
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, JSON.stringify(db, null, 2), "utf-8");
-  } catch (err) {
-    console.warn("Persistance KPI disque indisponible:", err);
+  if (supabaseConfigured()) {
+    const ok = await saveDbToSupabase(db);
+    if (!ok) {
+      console.warn(
+        "KPI: échec d’écriture Supabase — fallback disque/Blob uniquement.",
+      );
+    }
   }
-  await saveDbToBlob(db);
+  await writeDiskQuiet(db);
+  // Blob en secours optionnel (transition / sans Supabase)
+  if (!supabaseConfigured()) {
+    await saveDbToBlob(db);
+  }
 }
 
 /** Force re-seed from Excel JSON (dev / import) */
