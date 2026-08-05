@@ -8,6 +8,12 @@ import type {
 } from "./types";
 import { weekId } from "./types";
 import { seedDatabase, createEmptyWeek } from "./seed";
+import {
+  isoWeekPartsFromDate,
+  mondayOfIsoWeek,
+  todayIsoDate,
+  weekIdFromDate,
+} from "./dates";
 
 /** Sur Vercel le FS du projet est en lecture seule → /tmp ; en local → data/ */
 function dbPath(): string {
@@ -22,7 +28,11 @@ async function ensureDb(): Promise<AppDatabase> {
   const file = dbPath();
   try {
     const raw = await fs.readFile(file, "utf-8");
-    return JSON.parse(raw) as AppDatabase;
+    const db = JSON.parse(raw) as AppDatabase;
+    if (migrateLogDates(db)) {
+      await writeDb(db);
+    }
+    return db;
   } catch {
     const seeded = seedDatabase();
     try {
@@ -57,13 +67,7 @@ export async function getDatabase(): Promise<AppDatabase> {
 }
 
 export function currentWeekId(date = new Date()): string {
-  // ISO week
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  return `${d.getUTCFullYear()}-S${String(week).padStart(2, "0")}`;
+  return weekIdFromDate(todayIsoDate(date));
 }
 
 export function isoWeekParts(date = new Date()): {
@@ -71,9 +75,7 @@ export function isoWeekParts(date = new Date()): {
   week: number;
   month: number;
 } {
-  const id = currentWeekId(date);
-  const [y, w] = [Number(id.slice(0, 4)), Number(id.slice(6))];
-  return { year: y, week: w, month: date.getMonth() + 1 };
+  return isoWeekPartsFromDate(todayIsoDate(date));
 }
 
 export async function listWeeks(): Promise<WeeklyRow[]> {
@@ -127,13 +129,53 @@ type LogCollection =
   | "automationsOdoo"
   | "maintenances";
 
+type IsoWeekParts = {
+  year: number;
+  week: number;
+  month: number;
+};
+
+function withDerivedWeek<T extends { date: string }>(
+  event: T,
+): T & IsoWeekParts {
+  const parts = isoWeekPartsFromDate(event.date);
+  return { ...event, ...parts };
+}
+
+/** Complète les journaux issus d'anciennes bases sans champ date. */
+function migrateLogDates(db: AppDatabase): boolean {
+  let changed = false;
+  const fill = <T extends { year: number; week: number; date?: string }>(
+    rows: T[],
+  ) => {
+    for (const row of rows) {
+      if (!row.date) {
+        row.date = mondayOfIsoWeek(row.year, row.week);
+        changed = true;
+      }
+    }
+  };
+  fill(db.automationsMetier);
+  fill(db.automationsOdoo);
+  fill(db.maintenances);
+  fill(db.phishing);
+  return changed;
+}
+
 export async function addLogEvent(
   collection: LogCollection,
-  event: Omit<LogEvent, "id">,
+  event: Omit<LogEvent, "id" | "year" | "month" | "week"> &
+    Partial<Pick<LogEvent, "year" | "month" | "week">>,
 ): Promise<LogEvent> {
   const db = await ensureDb();
+  const derived = withDerivedWeek(event);
   const full: LogEvent = {
-    ...event,
+    explanation: derived.explanation,
+    responsible: derived.responsible,
+    date: derived.date,
+    year: derived.year,
+    month: derived.month,
+    week: derived.week,
     id: `${collection}-${Date.now()}`,
   };
   db[collection].push(full);
@@ -142,11 +184,19 @@ export async function addLogEvent(
 }
 
 export async function addPhishingEvent(
-  event: Omit<PhishingEvent, "id">,
+  event: Omit<PhishingEvent, "id" | "year" | "month" | "week"> &
+    Partial<Pick<PhishingEvent, "year" | "month" | "week">>,
 ): Promise<PhishingEvent> {
   const db = await ensureDb();
+  const derived = withDerivedWeek(event);
   const full: PhishingEvent = {
-    ...event,
+    date: derived.date,
+    year: derived.year,
+    month: derived.month,
+    week: derived.week,
+    failures: derived.failures,
+    explanation: derived.explanation ?? "",
+    responsible: derived.responsible ?? "",
     id: `phish-${Date.now()}`,
   };
   db.phishing.push(full);

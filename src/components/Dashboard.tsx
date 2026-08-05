@@ -83,6 +83,11 @@ function EventList({ title, items }: { title: string; items: LogEvent[] }) {
       <ul className="space-y-1 text-sm text-[var(--ink-soft)]">
         {items.map((e) => (
           <li key={e.id} className="border-l-2 border-[var(--accent)] pl-3">
+            {e.date && (
+              <span className="mr-1 tabular-nums text-xs text-[var(--muted)]">
+                {e.date.slice(8, 10)}/{e.date.slice(5, 7)}
+              </span>
+            )}
             {e.explanation}{" "}
             <span className="text-xs text-[var(--muted)]">— {e.responsible}</span>
           </li>
@@ -212,13 +217,17 @@ export function Dashboard({ initialWeek }: { initialWeek: string }) {
               {data.events.phishing.length > 0 && (
                 <div className="space-y-2">
                   <h3 className="text-sm font-medium text-[var(--ink)]">
-                    Tests phishing
+                    Tests phishing ratés
                   </h3>
                   <ul className="space-y-1 text-sm">
                     {data.events.phishing.map((e) => (
                       <li key={e.id} className="border-l-2 border-[var(--accent)] pl-3">
-                        {e.explanation || "Campagne"} — {e.responsible} (
-                        {e.failures} échec{e.failures > 1 ? "s" : ""})
+                        {e.date && (
+                          <span className="mr-1 tabular-nums text-xs text-[var(--muted)]">
+                            {e.date.slice(8, 10)}/{e.date.slice(5, 7)}
+                          </span>
+                        )}
+                        {e.failures} échec{e.failures > 1 ? "s" : ""}
                       </li>
                     ))}
                   </ul>

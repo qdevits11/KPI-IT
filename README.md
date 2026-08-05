@@ -8,15 +8,17 @@ Granularité **hebdomadaire**. Feuille année + journaux de détail :
 
 | Indicateur | Source | Formule |
 |------------|--------|---------|
-| Hors SLA clôture / prise en charge | Manuel (ou Jira SLA) | Valeur saisie |
-| Automatisations métiers | Journal | `COUNTIFS(année, semaine)` |
-| Améliorations Odoo | Journal | `COUNTIFS(année, semaine)` |
-| Échecs phishing | Journal | `SUMIFS(Nbr échecs)` |
-| Maintenances production | Journal | `COUNTIFS(année, semaine)` |
-| Demandes IT hebdo | Jira / saisie | Tickets créés |
+| Hors SLA clôture / prise en charge | Jira SLA | Heures ouvrées > 48h / 24h |
+| Automatisations métiers | **Encodage** (date, explication, responsable) | `COUNTIFS(année, semaine)` |
+| Améliorations Odoo | **Encodage** (date, explication, responsable) | `COUNTIFS(année, semaine)` |
+| Échecs phishing | **Encodage** (date, nbr échecs) | `SUMIFS(Nbr échecs)` |
+| Maintenances production | **Encodage** (date, explication, responsable) | `COUNTIFS(année, semaine)` |
+| Demandes IT hebdo | Jira | Tickets créés |
 | Demandes IT YTD | Calculé | `Σ hebdo` (L_n = K_n + L_(n-1)) |
 | Non résolues hebdo / YTD | Jira / calculé | Snapshot + cumul Excel |
 | Tickets par type / responsable | Jira / Excel | Ventilation |
+
+**Encodage manuel** (`/saisie`) : uniquement les 4 journaux ci-dessus. Tout le reste (SLA, demandes, non résolus, ventilation) vient de Jira.
 
 Données initiales importées depuis `data/seed-from-excel.json` (extrait de KPI.xlsx).
 

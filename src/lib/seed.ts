@@ -5,6 +5,7 @@ import type {
   PhishingEvent,
   WeeklyRow,
 } from "./types";
+import { mondayOfIsoWeek } from "./dates";
 
 function uid(prefix: string, i: number): string {
   return `${prefix}-${i}`;
@@ -79,6 +80,7 @@ function toLog(
 ): LogEvent[] {
   return rows.map((r, i) => ({
     id: uid(prefix, i + 1),
+    date: mondayOfIsoWeek(r.year, r.week),
     year: r.year,
     month: r.month,
     week: r.week,
@@ -105,6 +107,7 @@ export function seedDatabase(): AppDatabase {
 
   const phishing: PhishingEvent[] = excel.phishing.map((r, i) => ({
     id: uid("phish", i + 1),
+    date: mondayOfIsoWeek(r.year, r.week),
     year: r.year,
     month: r.month,
     week: r.week,

@@ -39,9 +39,15 @@ export interface WeeklyRow extends WeekRef {
   updatedAt: string | null;
 }
 
-/** Événement journal (feuilles Automatisations / Maintenance) */
+/**
+ * Événement journal encodable manuellement.
+ * Champs saisis : date + (explication + responsable) ou (échecs pour phishing).
+ * year / month / week sont dérivés de la date pour les COUNTIFS Excel.
+ */
 export interface LogEvent {
   id: string;
+  /** Date calendaire YYYY-MM-DD */
+  date: string;
   year: number;
   month: number;
   week: number;
@@ -49,8 +55,17 @@ export interface LogEvent {
   responsible: string;
 }
 
-export interface PhishingEvent extends LogEvent {
+/** Test phishing raté : seuls date + nombre d'échecs sont encodés. */
+export interface PhishingEvent {
+  id: string;
+  date: string;
+  year: number;
+  month: number;
+  week: number;
   failures: number;
+  /** Conservés pour compat seed Excel ; non saisis dans l'UI. */
+  explanation?: string;
+  responsible?: string;
 }
 
 export interface AppDatabase {

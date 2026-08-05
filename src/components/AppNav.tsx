@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 const LINKS = [
   { href: "/", label: "Tableau de bord" },
-  { href: "/saisie", label: "Saisie manuelle" },
+  { href: "/saisie", label: "Encodage" },
   { href: "/jira", label: "Sync Jira" },
   { href: "/formules", label: "Formules" },
 ];

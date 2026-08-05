@@ -37,7 +37,7 @@ describe("buildWeekJql (bornes absolues reproductibles)", () => {
     const prev = previousIsoWeek(now);
     expect(prev).toEqual({ year: 2026, week: 31 });
 
-    const jql = buildWeekJql(conn, 2026, 31, now);
+    const jql = buildWeekJql(conn, 2026, 31);
     expect(jql.usedRelativeWeekFunctions).toBe(false);
     expect(jql.created).toContain('created >= "2026-07-27 00:00"');
     expect(jql.created).toContain('created < "2026-08-03 00:00"');
@@ -49,8 +49,7 @@ describe("buildWeekJql (bornes absolues reproductibles)", () => {
   });
 
   it("utilise les mêmes bornes pour une semaine historique", () => {
-    const now = new Date("2026-08-03T10:00:00Z");
-    const jql = buildWeekJql(conn, 2026, 10, now);
+    const jql = buildWeekJql(conn, 2026, 10);
     expect(jql.usedRelativeWeekFunctions).toBe(false);
     expect(jql.created).toContain("00:00");
   });

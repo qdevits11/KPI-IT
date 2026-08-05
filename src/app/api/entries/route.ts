@@ -11,6 +11,7 @@ import {
 import { buildWeekDashboard } from "@/lib/formulas";
 import { weekId } from "@/lib/types";
 import type { WeeklyRow } from "@/lib/types";
+import { isoWeekPartsFromDate, weekIdFromDate } from "@/lib/dates";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -39,34 +40,68 @@ export async function PUT(request: Request) {
       | "addMaintenance"
       | "deleteEvent";
     event?: {
-      year: number;
-      month: number;
-      week: number;
-      explanation: string;
-      responsible: string;
+      date: string;
+      year?: number;
+      month?: number;
+      week?: number;
+      explanation?: string;
+      responsible?: string;
       failures?: number;
     };
-    collection?: "automationsMetier" | "automationsOdoo" | "maintenances" | "phishing";
+    collection?:
+      | "automationsMetier"
+      | "automationsOdoo"
+      | "maintenances"
+      | "phishing";
     eventId?: string;
   };
 
-  const id = body.weekId ?? currentWeekId();
+  let id = body.weekId ?? currentWeekId();
 
   if (body.action === "deleteEvent" && body.collection && body.eventId) {
     await deleteLogEvent(body.collection, body.eventId);
-  } else if (body.action === "addMetier" && body.event) {
-    await addLogEvent("automationsMetier", body.event);
-  } else if (body.action === "addOdoo" && body.event) {
-    await addLogEvent("automationsOdoo", body.event);
-  } else if (body.action === "addMaintenance" && body.event) {
-    await addLogEvent("maintenances", body.event);
-  } else if (body.action === "addPhishing" && body.event) {
-    await addPhishingEvent({
-      ...body.event,
-      failures: body.event.failures ?? 0,
+  } else if (
+    (body.action === "addMetier" ||
+      body.action === "addOdoo" ||
+      body.action === "addMaintenance") &&
+    body.event?.date &&
+    body.event.explanation &&
+    body.event.responsible
+  ) {
+    const parts = isoWeekPartsFromDate(body.event.date);
+    id = weekIdFromDate(body.event.date);
+    await ensureWeek(id);
+    const collection =
+      body.action === "addMetier"
+        ? "automationsMetier"
+        : body.action === "addOdoo"
+          ? "automationsOdoo"
+          : "maintenances";
+    await addLogEvent(collection, {
+      date: body.event.date,
+      explanation: body.event.explanation,
+      responsible: body.event.responsible,
+      ...parts,
     });
-  } else if (body.week) {
+  } else if (body.action === "addPhishing" && body.event?.date) {
+    const parts = isoWeekPartsFromDate(body.event.date);
+    id = weekIdFromDate(body.event.date);
+    await ensureWeek(id);
+    await addPhishingEvent({
+      date: body.event.date,
+      failures: body.event.failures ?? 0,
+      ...parts,
+    });
+  } else if (body.action === "updateWeek" && body.week) {
     await updateWeeklyRow(id, body.week);
+  } else if (body.week && !body.action) {
+    // Compat : sync Jira / anciens clients
+    await updateWeeklyRow(id, body.week);
+  } else {
+    return NextResponse.json(
+      { error: "Requête invalide — champs manquants" },
+      { status: 400 },
+    );
   }
 
   const db = await getDatabase();

@@ -34,7 +34,7 @@ export default function RootLayout({
           {children}
         </main>
         <footer className="border-t border-[var(--line)] py-4 text-center text-xs text-[var(--muted)]">
-          KPI·IT — chiffres calculés sur données Jira &amp; saisies manuelles
+          KPI·IT — Jira + encodage (automations, Odoo, phishing, maintenance)
         </footer>
       </body>
     </html>

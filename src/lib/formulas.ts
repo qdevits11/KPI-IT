@@ -68,7 +68,7 @@ export const FORMULAS: FormulaDefinition[] = [
       {
         name: "lignes journal",
         source: "manuel",
-        description: "Chaque ligne = 1 automatisation (explication + responsable)",
+        description: "Encodage : date + explication + responsable (1 ligne = 1 automatisation)",
       },
     ],
     example: "Semaine 19 : 3 (FLUX B2C, N8N Mahieu, N8N Odoo→SMC)",
@@ -85,7 +85,7 @@ export const FORMULAS: FormulaDefinition[] = [
       {
         name: "lignes journal",
         source: "manuel",
-        description: "Feuille Automatisations Odoo",
+        description: "Encodage : date + explication + responsable",
       },
     ],
     example: "Semaine 22 : 1 (Rapport Logistique)",
@@ -102,7 +102,7 @@ export const FORMULAS: FormulaDefinition[] = [
       {
         name: "Nbr échecs",
         source: "manuel",
-        description: "Colonne F feuille Tests Phishing",
+        description: "Encodage : date + nombre d'échecs uniquement",
       },
     ],
     example: "Semaine 31 : 0 échec",
@@ -119,7 +119,7 @@ export const FORMULAS: FormulaDefinition[] = [
       {
         name: "lignes journal",
         source: "manuel",
-        description: "Feuille Maintenances Production",
+        description: "Encodage : date + explication + responsable",
       },
     ],
     example: "Semaine 19 : 1 (Redémarrage Smartscans)",
