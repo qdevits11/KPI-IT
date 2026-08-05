@@ -96,45 +96,33 @@ function stripOrderBy(jql: string): string {
 /**
  * JQL calqués sur le workflow n8n Coverseal.
  *
- * Demandes IT (n8n) :
- *   project = CSD
- *   AND created >= startOfWeek(-1)
- *   AND created < startOfWeek()
+ * Toujours des bornes ISO absolues [lundi, lundi+7) — reproductibles pour
+ * n’importe quelle semaine (outil de vérification). Équivalent à
+ * startOfWeek(-1) / startOfWeek() quand on est le lundi suivant, fuseau Jira.
  */
 export function buildWeekJql(
   conn: JiraConnection,
   year: number,
   week: number,
-  now = new Date(),
+  _now = new Date(),
 ): WeekJqlBundle {
   const { start, endExclusive, endInclusive } = isoWeekDateRange(year, week);
   const base = conn.jqlBase.trim();
   const pec = escapeJqlString(conn.datePriseEnChargeJql);
-  const prev = previousIsoWeek(now);
-  const useRelative = prev.year === year && prev.week === week;
 
-  if (useRelative) {
-    return {
-      start,
-      endExclusive,
-      endInclusive,
-      usedRelativeWeekFunctions: true,
-      created: `${base} AND created >= startOfWeek(-1) AND created < startOfWeek() ORDER BY created ASC`,
-      open: `${base} AND ${conn.openStatusJql} ORDER BY created ASC`,
-      priseEnCharge: `${base} AND "${pec}" >= startOfWeek(-1) AND "${pec}" < startOfWeek() ORDER BY created ASC`,
-      resolved: `${base} AND resolutiondate >= startOfWeek(-1) AND resolutiondate < startOfWeek() ORDER BY resolutiondate ASC`,
-    };
-  }
+  // Datetimes explicites : minuit → minuit (interprétés dans le fuseau du site Jira)
+  const startDt = `${start} 00:00`;
+  const endDt = `${endExclusive} 00:00`;
 
   return {
     start,
     endExclusive,
     endInclusive,
     usedRelativeWeekFunctions: false,
-    created: `${base} AND created >= "${start}" AND created < "${endExclusive}" ORDER BY created ASC`,
+    created: `${base} AND created >= "${startDt}" AND created < "${endDt}" ORDER BY created ASC`,
     open: `${base} AND ${conn.openStatusJql} ORDER BY created ASC`,
-    priseEnCharge: `${base} AND "${pec}" >= "${start}" AND "${pec}" < "${endExclusive}" ORDER BY created ASC`,
-    resolved: `${base} AND resolutiondate >= "${start}" AND resolutiondate < "${endExclusive}" ORDER BY resolutiondate ASC`,
+    priseEnCharge: `${base} AND "${pec}" >= "${startDt}" AND "${pec}" < "${endDt}" ORDER BY created ASC`,
+    resolved: `${base} AND resolutiondate >= "${startDt}" AND resolutiondate < "${endDt}" ORDER BY resolutiondate ASC`,
   };
 }
 
@@ -396,17 +384,22 @@ async function searchAll(
   jql: string,
   fields: string,
 ): Promise<JiraIssue[]> {
-  const fieldList = [
-    "summary",
-    ...fields
-      .split(",")
-      .map((f) => f.trim())
-      .filter(Boolean),
-  ];
+  // *all garantit customfield + dates pour le calcul SLA (sinon champs parfois vides)
+  const wantAll = fields.includes("*all");
+  const fieldList = wantAll
+    ? ["*all"]
+    : [
+        "summary",
+        ...fields
+          .split(",")
+          .map((f) => f.trim())
+          .filter(Boolean),
+      ];
   const fieldsUnique = [...new Set(fieldList)].filter((f) => f !== "key");
 
   const issues: JiraIssue[] = [];
   let nextPageToken: string | undefined;
+  let pages = 0;
 
   for (;;) {
     const page = await searchJqlPage(
@@ -417,7 +410,8 @@ async function searchAll(
       100,
     );
     issues.push(...page.issues);
-    if (!page.nextPageToken || page.issues.length === 0) break;
+    pages += 1;
+    if (!page.nextPageToken || page.issues.length === 0 || pages > 50) break;
     nextPageToken = page.nextPageToken;
   }
 
@@ -587,31 +581,33 @@ export async function fetchJiraWeekStats(
         warnings.push(`Search créés: ${err.message.slice(0, 160)}`);
         return [] as JiraIssue[];
       }),
-      searchAll(connection, jql.priseEnCharge, `created,${pecField}`).catch(
-        (err: Error) => {
-          warnings.push(
-            `JQL Date Prise en Charge: ${err.message.slice(0, 160)}`,
-          );
-          return [] as JiraIssue[];
-        },
-      ),
-      searchAll(connection, jql.resolved, "created,resolutiondate").catch(
-        (err: Error) => {
-          warnings.push(`JQL resolutiondate: ${err.message.slice(0, 160)}`);
-          return [] as JiraIssue[];
-        },
-      ),
+      searchAll(connection, jql.priseEnCharge, "*all").catch((err: Error) => {
+        warnings.push(
+          `JQL Date Prise en Charge: ${err.message.slice(0, 160)}`,
+        );
+        return [] as JiraIssue[];
+      }),
+      searchAll(connection, jql.resolved, "*all").catch((err: Error) => {
+        warnings.push(`JQL resolutiondate: ${err.message.slice(0, 160)}`);
+        return [] as JiraIssue[];
+      }),
     ]);
 
-  // Si search renvoie des issues, préférer le count exact ; sinon approx
-  const createdCount =
-    createdIssues.length > 0
-      ? createdIssues.length
-      : createdCountApprox;
-
+  // Compteur créés : pagination exacte si complète, sinon approximate-count
+  let createdCount = createdIssues.length;
   if (createdIssues.length === 0 && createdCountApprox > 0) {
+    createdCount = createdCountApprox;
     warnings.push(
       `Search/jql a renvoyé 0 issue mais approximate-count = ${createdCountApprox}. Compteur KPI utilisé ; répartition type/assigné indisponible.`,
+    );
+  } else if (
+    createdCountApprox > createdIssues.length &&
+    createdIssues.length > 0
+  ) {
+    // Pagination probablement tronquée
+    createdCount = createdCountApprox;
+    warnings.push(
+      `Pagination search (${createdIssues.length}) < approximate-count (${createdCountApprox}) — compteur approx utilisé.`,
     );
   }
 
@@ -668,7 +664,10 @@ export async function fetchJiraWeekStats(
   }
 
   warnings.push(
-    "Non résolues = snapshot actuel (comme n8n), pas un historique de fin de semaine.",
+    "Non résolues = snapshot actuel (comme n8n au moment de la sync), pas le stock Excel de fin de semaine historique.",
+  );
+  warnings.push(
+    "SLA calculées en heures ouvrées Europe/Brussels (week-ends + fériés BE exclus), seuil 24h / 48h.",
   );
 
   return {
