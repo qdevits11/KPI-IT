@@ -27,11 +27,18 @@ export interface JiraConnection {
   slaClotureHours: number;
   /**
    * Source de la « catégorie / type de demande ».
-   * - requestType : Customer Request Type JSM (recommandé Coverseal/CSD)
+   * - auto : détecte le customfield IT (Elfsquad, Odoo…) — recommandé
+   * - requestType : Customer Request Type JSM (souvent le canal : mail/portail)
    * - component | label | issuetype
    * - custom → lit categoryCustomFieldId (ex. customfield_10001)
    */
-  categoryField: "requestType" | "component" | "label" | "issuetype" | "custom";
+  categoryField:
+    | "auto"
+    | "requestType"
+    | "component"
+    | "label"
+    | "issuetype"
+    | "custom";
   /** ID API du champ custom (si categoryField = custom), ou hint pour requestType */
   categoryCustomFieldId: string;
   connectedAt: string;
@@ -44,8 +51,8 @@ export const DEFAULT_JIRA_SETTINGS = {
   datePriseEnChargeFieldId: "customfield_10284",
   slaPriseEnChargeHours: 24,
   slaClotureHours: 48,
-  /** CSD = Jira Service Management : catégories = Request Types, pas les composants */
-  categoryField: "requestType" as const,
+  /** Auto = champ IT Coverseal (pas le Request Type de canal mail) */
+  categoryField: "auto" as const,
   categoryCustomFieldId: "",
 };
 
@@ -133,6 +140,7 @@ function normalizeCategoryField(
   customId?: string,
 ): JiraConnection["categoryField"] {
   const v = (raw ?? "").trim().toLowerCase();
+  if (v === "auto" || v === "automatic" || v === "detect") return "auto";
   if (v === "label" || v === "labels") return "label";
   if (v === "issuetype" || v === "type") return "issuetype";
   if (v === "component" || v === "components") return "component";
@@ -146,9 +154,7 @@ function normalizeCategoryField(
     return "requestType";
   }
   if (customId?.trim().toLowerCase().startsWith("customfield_")) return "custom";
-  // Défaut Coverseal / JSM
-  if (!v) return "requestType";
-  return "requestType";
+  return "auto";
 }
 
 export async function readJiraConnection(): Promise<JiraConnection | null> {

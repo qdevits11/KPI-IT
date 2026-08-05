@@ -57,7 +57,8 @@ const DEFAULT_FORM = {
   datePriseEnChargeFieldId: "customfield_10284",
   slaPriseEnChargeHours: 24,
   slaClotureHours: 48,
-  categoryField: "requestType" as
+  categoryField: "auto" as
+    | "auto"
     | "requestType"
     | "component"
     | "label"
@@ -737,21 +738,29 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
                 })
               }
             >
+              <option value="auto">
+                Auto — catégories IT (Elfsquad, Odoo, matériel…)
+              </option>
+              <option value="custom">Champ custom (customfield_…)</option>
               <option value="requestType">
-                Request Type JSM (recommandé Coverseal)
+                Request Type JSM (souvent le canal : mail/portail)
               </option>
               <option value="component">Composant Jira (components)</option>
               <option value="label">Premier label</option>
               <option value="issuetype">Type de ticket (issuetype)</option>
-              <option value="custom">Champ custom (customfield_…)</option>
             </select>
           </label>
-          {form.categoryField === "custom" && (
+          {(form.categoryField === "custom" ||
+            form.categoryField === "auto") && (
             <Field
-              label="ID champ catégorie (customfield_…)"
+              label={
+                form.categoryField === "auto"
+                  ? "Hint customfield (optionnel, sinon détection auto)"
+                  : "ID champ catégorie IT (customfield_…)"
+              }
               value={form.categoryCustomFieldId}
               onChange={(v) => setForm({ ...form, categoryCustomFieldId: v })}
-              placeholder="customfield_10001"
+              placeholder="customfield_100XX"
               wide
             />
           )}

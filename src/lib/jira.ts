@@ -621,11 +621,22 @@ export function categoryOf(
         : "";
     return first || "Non catégorisé";
   }
-  if (field === "custom") {
-    return (
-      customFieldCategoryValue(issue, connection.categoryCustomFieldId) ||
-      "Non catégorisé"
-    );
+  if (field === "custom" || field === "auto") {
+    // auto : categoryCustomFieldId est rempli après détection
+    if (connection.categoryCustomFieldId) {
+      return (
+        customFieldCategoryValue(issue, connection.categoryCustomFieldId) ||
+        "Non catégorisé"
+      );
+    }
+    if (field === "auto") {
+      return (
+        findRequestTypeName(issue) ||
+        normalizeComponentNames(issue.fields.components)[0] ||
+        "Non catégorisé"
+      );
+    }
+    return "Non catégorisé";
   }
   if (field === "requestType") {
     return (
@@ -635,11 +646,99 @@ export function categoryOf(
   }
   const components = normalizeComponentNames(issue.fields.components);
   if (components[0]) return components[0];
-  // JSM : composants souvent vides → fallback Request Type
   return (
     findRequestTypeName(issue, connection.categoryCustomFieldId) ||
     "Non catégorisé"
   );
+}
+
+async function fetchJiraFieldNames(
+  conn: JiraConnection,
+): Promise<Record<string, string>> {
+  try {
+    const res = await jiraFetch(conn, "/rest/api/3/field");
+    if (!res.ok) return {};
+    const data = (await res.json()) as Array<{ id?: string; name?: string }>;
+    const map: Record<string, string> = {};
+    for (const f of data) {
+      if (f.id && f.name) map[f.id] = f.name;
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+/** Résout la vraie source de catégorie IT (évite le Request Type « mail »). */
+async function resolveCategorySource(
+  connection: JiraConnection,
+  issues: JiraIssue[],
+  warnings: string[],
+): Promise<Pick<JiraConnection, "categoryField" | "categoryCustomFieldId">> {
+  const {
+    discoverItCategoryField,
+    resolveCategoryConnection,
+    isChannelLikeCategory,
+  } = await import("./jira-category-detect");
+
+  const fieldNames = await fetchJiraFieldNames(connection);
+  const discovered = discoverItCategoryField(
+    issues,
+    (issue, fieldId) =>
+      customFieldCategoryValue(issue as JiraIssue, fieldId),
+    fieldNames,
+  );
+
+  const resolved = resolveCategoryConnection(connection, discovered);
+
+  if (resolved.usedDiscovery && discovered) {
+    warnings.push(
+      `Catégories IT via ${discovered.fieldId}` +
+        (discovered.fieldName ? ` « ${discovered.fieldName} »` : "") +
+        ` — ex. ${discovered.distinctValues.slice(0, 6).join(", ") || "—"}.`,
+    );
+    return {
+      categoryField: "custom",
+      categoryCustomFieldId: discovered.fieldId,
+    };
+  }
+
+  // requestType seul mais valeurs = canal mail → prévenir + lister candidats
+  if (
+    connection.categoryField === "requestType" ||
+    connection.categoryField === "auto" ||
+    connection.categoryField === "component"
+  ) {
+    const samples = issues
+      .slice(0, 8)
+      .map((i) => findRequestTypeName(i))
+      .filter((v): v is string => Boolean(v));
+    const allChannel =
+      samples.length > 0 && samples.every(isChannelLikeCategory);
+    if (allChannel && !discovered) {
+      const { listCategoryFieldCandidates } = await import(
+        "./jira-category-detect"
+      );
+      const candidates = listCategoryFieldCandidates(
+        issues,
+        (issue, fieldId) =>
+          customFieldCategoryValue(issue as JiraIssue, fieldId),
+        fieldNames,
+      );
+      warnings.push(
+        `Request Type JSM = canal (${samples[0]}) — pas Elfsquad/Odoo/matériel.` +
+          (candidates.length
+            ? ` Autres champs vus: ${candidates.join(" · ")}.`
+            : ` Aucun autre customfield rempli sur ces tickets — la catégorie IT est peut‑être vide côté Jira.`) +
+          ` Sinon: source « Champ custom » + ID customfield_…`,
+      );
+    }
+  }
+
+  return {
+    categoryField: resolved.categoryField,
+    categoryCustomFieldId: resolved.categoryCustomFieldId,
+  };
 }
 
 /** Échantillon pour diagnostiquer une sync 100 % « Non catégorisé ». */
@@ -656,9 +755,37 @@ function categoryProbeSample(
     const custom = connection.categoryCustomFieldId
       ? customFieldCategoryValue(issue, connection.categoryCustomFieldId)
       : null;
-    return `${issue.key || "?"}[comp=${comps.join("|") || "∅"} label=${labels[0] || "∅"} req=${req || "∅"} type=${issue.fields.issuetype?.name || "∅"}${custom != null ? ` custom=${custom}` : ""}]`;
+    // Aperçu d’autres customfields qui ressemblent à des catégories IT
+    const itHints: string[] = [];
+    for (const [key, raw] of Object.entries(issue.fields)) {
+      if (!key.startsWith("customfield_")) continue;
+      if (key === connection.categoryCustomFieldId) continue;
+      const obj = asRecord(raw);
+      if (obj?.requestType) continue;
+      const val = customFieldCategoryValue(issue, key);
+      if (val && matchesKnownItCategoryInline(val)) {
+        itHints.push(`${key}=${val}`);
+      }
+    }
+    return `${issue.key || "?"}[comp=${comps.join("|") || "∅"} label=${labels[0] || "∅"} req=${req || "∅"} type=${issue.fields.issuetype?.name || "∅"}${custom != null ? ` custom=${custom}` : ""}${itHints.length ? ` it:${itHints.slice(0, 2).join(",")}` : ""}]`;
   });
   return sample.join(" · ");
+}
+
+function matchesKnownItCategoryInline(name: string): boolean {
+  const n = name.trim().toLowerCase();
+  return [
+    "elfsquad",
+    "odoo",
+    "matériel",
+    "materiel",
+    "website",
+    "site internet",
+    "outlook",
+    "teams",
+    "vplan",
+    "automatisation",
+  ].some((k) => n.includes(k));
 }
 
 function customFieldValue(
@@ -830,8 +957,13 @@ export async function fetchJiraWeekStats(
   const byType: Record<string, number> = {};
   const byAssignee: Record<string, number> = {};
   const byRequester: Record<string, number> = {};
+  const categorySource = await resolveCategorySource(
+    connection,
+    createdForBreakdown,
+    warnings,
+  );
   for (const issue of createdForBreakdown) {
-    const cat = categoryOf(issue, connection);
+    const cat = categoryOf(issue, categorySource);
     byType[cat] = (byType[cat] ?? 0) + 1;
     const who = personName(issue.fields.assignee, "Non assigné");
     byAssignee[who] = (byAssignee[who] ?? 0) + 1;
@@ -848,12 +980,12 @@ export async function fetchJiraWeekStats(
     byType["Non catégorisé"]
   ) {
     warnings.push(
-      `Tous les tickets sont « Non catégorisé » (source=${connection.categoryField}` +
-        (connection.categoryField === "custom"
-          ? `/${connection.categoryCustomFieldId || "?"}`
+      `Tous les tickets sont « Non catégorisé » (source=${categorySource.categoryField}` +
+        (categorySource.categoryCustomFieldId
+          ? `/${categorySource.categoryCustomFieldId}`
           : "") +
-        `). Échantillon: ${categoryProbeSample(createdForBreakdown, connection)}. ` +
-        `Changez la source de catégorie (composant / label / type / champ custom) puis reconnectez.`,
+        `). Échantillon: ${categoryProbeSample(createdForBreakdown, { ...connection, ...categorySource })}. ` +
+        `Changez la source de catégorie (champ custom IT) puis reconnectez.`,
     );
   }
 
@@ -1021,8 +1153,13 @@ export async function fetchJiraCreatedBreakdown(
   const byType: Record<string, number> = {};
   const byAssignee: Record<string, number> = {};
   const byRequester: Record<string, number> = {};
+  const categorySource = await resolveCategorySource(
+    connection,
+    createdIssues,
+    warnings,
+  );
   for (const issue of createdIssues) {
-    const cat = categoryOf(issue, connection);
+    const cat = categoryOf(issue, categorySource);
     byType[cat] = (byType[cat] ?? 0) + 1;
     const who = personName(issue.fields.assignee, "Non assigné");
     byAssignee[who] = (byAssignee[who] ?? 0) + 1;
@@ -1049,12 +1186,25 @@ export async function fetchJiraCreatedBreakdown(
     byType["Non catégorisé"]
   ) {
     warnings.push(
-      `Tous les tickets sont « Non catégorisé » (source=${connection.categoryField}` +
-        (connection.categoryField === "custom"
-          ? `/${connection.categoryCustomFieldId || "?"}`
+      `Tous les tickets sont « Non catégorisé » (source=${categorySource.categoryField}` +
+        (categorySource.categoryCustomFieldId
+          ? `/${categorySource.categoryCustomFieldId}`
           : "") +
-        `). Échantillon: ${categoryProbeSample(createdIssues, connection)}. ` +
-        `Changez la source de catégorie puis reconnectez.`,
+        `). Échantillon: ${categoryProbeSample(createdIssues, { ...connection, ...categorySource })}. ` +
+        `Indiquez le customfield des catégories IT puis reconnectez.`,
+    );
+  }
+
+  // Si on n’a que des request types de canal, le dire clairement
+  const { isChannelLikeCategory } = await import("./jira-category-detect");
+  const typeKeys = Object.keys(byType);
+  if (
+    typeKeys.length > 0 &&
+    typeKeys.every((k) => k === "Non catégorisé" || isChannelLikeCategory(k))
+  ) {
+    warnings.push(
+      `Types obtenus = canal JSM (${typeKeys.join(", ")}), pas Elfsquad/Odoo/matériel. ` +
+        `Utilisez source « Auto » ou « Champ custom » avec l’ID du champ Catégorie.`,
     );
   }
 
