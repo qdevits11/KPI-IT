@@ -52,6 +52,22 @@ Heures ouvrées = hors week-ends et jours fériés belges (liste n8n).
 
 Variables d'env optionnelles : voir `.env.example`. Sur Vercel, définir `JIRA_COOKIE_SECRET`.
 
+### Email SMTP (remplace l'envoi n8n)
+
+Sur Vercel, renseigner votre serveur SMTP existant :
+
+| Variable | Exemple |
+|----------|---------|
+| `SMTP_HOST` | `smtp.coverseal.com` |
+| `SMTP_PORT` | `587` (ou `465` + `SMTP_SECURE=true`) |
+| `SMTP_USER` / `SMTP_PASS` | compte d'envoi |
+| `SMTP_FROM` | `KPI IT <noreply@coverseal.com>` |
+| `SMTP_TO` | `it@coverseal.com` (plusieurs : séparés par `,`) |
+| `CRON_SECRET` | token pour `/api/mail/cron` |
+
+Depuis **Sync Jira** : choisir année/semaine → **Envoyer le rapport**.  
+Cron Vercel : lundi 07:00 UTC → sync semaine précédente + email (`vercel.json`).
+
 ## Scripts
 
 - `npm run dev` / `build` / `start`
