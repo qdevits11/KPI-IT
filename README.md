@@ -70,7 +70,7 @@ Envoi via **Exchange Online** (`smtp.office365.com:587`, STARTTLS).
 | `SMTP_USER` | `noreply@coverseal.com` |
 | `SMTP_PASS` | mot de passe (ou app password) de la boîte |
 | `SMTP_FROM` | `KPI IT <noreply@coverseal.com>` (défaut) |
-| `SMTP_TO` | `it@coverseal.com` (plusieurs : séparés par `,`) |
+| `SMTP_TO` | `q.devits@coverseal.com` (plusieurs : séparés par `,`) |
 | `CRON_SECRET` | token pour `/api/mail/cron` |
 
 Depuis **Sync Jira** : **Vérifier SMTP** puis **Envoyer le rapport**.  
