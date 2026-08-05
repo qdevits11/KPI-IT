@@ -9,9 +9,10 @@ interface Props {
   weeks: WeekOption[];
   value: string;
   onChange: (weekId: string) => void;
+  currentWeekId?: string;
 }
 
-export function WeekSelector({ weeks, value, onChange }: Props) {
+export function WeekSelector({ weeks, value, onChange, currentWeekId }: Props) {
   return (
     <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
       <span className="text-xs uppercase tracking-[0.14em]">Semaine</span>
@@ -22,7 +23,11 @@ export function WeekSelector({ weeks, value, onChange }: Props) {
       >
         {weeks.map((w) => (
           <option key={w.id} value={w.id}>
-            {w.label}
+            {w.label.includes("en cours")
+              ? w.label
+              : currentWeekId && w.id === currentWeekId
+                ? `${w.label} · en cours`
+                : w.label}
           </option>
         ))}
       </select>

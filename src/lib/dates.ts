@@ -74,3 +74,44 @@ export function formatFrDate(isoDate: string): string {
   const { y, m, d } = parseIsoDate(isoDate);
   return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`;
 }
+
+const MONTHS_FR = [
+  "janvier",
+  "février",
+  "mars",
+  "avril",
+  "mai",
+  "juin",
+  "juillet",
+  "août",
+  "septembre",
+  "octobre",
+  "novembre",
+  "décembre",
+] as const;
+
+/** Dimanche (YYYY-MM-DD) de la semaine ISO donnée. */
+export function sundayOfIsoWeek(year: number, week: number): string {
+  const monday = mondayOfIsoWeek(year, week);
+  const { y, m, d } = parseIsoDate(monday);
+  const utc = new Date(Date.UTC(y, m - 1, d + 6));
+  const yy = utc.getUTCFullYear();
+  const mm = String(utc.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(utc.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+/** Libellé type « 4 – 10 août 2026 » pour une semaine ISO. */
+export function formatWeekRangeLabel(year: number, week: number): string {
+  const start = mondayOfIsoWeek(year, week);
+  const end = sundayOfIsoWeek(year, week);
+  const a = parseIsoDate(start);
+  const b = parseIsoDate(end);
+  if (a.y === b.y && a.m === b.m) {
+    return `${a.d} – ${b.d} ${MONTHS_FR[a.m - 1]} ${a.y}`;
+  }
+  if (a.y === b.y) {
+    return `${a.d} ${MONTHS_FR[a.m - 1]} – ${b.d} ${MONTHS_FR[b.m - 1]} ${a.y}`;
+  }
+  return `${a.d} ${MONTHS_FR[a.m - 1]} ${a.y} – ${b.d} ${MONTHS_FR[b.m - 1]} ${b.y}`;
+}

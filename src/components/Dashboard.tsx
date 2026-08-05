@@ -11,12 +11,30 @@ import { KpiCard } from "./KpiCard";
 interface WeekOption {
   id: string;
   label: string;
+  isCurrent?: boolean;
+}
+
+interface WeekMeta {
+  currentWeekId: string;
+  isCurrentWeek: boolean;
+  isCompleted: boolean;
+  isLive: boolean;
+  openFrozenAt: string | null;
+  jiraSyncedAt: string | null;
+  dateRange: {
+    start: string;
+    endExclusive: string;
+    endInclusive: string;
+  };
+  dateRangeLabel: string;
+  brusselsNow: string;
 }
 
 interface Payload {
   week: WeeklyRow;
   kpis: KpiValue[];
   weeks: WeekOption[];
+  meta: WeekMeta;
   events: {
     automationsMetier: LogEvent[];
     automationsOdoo: LogEvent[];
@@ -100,10 +118,151 @@ function EventList({ title, items }: { title: string; items: LogEvent[] }) {
   );
 }
 
-export function Dashboard({ initialWeek }: { initialWeek: string }) {
+function formatSyncedAt(iso: string | null): string {
+  if (!iso) return "jamais";
+  try {
+    return new Date(iso).toLocaleString("fr-BE", {
+      timeZone: "Europe/Brussels",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function CurrentWeekStatus({
+  data,
+  onRefresh,
+  pending,
+}: {
+  data: Payload;
+  onRefresh: () => void;
+  pending: boolean;
+}) {
+  const { week, meta, kpis } = data;
+  const val = (id: string) => kpis.find((k) => k.id === id)?.value ?? null;
+  const highlight = [
+    { id: "demandes_it_hebdo", label: "Demandes IT" },
+    { id: "demandes_non_resolues_hebdo", label: "Non résolues" },
+    { id: "hors_sla_cloture", label: "Hors SLA clôture" },
+    { id: "hors_sla_prise_en_charge", label: "Hors SLA prise en charge" },
+  ] as const;
+
+  let statusLabel = "Semaine passée";
+  let statusHint = "Indicateurs figés pour cette semaine.";
+  let statusClass =
+    "border-[var(--line)] bg-[var(--wash)] text-[var(--ink-soft)]";
+
+  if (meta.isLive) {
+    statusLabel = "En cours · live";
+    statusHint =
+      "Les non-résolus suivent le stock Jira à chaque sync. Figement dimanche 23:59 Bruxelles.";
+    statusClass =
+      "border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent-deep)]";
+  } else if (meta.isCurrentWeek && meta.openFrozenAt) {
+    statusLabel = "En cours · figée";
+    statusHint = `Non-résolus figés le ${formatSyncedAt(meta.openFrozenAt)}.`;
+    statusClass =
+      "border-[var(--warn)]/40 bg-[var(--warn)]/10 text-[var(--ink)]";
+  } else if (meta.isCompleted && meta.openFrozenAt) {
+    statusLabel = "Terminée · figée";
+    statusHint = `Snapshot du ${formatSyncedAt(meta.openFrozenAt)}.`;
+  }
+
+  return (
+    <section className="space-y-5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.2em] text-[var(--accent)]">
+            État de la semaine
+          </p>
+          <p className="mt-2 font-[family-name:var(--font-display)] text-2xl text-[var(--ink)] sm:text-3xl">
+            S{String(week.week).padStart(2, "0")} — {week.year}
+          </p>
+          <p className="mt-1 text-sm text-[var(--muted)]">{meta.dateRangeLabel}</p>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            Bruxelles · {meta.brusselsNow}
+          </p>
+        </div>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <span
+            className={`rounded-md border px-2.5 py-1 text-xs font-medium uppercase tracking-[0.12em] ${statusClass}`}
+          >
+            {statusLabel}
+          </span>
+          <p className="max-w-xs text-right text-xs text-[var(--muted)]">
+            {statusHint}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {highlight.map((h) => {
+          const v = val(h.id);
+          return (
+            <div
+              key={h.id}
+              className="border-t border-[var(--line)] pt-3 sm:border-t-0 sm:border-l sm:pl-4 sm:pt-0 first:border-l-0 first:pl-0"
+            >
+              <p className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">
+                {h.label}
+              </p>
+              <p className="mt-1 font-[family-name:var(--font-display)] text-2xl tabular-nums text-[var(--ink)]">
+                {v === null ? "—" : v.toLocaleString("fr-BE")}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-col gap-3 border-t border-[var(--line)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-[var(--muted)]">
+          Dernière sync Jira :{" "}
+          <span className="text-[var(--ink-soft)]">
+            {formatSyncedAt(meta.jiraSyncedAt)}
+          </span>
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={pending}
+            className="rounded-md border border-[var(--line)] bg-[var(--wash)] px-3 py-1.5 text-sm text-[var(--ink)] transition-colors hover:border-[var(--accent)] disabled:opacity-50"
+          >
+            {pending ? "Actualisation…" : "Actualiser"}
+          </button>
+          <Link
+            href={`/jira?week=${encodeURIComponent(meta.currentWeekId)}`}
+            className="rounded-md bg-[var(--ink)] px-3 py-1.5 text-sm text-[var(--paper)] transition-opacity hover:opacity-90"
+          >
+            Sync Jira
+          </Link>
+          <Link
+            href="/saisie"
+            className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm text-[var(--ink)] transition-colors hover:border-[var(--accent)]"
+          >
+            Encodage
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export function Dashboard({
+  initialWeek,
+  lockToCurrentWeek = false,
+}: {
+  initialWeek: string;
+  lockToCurrentWeek?: boolean;
+}) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const weekFromUrl = searchParams.get("week");
+  const weekFromUrl = lockToCurrentWeek ? null : searchParams.get("week");
   const weekId =
     weekFromUrl && /^\d{4}-S\d{2}$/.test(weekFromUrl)
       ? weekFromUrl
@@ -132,6 +291,12 @@ export function Dashboard({ initialWeek }: { initialWeek: string }) {
     router.replace(`/?week=${encodeURIComponent(id)}`, { scroll: false });
   }
 
+  function refresh() {
+    startTransition(() => {
+      void load(weekId);
+    });
+  }
+
   const grouped = CATEGORY_ORDER.map((cat) => ({
     cat,
     label: CATEGORY_LABELS[cat],
@@ -146,17 +311,39 @@ export function Dashboard({ initialWeek }: { initialWeek: string }) {
             Service IT — Becoflex / Coverseal
           </p>
           <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl text-[var(--ink)] sm:text-4xl">
-            KPI hebdomadaires
+            {lockToCurrentWeek ? "Semaine en cours" : "KPI hebdomadaires"}
           </h1>
           <p className="mt-2 max-w-xl text-sm text-[var(--muted)]">
-            Chiffres calculés comme dans KPI.xlsx : COUNTIFS / SUMIFS / YTD sur
-            les journaux et le ticketing.
+            {lockToCurrentWeek
+              ? "Vue live de la semaine ISO actuelle : tickets Jira, stock non résolu et encodages manuels."
+              : "Chiffres calculés comme dans KPI.xlsx : COUNTIFS / SUMIFS / YTD sur les journaux et le ticketing."}
           </p>
         </div>
-        {data && (
-          <WeekSelector weeks={data.weeks} value={weekId} onChange={selectWeek} />
+        {data && !lockToCurrentWeek && (
+          <WeekSelector
+            weeks={data.weeks}
+            value={weekId}
+            onChange={selectWeek}
+            currentWeekId={data.meta?.currentWeekId}
+          />
         )}
       </div>
+
+      {data?.meta && lockToCurrentWeek && (
+        <CurrentWeekStatus data={data} onRefresh={refresh} pending={pending} />
+      )}
+
+      {data?.meta?.isCurrentWeek && !lockToCurrentWeek && (
+        <p className="text-sm text-[var(--muted)]">
+          Vous consultez la semaine en cours.{" "}
+          <Link
+            href="/semaine"
+            className="font-medium text-[var(--accent-deep)] hover:text-[var(--accent)]"
+          >
+            Voir l’état dédié →
+          </Link>
+        </p>
+      )}
 
       {error && (
         <p className="rounded-md border border-[var(--crit)]/30 bg-[var(--crit)]/10 px-3 py-2 text-sm text-[var(--crit)]">
@@ -243,6 +430,17 @@ export function Dashboard({ initialWeek }: { initialWeek: string }) {
                   </ul>
                 </div>
               )}
+              {data.events.automationsMetier.length === 0 &&
+                data.events.automationsOdoo.length === 0 &&
+                data.events.maintenances.length === 0 &&
+                data.events.phishing.length === 0 && (
+                  <p className="text-sm text-[var(--muted)]">
+                    Aucun événement encodé pour cette semaine.{" "}
+                    <Link href="/saisie" className="text-[var(--accent-deep)] hover:underline">
+                      Encoder →
+                    </Link>
+                  </p>
+                )}
             </div>
             <div className="space-y-8 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
               <div className="flex items-center justify-between gap-2">

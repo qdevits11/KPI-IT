@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   formatFrDate,
+  formatWeekRangeLabel,
   isoWeekPartsFromDate,
   mondayOfIsoWeek,
+  sundayOfIsoWeek,
   weekIdFromDate,
 } from "./dates";
 
@@ -31,5 +33,11 @@ describe("dates → semaine ISO", () => {
 
   it("formate en fr-BE", () => {
     expect(formatFrDate("2026-07-27")).toBe("27/07/2026");
+  });
+
+  it("donne le dimanche et le libellé de plage", () => {
+    expect(sundayOfIsoWeek(2026, 31)).toBe("2026-08-02");
+    expect(formatWeekRangeLabel(2026, 31)).toBe("27 juillet – 2 août 2026");
+    expect(formatWeekRangeLabel(2026, 32)).toBe("3 – 9 août 2026");
   });
 });
