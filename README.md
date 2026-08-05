@@ -76,7 +76,7 @@ Les « non résolues » :
 
 Définir `CRON_SECRET` + credentials Jira (`JIRA_*`) sur Vercel. Cron UTC : `55 21 * * 0` et `55 22 * * 0` (couvre CET/CEST).
 
-Variables d'env optionnelles : voir `.env.example`. Sur Vercel, définir `JIRA_COOKIE_SECRET`.
+Variables d'env optionnelles : voir `.env.example`. Sur Vercel, définir `JIRA_COOKIE_SECRET` (chiffrement) + `SUPABASE_*`. Le compte Jira (email + token) est stocké chiffré dans Supabase (`kpi_jira_connection`), partagé entre périphériques.
 
 ## Scripts
 
