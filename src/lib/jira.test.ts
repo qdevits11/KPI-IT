@@ -6,7 +6,13 @@ import {
   previousIsoWeek,
 } from "./jira";
 import { DEFAULT_JIRA_SETTINGS, type JiraConnection } from "./jira-auth";
-import { countOverBusinessSla, getBusinessHours } from "./business-hours";
+import {
+  countOverBusinessSla,
+  getBusinessHours,
+  parseJiraDate,
+  toBrusselsDateStr,
+  brusselsWallToUtc,
+} from "./business-hours";
 
 const conn: JiraConnection = {
   baseUrl: "https://coverseal.atlassian.net",
@@ -25,44 +31,45 @@ describe("isoWeekDateRange", () => {
   });
 });
 
-describe("buildWeekJql (aligné n8n)", () => {
-  it("utilise startOfWeek(-1) / startOfWeek() pour la semaine précédente", () => {
-    // Lundi 3 août 2026 → semaine précédente = S31
+describe("buildWeekJql (bornes absolues reproductibles)", () => {
+  it("utilise des datetimes absolus pour toute semaine (y compris précédente)", () => {
     const now = new Date("2026-08-03T10:00:00Z");
     const prev = previousIsoWeek(now);
     expect(prev).toEqual({ year: 2026, week: 31 });
 
     const jql = buildWeekJql(conn, 2026, 31, now);
-    expect(jql.usedRelativeWeekFunctions).toBe(true);
-    expect(jql.created).toContain("project = CSD");
-    expect(jql.created).toContain(
-      "created >= startOfWeek(-1) AND created < startOfWeek()",
-    );
+    expect(jql.usedRelativeWeekFunctions).toBe(false);
+    expect(jql.created).toContain('created >= "2026-07-27 00:00"');
+    expect(jql.created).toContain('created < "2026-08-03 00:00"');
     expect(jql.priseEnCharge).toContain(
-      '"Date Prise en Charge" >= startOfWeek(-1)',
+      '"Date Prise en Charge" >= "2026-07-27 00:00"',
     );
-    expect(jql.priseEnCharge).toContain(
-      '"Date Prise en Charge" < startOfWeek()',
-    );
-    expect(jql.resolved).toContain("resolutiondate >= startOfWeek(-1)");
-    expect(jql.resolved).toContain("resolutiondate < startOfWeek()");
+    expect(jql.resolved).toContain('resolutiondate >= "2026-07-27 00:00"');
     expect(jql.open).toContain("status NOT IN (Partenaire, Canceled, Done)");
   });
 
-  it("utilise des dates absolues pour une semaine historique", () => {
+  it("utilise les mêmes bornes pour une semaine historique", () => {
     const now = new Date("2026-08-03T10:00:00Z");
     const jql = buildWeekJql(conn, 2026, 10, now);
     expect(jql.usedRelativeWeekFunctions).toBe(false);
-    expect(jql.created).toContain('created >= "');
-    expect(jql.created).toContain('created < "');
+    expect(jql.created).toContain("00:00");
   });
 });
 
-describe("getBusinessHours (n8n)", () => {
+describe("getBusinessHours (Europe/Brussels)", () => {
   it("compte > 24h ouvrées sur un délai qui traverse un week-end", () => {
-    const start = new Date("2026-07-24T10:00:00");
-    const end = new Date("2026-07-27T11:00:00");
+    const start = new Date("2026-07-24T10:00:00+02:00");
+    const end = new Date("2026-07-27T11:00:00+02:00");
     expect(getBusinessHours(start, end)).toBeGreaterThan(24);
+  });
+
+  it("ignore le week-end en fuseau Bruxelles", () => {
+    const start = brusselsWallToUtc(2026, 7, 24, 17, 0, 0);
+    const end = brusselsWallToUtc(2026, 7, 27, 9, 0, 0);
+    const hours = getBusinessHours(start, end);
+    // Ven 17→24 = 7h + Lun 0→9 = 9h ≈ 16h (sam/dim exclus)
+    expect(hours).toBeGreaterThan(15);
+    expect(hours).toBeLessThan(18);
   });
 
   it("compte hors SLA 48h comme n8n", () => {
@@ -81,6 +88,12 @@ describe("getBusinessHours (n8n)", () => {
       48,
     );
     expect(count).toBe(1);
+  });
+
+  it("parse une date Jira date-only en minuit Bruxelles", () => {
+    const d = parseJiraDate("2026-07-28");
+    expect(d).not.toBeNull();
+    expect(toBrusselsDateStr(d!)).toBe("2026-07-28");
   });
 });
 

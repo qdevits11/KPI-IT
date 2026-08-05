@@ -39,6 +39,13 @@ interface WeekValues {
   ticketsHorsSlaPriseEnCharge: number;
 }
 
+interface ExcelBaseline {
+  demandesItHebdo: number | null;
+  demandesNonResoluesHebdo: number | null;
+  ticketsHorsSlaCloture: number | null;
+  ticketsHorsSlaPriseEnCharge: number | null;
+}
+
 const DEFAULT_FORM = {
   baseUrl: "https://coverseal.atlassian.net",
   email: "",
@@ -75,6 +82,9 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
   } | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [values, setValues] = useState<WeekValues | null>(null);
+  const [excelBaseline, setExcelBaseline] = useState<ExcelBaseline | null>(
+    null,
+  );
   const [lastMode, setLastMode] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [diagnostics, setDiagnostics] = useState<{
@@ -188,6 +198,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     setDiagnostics(null);
     setProbe(null);
     setValues(null);
+    setExcelBaseline(null);
     setSaved(false);
     setLastMode(null);
 
@@ -219,6 +230,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
       setProbe(json.probe ?? null);
       setDiagnostics(json.diagnostics ?? null);
       setValues(json.values ?? null);
+      setExcelBaseline(json.excelBaseline ?? null);
       setLastMode(json.mode);
       setSaved(!json.dryRun);
       setWeekId(json.weekId ?? composedWeekId);
@@ -455,23 +467,35 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
               label="Tickets créés"
               value={values.demandesItHebdo}
               hint="Demandes IT — Hebdo"
+              baseline={excelBaseline?.demandesItHebdo}
             />
             <KpiTile
               label="Non résolus"
               value={values.demandesNonResoluesHebdo}
-              hint="Snapshot ouvert actuel"
+              hint="Snapshot ouvert actuel (≠ Excel historique)"
+              baseline={excelBaseline?.demandesNonResoluesHebdo}
             />
             <KpiTile
               label="Hors SLA clôture"
               value={values.ticketsHorsSlaCloture}
-              hint="> 48h ouvrées"
+              hint="> 48h ouvrées (Bruxelles)"
+              baseline={excelBaseline?.ticketsHorsSlaCloture}
             />
             <KpiTile
               label="Hors SLA prise en charge"
               value={values.ticketsHorsSlaPriseEnCharge}
-              hint="> 24h ouvrées"
+              hint="> 24h ouvrées (Bruxelles)"
+              baseline={excelBaseline?.ticketsHorsSlaPriseEnCharge}
             />
           </div>
+        )}
+
+        {values && excelBaseline && (
+          <p className="text-xs text-[var(--muted)]">
+            Comparaison Excel (base) affichée sous chaque KPI. Les « non
+            résolus » Excel sont un stock de fin de semaine : le test Jira
+            renvoie le snapshot ouvert <em>maintenant</em>, donc peut différer.
+          </p>
         )}
 
         {values && (
@@ -522,8 +546,8 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           <h2 className="font-[family-name:var(--font-display)] text-lg">
             JQL{" "}
             {jql.usedRelativeWeekFunctions
-              ? "(startOfWeek(-1) → startOfWeek(), comme n8n)"
-              : `(${jql.start} → ${jql.endExclusive} exclu)`}
+              ? "(startOfWeek relatif)"
+              : `(${jql.start} 00:00 → ${jql.endExclusive} 00:00)`}
           </h2>
           <JqlBlock label="Demandes IT (créés)" jql={jql.created} />
           <JqlBlock label="Non résolues (snapshot ouvert)" jql={jql.open} />
@@ -545,11 +569,18 @@ function KpiTile({
   label,
   value,
   hint,
+  baseline,
 }: {
   label: string;
   value: number;
   hint: string;
+  baseline?: number | null;
 }) {
+  const hasBaseline = baseline != null;
+  const match = hasBaseline && baseline === value;
+  const diff =
+    hasBaseline && baseline !== value ? value - (baseline as number) : null;
+
   return (
     <div className="rounded-lg border border-[var(--line)] bg-[var(--wash)] px-4 py-3">
       <p className="text-xs uppercase tracking-wider text-[var(--muted)]">
@@ -559,6 +590,18 @@ function KpiTile({
         {value}
       </p>
       <p className="mt-1 text-xs text-[var(--muted)]">{hint}</p>
+      {hasBaseline && (
+        <p
+          className={`mt-2 text-xs ${match ? "text-[var(--ok)]" : "text-[var(--warn)]"}`}
+        >
+          Excel : {baseline}
+          {match
+            ? " · OK"
+            : diff != null
+              ? ` · écart ${diff > 0 ? "+" : ""}${diff}`
+              : ""}
+        </p>
+      )}
     </div>
   );
 }

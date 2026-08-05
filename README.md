@@ -48,7 +48,9 @@ Dans l'UI **Sync Jira** : URL du site + email Atlassian + [API token](https://id
 | Hors SLA prise en charge | `Date Prise en Charge` ∈ semaine + **> 24 h ouvrées** |
 | Hors SLA clôture | `resolutiondate` ∈ semaine + **> 48 h ouvrées** |
 
-Heures ouvrées = hors week-ends et jours fériés belges (liste n8n).
+Heures ouvrées = hors week-ends et jours fériés belges, fuseau **Europe/Brussels** (comme n8n / site Jira).
+
+Les « non résolues » Excel sont un stock de fin de semaine ; la sync Jira renvoie le snapshot ouvert **au moment du test** (comme n8n).
 
 Variables d'env optionnelles : voir `.env.example`. Sur Vercel, définir `JIRA_COOKIE_SECRET`.
 
