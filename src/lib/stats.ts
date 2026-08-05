@@ -39,30 +39,52 @@ function sourceFor(
   return db.ticketsByType ?? {};
 }
 
-/** Semaines de l’année avec au moins une ventilation pour la dimension. */
+/** Semaines de l’année à afficher dans les stats.
+
+ * Inclut les semaines vides en tête (ex. S01 à 0), depuis la première
+ * semaine connue jusqu’à la dernière avec activité. Coupe seulement
+ * la queue (semaines futures sans données).
+ */
 export function weeksForYear(
   db: AppDatabase,
   year: number,
   source?: Record<string, Record<string, number>>,
 ): string[] {
+  const weekKeys = new Set<string>();
+
+  for (const w of db.weeks) {
+    if (w.year === year) weekKeys.add(weekId(w));
+  }
   if (source) {
-    const fromSource = Object.keys(source)
-      .filter((k) => k.startsWith(`${year}-S`))
-      .filter((k) => Object.values(source[k] ?? {}).some((n) => n > 0));
-    if (fromSource.length > 0) {
-      return fromSource.sort();
+    for (const k of Object.keys(source)) {
+      if (k.startsWith(`${year}-S`)) weekKeys.add(k);
     }
   }
 
-  const fromWeeks = db.weeks
-    .filter((w) => w.year === year && (w.demandesItHebdo ?? 0) > 0)
-    .map((w) => weekId(w));
-  if (fromWeeks.length > 0) return [...new Set(fromWeeks)].sort();
+  const sorted = [...weekKeys].sort();
+  if (sorted.length === 0) return [];
 
-  return db.weeks
-    .filter((w) => w.year === year)
-    .map((w) => weekId(w))
-    .sort();
+  const hasActivity = (key: string): boolean => {
+    if (source && Object.values(source[key] ?? {}).some((n) => n > 0)) {
+      return true;
+    }
+    const row = db.weeks.find((w) => weekId(w) === key);
+    return (row?.demandesItHebdo ?? 0) > 0;
+  };
+
+  let lastActive = -1;
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    if (hasActivity(sorted[i])) {
+      lastActive = i;
+      break;
+    }
+  }
+
+  // Aucune activité : garder toute la liste déclarée (ex. année vide)
+  if (lastActive < 0) return sorted;
+
+  // S01…dernière semaine active (les zéros de tête restent comptabilisés)
+  return sorted.slice(0, lastActive + 1);
 }
 
 /**

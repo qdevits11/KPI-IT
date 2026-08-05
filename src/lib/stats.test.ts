@@ -12,6 +12,20 @@ function fixture(): AppDatabase {
     weeks: [
       {
         year: 2026,
+        month: 1,
+        week: 1,
+        ticketsHorsSlaCloture: null,
+        ticketsHorsSlaPriseEnCharge: null,
+        demandesItHebdo: 0,
+        demandesNonResoluesHebdo: 0,
+        openFrozenAt: null,
+        informations: "",
+        reaction: "",
+        jiraSyncedAt: null,
+        updatedAt: null,
+      },
+      {
+        year: 2026,
         month: 7,
         week: 30,
         ticketsHorsSlaCloture: null,
@@ -38,12 +52,27 @@ function fixture(): AppDatabase {
         jiraSyncedAt: null,
         updatedAt: null,
       },
+      {
+        year: 2026,
+        month: 12,
+        week: 52,
+        ticketsHorsSlaCloture: null,
+        ticketsHorsSlaPriseEnCharge: null,
+        demandesItHebdo: 0,
+        demandesNonResoluesHebdo: null,
+        openFrozenAt: null,
+        informations: "",
+        reaction: "",
+        jiraSyncedAt: null,
+        updatedAt: null,
+      },
     ],
     automationsMetier: [],
     automationsOdoo: [],
     phishing: [],
     maintenances: [],
     ticketsByType: {
+      "2026-S01": { Odoo: 0, Teams: 0 },
       "2026-S30": { Odoo: 4, Teams: 2, Elfsquad: 0 },
       "2026-S31": { Odoo: 6, Teams: 1, Extract: 3 },
     },
@@ -66,13 +95,14 @@ function fixture(): AppDatabase {
 describe("buildTicketStats", () => {
   it("agrège les volumes par responsable sur l’année", () => {
     const stats = buildTicketStats(fixture(), 2026, "assignee");
-    expect(stats.weeks).toEqual(["2026-S30", "2026-S31"]);
+    expect(stats.weeks).toEqual(["2026-S01", "2026-S30", "2026-S31"]);
     expect(stats.grandTotal).toBe(5 + 3 + 7 + 4);
     expect(stats.rows[0]).toMatchObject({
       name: "Gary Schreurs",
       total: 12,
     });
     expect(stats.rows[0].byWeek["2026-S30"]).toBe(5);
+    expect(stats.rows[0].byWeek["2026-S01"]).toBe(0);
     expect(stats.rows[0].share).toBeCloseTo(12 / 19);
   });
 
@@ -100,14 +130,20 @@ describe("buildStatsOverview", () => {
 });
 
 describe("weeksForYear", () => {
-  it("ne garde que les semaines avec volume > 0 dans la source", () => {
+  it("garde S01 vide et coupe la queue sans activité", () => {
     const db = fixture();
     db.ticketsByType["2026-S29"] = { Odoo: 1 };
-    db.ticketsByType["2026-S32"] = { Odoo: 0 };
     expect(weeksForYear(db, 2026, db.ticketsByType)).toEqual([
+      "2026-S01",
       "2026-S29",
       "2026-S30",
       "2026-S31",
     ]);
+  });
+
+  it("inclut une semaine 1 à zéro dans le total des colonnes", () => {
+    const stats = buildTicketStats(fixture(), 2026, "type");
+    expect(stats.weeks[0]).toBe("2026-S01");
+    expect(stats.weekTotals["2026-S01"]).toBe(0);
   });
 });
