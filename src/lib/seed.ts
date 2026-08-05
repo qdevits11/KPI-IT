@@ -125,9 +125,10 @@ export function seedDatabase(): AppDatabase {
     automationsOdoo: toLog(excel.automationsOdoo, "odoo"),
     phishing,
     maintenances: toLog(excel.maintenances, "maint"),
-    ticketsByType: excel.ticketsByType,
-    ticketsByAssignee: excel.ticketsByAssignee,
-    ticketsByRequester: excel.ticketsByRequester ?? {},
+    // Cloner : le JSON importé est un singleton mutable
+    ticketsByType: structuredClone(excel.ticketsByType ?? {}),
+    ticketsByAssignee: structuredClone(excel.ticketsByAssignee ?? {}),
+    ticketsByRequester: structuredClone(excel.ticketsByRequester ?? {}),
     settings: {
       companyName: "Coverseal / Becoflex",
       jiraConfigured: false,

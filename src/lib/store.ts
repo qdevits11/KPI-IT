@@ -20,6 +20,12 @@ import {
   normalizeResponsibleName,
   sortResponsibles,
 } from "./responsibles";
+import {
+  blobConfigured,
+  loadDbFromBlob,
+  saveDbToBlob,
+  saveDbToBlobIfAbsent,
+} from "./db-persist";
 
 /** Sur Vercel le FS du projet est en lecture seule → /tmp ; en local → data/ */
 function dbPath(): string {
@@ -30,38 +36,96 @@ function dbPath(): string {
   return path.join(process.cwd(), "data", "db.json");
 }
 
-async function ensureDb(): Promise<AppDatabase> {
+/** Cache processus : survit aux requêtes sur une instance chaude. */
+let memoryDb: AppDatabase | null = null;
+let memoryDbPath: string | null = null;
+
+/** Vitest / isolation des répertoires KPI_DB_DIR. */
+export function resetDbCacheForTests(): void {
+  memoryDb = null;
+  memoryDbPath = null;
+}
+
+function setMemory(db: AppDatabase): AppDatabase {
+  memoryDb = db;
+  memoryDbPath = dbPath();
+  return db;
+}
+
+async function migrateAndMaybePersist(db: AppDatabase): Promise<AppDatabase> {
+  let dirty = migrateLogDates(db);
+  if (migrateSettings(db)) dirty = true;
+  if (migrateTicketRequester(db)) dirty = true;
+  setMemory(db);
+  if (dirty) {
+    await writeDb(db);
+  }
+  return db;
+}
+
+async function readDbFromDisk(): Promise<AppDatabase | null> {
   const file = dbPath();
   try {
     const raw = await fs.readFile(file, "utf-8");
-    const db = JSON.parse(raw) as AppDatabase;
-    let dirty = migrateLogDates(db);
-    if (migrateSettings(db)) dirty = true;
-    if (migrateTicketRequester(db)) dirty = true;
-    if (dirty) {
-      await writeDb(db);
-    }
-    return db;
+    return JSON.parse(raw) as AppDatabase;
   } catch {
-    const seeded = seedDatabase();
-    try {
-      await fs.mkdir(path.dirname(file), { recursive: true });
-      await fs.writeFile(file, JSON.stringify(seeded, null, 2), "utf-8");
-    } catch {
-      // Lecture seule : on sert le seed en mémoire
-    }
-    return seeded;
+    return null;
   }
 }
 
+async function ensureDb(): Promise<AppDatabase> {
+  const file = dbPath();
+  if (memoryDb && memoryDbPath === file) {
+    return memoryDb;
+  }
+
+  const fromDisk = await readDbFromDisk();
+  if (fromDisk) {
+    return migrateAndMaybePersist(fromDisk);
+  }
+
+  // /tmp vide (nouvelle instance Vercel) → tenter le Blob durable
+  const fromBlob = await loadDbFromBlob();
+  if (fromBlob) {
+    try {
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, JSON.stringify(fromBlob, null, 2), "utf-8");
+    } catch {
+      // FS indisponible : on garde quand même le cache mémoire
+    }
+    return migrateAndMaybePersist(fromBlob);
+  }
+
+  if (process.env.VERCEL && !blobConfigured()) {
+    console.warn(
+      "KPI: BLOB_READ_WRITE_TOKEN absent — les syncs Jira (demandeurs, etc.) " +
+        "seront perdus à chaque cold start. Ajoutez un store Vercel Blob.",
+    );
+  }
+
+  const seeded = seedDatabase();
+  setMemory(seeded);
+  try {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, JSON.stringify(seeded, null, 2), "utf-8");
+  } catch {
+    // Lecture seule : on sert le seed en mémoire
+  }
+  // Ne jamais écraser un Blob déjà peuplé avec le seed Excel (demandeurs vides)
+  await saveDbToBlobIfAbsent(seeded);
+  return seeded;
+}
+
 async function writeDb(db: AppDatabase): Promise<void> {
+  setMemory(db);
   const file = dbPath();
   try {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, JSON.stringify(db, null, 2), "utf-8");
   } catch (err) {
-    console.warn("Persistance KPI indisponible:", err);
+    console.warn("Persistance KPI disque indisponible:", err);
   }
+  await saveDbToBlob(db);
 }
 
 /** Force re-seed from Excel JSON (dev / import) */
@@ -423,9 +487,12 @@ export async function clearTicketsBreakdown(options?: {
     }
   }
 
-  db.ticketsByType = collections.type;
-  db.ticketsByAssignee = collections.assignee;
-  db.ticketsByRequester = collections.requester;
+  // N’écrire que les parties demandées — ne jamais réassigner les autres
+  if (parts.includes("type")) db.ticketsByType = collections.type;
+  if (parts.includes("assignee")) db.ticketsByAssignee = collections.assignee;
+  if (parts.includes("requester")) {
+    db.ticketsByRequester = collections.requester;
+  }
   await writeDb(db);
 
   if (parts.length === 1) {

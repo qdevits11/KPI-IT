@@ -20,7 +20,8 @@ export const DEFAULT_SAVE_FIELDS: SaveFields = {
   ticketsHorsSlaPriseEnCharge: true,
   ticketsByType: true,
   ticketsByAssignee: true,
-  ticketsByRequester: true,
+  /** Opt-in : éviter d’écraser les demandeurs si la clé est omise. */
+  ticketsByRequester: false,
 };
 
 /** Résout les flags ventilations (gère l’ancien ticketsBreakdown). */
@@ -34,7 +35,7 @@ export function resolveBreakdownFlags(saveFields?: SaveFields | null): {
   return {
     type: flags.ticketsByType ?? legacy ?? true,
     assignee: flags.ticketsByAssignee ?? legacy ?? true,
-    requester: flags.ticketsByRequester ?? true,
+    requester: flags.ticketsByRequester ?? false,
   };
 }
 

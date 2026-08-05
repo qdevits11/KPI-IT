@@ -78,6 +78,20 @@ describe("resolveBreakdownFlags", () => {
       }),
     ).toEqual({ type: true, assignee: true, requester: false });
   });
+
+  it("demandeurs opt-in si clé absente", () => {
+    expect(resolveBreakdownFlags({})).toEqual({
+      type: true,
+      assignee: true,
+      requester: false,
+    });
+    expect(
+      resolveBreakdownFlags({
+        ticketsByAssignee: true,
+        ticketsByRequester: true,
+      }),
+    ).toEqual({ type: true, assignee: true, requester: true });
+  });
 });
 
 describe("pickClearKpiPatch", () => {

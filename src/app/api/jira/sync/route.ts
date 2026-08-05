@@ -284,7 +284,8 @@ export async function POST(request: Request) {
     ticketsByType: saveFields.ticketsByType ?? saveFields.ticketsBreakdown ?? true,
     ticketsByAssignee:
       saveFields.ticketsByAssignee ?? saveFields.ticketsBreakdown ?? true,
-    ticketsByRequester: saveFields.ticketsByRequester ?? true,
+    // Demandeurs : opt-in — une omission ne doit jamais réécrire l’année
+    ticketsByRequester: saveFields.ticketsByRequester ?? false,
   };
   const conn = await resolveJiraConnection();
 
