@@ -41,7 +41,10 @@ function extractEmail(from: string): string | null {
 export function getSmtpConfig(): SmtpConfig | null {
   const from =
     process.env.SMTP_FROM?.trim() || OFFICE365_SMTP.from;
-  const toRaw = process.env.SMTP_TO?.trim() ?? process.env.MAIL_TO?.trim();
+  const toRaw =
+    process.env.SMTP_TO?.trim() ||
+    process.env.MAIL_TO?.trim() ||
+    "q.devits@coverseal.com";
   const pass = process.env.SMTP_PASS?.trim();
   const user =
     process.env.SMTP_USER?.trim() ||
@@ -49,7 +52,7 @@ export function getSmtpConfig(): SmtpConfig | null {
     OFFICE365_SMTP.user;
 
   // Office 365 exige auth ; sans mot de passe = non configuré
-  if (!toRaw || !pass) return null;
+  if (!pass) return null;
 
   const port = Number(process.env.SMTP_PORT ?? OFFICE365_SMTP.port);
   const secure =

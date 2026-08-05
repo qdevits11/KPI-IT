@@ -569,7 +569,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
             type="text"
             value={mailTo}
             onChange={(e) => setMailTo(e.target.value)}
-            placeholder="it@coverseal.com, collegue@coverseal.com"
+            placeholder="q.devits@coverseal.com"
             className="rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-2 outline-none focus:border-[var(--accent)]"
           />
         </label>
