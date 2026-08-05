@@ -167,4 +167,36 @@ describe("categoryOf", () => {
       ),
     ).toBe("Non catégorisé");
   });
+
+  it("lit le Customer Request Type JSM (même si composants vides)", async () => {
+    const { categoryOf, findRequestTypeName } = await import("./jira");
+    const issue = {
+      key: "CSD-3131",
+      fields: {
+        created: "2026-08-01T10:00:00.000Z",
+        resolutiondate: null,
+        components: [],
+        labels: [],
+        issuetype: { name: "[System] Service request" },
+        customfield_10010: {
+          requestType: { id: "42", name: "Odoo" },
+          currentStatus: { status: "Open" },
+        },
+      },
+    };
+    expect(findRequestTypeName(issue)).toBe("Odoo");
+    expect(
+      categoryOf(issue, {
+        categoryField: "requestType",
+        categoryCustomFieldId: "",
+      }),
+    ).toBe("Odoo");
+    // Fallback auto depuis component → request type
+    expect(
+      categoryOf(issue, {
+        categoryField: "component",
+        categoryCustomFieldId: "",
+      }),
+    ).toBe("Odoo");
+  });
 });

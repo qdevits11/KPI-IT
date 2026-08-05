@@ -27,11 +27,12 @@ export interface JiraConnection {
   slaClotureHours: number;
   /**
    * Source de la « catégorie / type de demande ».
+   * - requestType : Customer Request Type JSM (recommandé Coverseal/CSD)
    * - component | label | issuetype
    * - custom → lit categoryCustomFieldId (ex. customfield_10001)
    */
-  categoryField: "component" | "label" | "issuetype" | "custom";
-  /** ID API du champ custom (si categoryField = custom) */
+  categoryField: "requestType" | "component" | "label" | "issuetype" | "custom";
+  /** ID API du champ custom (si categoryField = custom), ou hint pour requestType */
   categoryCustomFieldId: string;
   connectedAt: string;
 }
@@ -43,7 +44,8 @@ export const DEFAULT_JIRA_SETTINGS = {
   datePriseEnChargeFieldId: "customfield_10284",
   slaPriseEnChargeHours: 24,
   slaClotureHours: 48,
-  categoryField: "component" as const,
+  /** CSD = Jira Service Management : catégories = Request Types, pas les composants */
+  categoryField: "requestType" as const,
   categoryCustomFieldId: "",
 };
 
@@ -133,9 +135,20 @@ function normalizeCategoryField(
   const v = (raw ?? "").trim().toLowerCase();
   if (v === "label" || v === "labels") return "label";
   if (v === "issuetype" || v === "type") return "issuetype";
+  if (v === "component" || v === "components") return "component";
   if (v === "custom" || v.startsWith("customfield_")) return "custom";
+  if (
+    v === "requesttype" ||
+    v === "request_type" ||
+    v === "request-type" ||
+    v === "customer request type"
+  ) {
+    return "requestType";
+  }
   if (customId?.trim().toLowerCase().startsWith("customfield_")) return "custom";
-  return "component";
+  // Défaut Coverseal / JSM
+  if (!v) return "requestType";
+  return "requestType";
 }
 
 export async function readJiraConnection(): Promise<JiraConnection | null> {

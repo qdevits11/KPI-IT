@@ -535,7 +535,16 @@ function customFieldCategoryValue(
   if (!fieldId) return null;
   const raw = issue.fields[fieldId];
   if (raw == null || raw === "") return null;
-  if (typeof raw === "string") return raw.trim() || null;
+  if (typeof raw === "string") {
+    // Souvent "portalKey/requestTypeKey" — on garde la partie affichable
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    if (trimmed.includes("/")) {
+      const tail = trimmed.split("/").pop()?.trim();
+      return tail || trimmed;
+    }
+    return trimmed;
+  }
   if (typeof raw === "number" || typeof raw === "boolean") return String(raw);
   if (Array.isArray(raw)) {
     const parts = raw
@@ -555,13 +564,43 @@ function customFieldCategoryValue(
   }
   const obj = asRecord(raw);
   if (!obj) return null;
+  // JSM Customer Request Type : { requestType: { name: "Odoo", ... }, ... }
+  const requestType = asRecord(obj.requestType);
+  if (requestType) {
+    if (typeof requestType.name === "string" && requestType.name.trim()) {
+      return requestType.name.trim();
+    }
+  }
   if (typeof obj.value === "string" && obj.value.trim()) return obj.value.trim();
   if (typeof obj.name === "string" && obj.name.trim()) return obj.name.trim();
   if (typeof obj.label === "string" && obj.label.trim()) return obj.label.trim();
-  // Option cascaded / child
   const child = asRecord(obj.child);
   if (child && typeof child.value === "string" && child.value.trim()) {
     return child.value.trim();
+  }
+  return null;
+}
+
+/**
+ * Trouve le Customer Request Type JSM sur une issue (*all fields).
+ * Champ typique : customfield_XXXX = { requestType: { name: "Odoo" } }
+ */
+export function findRequestTypeName(
+  issue: JiraIssue,
+  preferredFieldId?: string,
+): string | null {
+  if (preferredFieldId) {
+    const direct = customFieldCategoryValue(issue, preferredFieldId);
+    if (direct) return direct;
+  }
+  for (const [key, raw] of Object.entries(issue.fields)) {
+    if (!key.startsWith("customfield_")) continue;
+    const obj = asRecord(raw);
+    if (!obj) continue;
+    const rt = asRecord(obj.requestType);
+    if (rt && typeof rt.name === "string" && rt.name.trim()) {
+      return rt.name.trim();
+    }
   }
   return null;
 }
@@ -588,8 +627,19 @@ export function categoryOf(
       "Non catégorisé"
     );
   }
+  if (field === "requestType") {
+    return (
+      findRequestTypeName(issue, connection.categoryCustomFieldId) ||
+      "Non catégorisé"
+    );
+  }
   const components = normalizeComponentNames(issue.fields.components);
-  return components[0] || "Non catégorisé";
+  if (components[0]) return components[0];
+  // JSM : composants souvent vides → fallback Request Type
+  return (
+    findRequestTypeName(issue, connection.categoryCustomFieldId) ||
+    "Non catégorisé"
+  );
 }
 
 /** Échantillon pour diagnostiquer une sync 100 % « Non catégorisé ». */
@@ -602,10 +652,11 @@ function categoryProbeSample(
     const labels = Array.isArray(issue.fields.labels)
       ? issue.fields.labels.filter((l): l is string => typeof l === "string")
       : [];
+    const req = findRequestTypeName(issue, connection.categoryCustomFieldId);
     const custom = connection.categoryCustomFieldId
       ? customFieldCategoryValue(issue, connection.categoryCustomFieldId)
       : null;
-    return `${issue.key || "?"}[comp=${comps.join("|") || "∅"} label=${labels[0] || "∅"} type=${issue.fields.issuetype?.name || "∅"}${custom != null ? ` custom=${custom}` : ""}]`;
+    return `${issue.key || "?"}[comp=${comps.join("|") || "∅"} label=${labels[0] || "∅"} req=${req || "∅"} type=${issue.fields.issuetype?.name || "∅"}${custom != null ? ` custom=${custom}` : ""}]`;
   });
   return sample.join(" · ");
 }

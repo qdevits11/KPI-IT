@@ -57,7 +57,12 @@ const DEFAULT_FORM = {
   datePriseEnChargeFieldId: "customfield_10284",
   slaPriseEnChargeHours: 24,
   slaClotureHours: 48,
-  categoryField: "component" as "component" | "label" | "issuetype" | "custom",
+  categoryField: "requestType" as
+    | "requestType"
+    | "component"
+    | "label"
+    | "issuetype"
+    | "custom",
   categoryCustomFieldId: "",
 };
 
@@ -732,6 +737,9 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
                 })
               }
             >
+              <option value="requestType">
+                Request Type JSM (recommandé Coverseal)
+              </option>
               <option value="component">Composant Jira (components)</option>
               <option value="label">Premier label</option>
               <option value="issuetype">Type de ticket (issuetype)</option>
