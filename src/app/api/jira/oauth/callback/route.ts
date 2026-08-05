@@ -40,8 +40,9 @@ export async function GET(request: Request) {
       refreshToken: tokens.refresh_token,
       expiresIn: tokens.expires_in,
     });
-    const { buildAppUser, canAccessAdminPages } = await import("@/lib/roles");
-    const user = buildAppUser(conn.email, conn.accountDisplayName);
+    const { canAccessAdminPages } = await import("@/lib/roles");
+    const { resolveAppUser } = await import("@/lib/user-session");
+    const user = await resolveAppUser(conn.email, conn.accountDisplayName);
     const dest = canAccessAdminPages(user)
       ? `${origin}/jira?oauth=ok`
       : `${origin}/tickets-ouverts?oauth=ok`;

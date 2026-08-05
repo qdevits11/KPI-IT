@@ -88,6 +88,7 @@ function fixture(): AppDatabase {
       companyName: "Test",
       jiraConfigured: false,
       responsibles: ["Gary", "Loic"],
+      accessUsers: [],
     },
   };
 }

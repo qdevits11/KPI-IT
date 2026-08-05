@@ -34,6 +34,7 @@ function sampleDb(): AppDatabase {
       companyName: "Test",
       jiraConfigured: false,
       responsibles: ["A"],
+      accessUsers: [],
     },
   };
 }

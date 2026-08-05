@@ -100,5 +100,17 @@ export async function readUserSession(): Promise<UserSessionPayload | null> {
 export async function resolveCurrentUser(): Promise<AppUser | null> {
   const session = await readUserSession();
   if (!session?.email) return null;
-  return buildAppUser(session.email, session.displayName);
+  const { getAccessRightsForEmail } = await import("./store");
+  const rights = await getAccessRightsForEmail(session.email);
+  return buildAppUser(session.email, session.displayName, rights);
+}
+
+/** Résout les droits d’un email depuis la base (hors session). */
+export async function resolveAppUser(
+  email: string,
+  displayName?: string,
+): Promise<AppUser> {
+  const { getAccessRightsForEmail } = await import("./store");
+  const rights = await getAccessRightsForEmail(email);
+  return buildAppUser(email, displayName, rights);
 }

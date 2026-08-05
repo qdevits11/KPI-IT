@@ -70,6 +70,15 @@ export interface PhishingEvent {
   responsible?: string;
 }
 
+/** Compte avec droits KPI·IT (cases à cocher). */
+export type AppAccessUser = {
+  email: string;
+  displayName?: string;
+  isAdmin: boolean;
+  isKpiResponsible: boolean;
+  updatedAt?: string;
+};
+
 export interface AppDatabase {
   year: number;
   weeks: WeeklyRow[];
@@ -87,6 +96,11 @@ export interface AppDatabase {
     jiraConfigured: boolean;
     /** Personnes autorisées comme responsable d'encodage (pas les assignés Jira). */
     responsibles: string[];
+    /**
+     * Droits applicatifs (flags indépendants : admin et/ou responsable KPI).
+     * Géré dans Configuration → Droits d’accès.
+     */
+    accessUsers: AppAccessUser[];
   };
 }
 

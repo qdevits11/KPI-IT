@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import type { AppUser } from "@/lib/roles";
-import { isAdminNavHref } from "@/lib/roles";
+import { formatUserBadges, isAdminNavHref } from "@/lib/roles";
 
 const LINKS = [
   { href: "/semaine", label: "Semaine en cours" },
@@ -91,7 +91,8 @@ export function AppNav() {
               <>
                 <span>
                   {user.displayName || user.email}
-                  {user.role === "admin" ? " · admin" : " · user"}
+                  {" · "}
+                  {formatUserBadges(user)}
                 </span>
                 <button
                   type="button"

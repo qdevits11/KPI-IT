@@ -133,6 +133,7 @@ export function seedDatabase(): AppDatabase {
       companyName: "Coverseal / Becoflex",
       jiraConfigured: false,
       responsibles: [...DEFAULT_RESPONSIBLES],
+      accessUsers: [],
     },
   };
 }

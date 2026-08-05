@@ -35,6 +35,7 @@ function sampleDb(requesters: Record<string, Record<string, number>>): AppDataba
       companyName: "Test",
       jiraConfigured: false,
       responsibles: ["A"],
+      accessUsers: [],
     },
   };
 }

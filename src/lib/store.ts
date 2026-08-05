@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import type {
+  AppAccessUser,
   AppDatabase,
   LogEvent,
   PhishingEvent,
@@ -20,6 +21,12 @@ import {
   normalizeResponsibleName,
   sortResponsibles,
 } from "./responsibles";
+import {
+  findAccessUser,
+  normalizeAccessUsers,
+  normalizeEmail,
+  rightsFromAccessEntry,
+} from "./roles";
 import {
   blobConfigured,
   loadDbFromBlob,
@@ -282,19 +289,26 @@ function migrateLogDates(db: AppDatabase): boolean {
 }
 
 function migrateSettings(db: AppDatabase): boolean {
+  let changed = false;
   if (!db.settings) {
     db.settings = {
       companyName: "Coverseal / Becoflex",
       jiraConfigured: false,
       responsibles: [...DEFAULT_RESPONSIBLES],
+      accessUsers: normalizeAccessUsers(null),
     };
     return true;
   }
   if (!Array.isArray(db.settings.responsibles) || db.settings.responsibles.length === 0) {
     db.settings.responsibles = [...DEFAULT_RESPONSIBLES];
-    return true;
+    changed = true;
   }
-  return false;
+  const before = JSON.stringify(db.settings.accessUsers ?? null);
+  db.settings.accessUsers = normalizeAccessUsers(db.settings.accessUsers);
+  if (JSON.stringify(db.settings.accessUsers) !== before) {
+    changed = true;
+  }
+  return changed;
 }
 
 function migrateTicketRequester(db: AppDatabase): boolean {
@@ -341,6 +355,80 @@ export async function removeResponsible(name: string): Promise<string[]> {
   }
   await writeDb(db);
   return sortResponsibles(db.settings.responsibles);
+}
+
+export async function getAccessUsers(): Promise<AppAccessUser[]> {
+  const db = await ensureDb();
+  return normalizeAccessUsers(db.settings.accessUsers);
+}
+
+export async function getAccessRightsForEmail(
+  email: string,
+): Promise<{ isAdmin: boolean; isKpiResponsible: boolean }> {
+  const users = await getAccessUsers();
+  return rightsFromAccessEntry(findAccessUser(users, email));
+}
+
+export async function upsertAccessUser(input: {
+  email: string;
+  displayName?: string;
+  isAdmin: boolean;
+  isKpiResponsible: boolean;
+}): Promise<AppAccessUser[]> {
+  const email = normalizeEmail(input.email);
+  if (!email || !email.includes("@")) {
+    throw new Error("Email invalide");
+  }
+  if (!input.isAdmin && !input.isKpiResponsible) {
+    throw new Error(
+      "Cochez au moins un droit (Administrateur ou Responsable KPI)",
+    );
+  }
+
+  const db = await ensureDb();
+  const users = normalizeAccessUsers(db.settings.accessUsers);
+  const idx = users.findIndex((u) => u.email === email);
+  const prev = idx >= 0 ? users[idx] : undefined;
+  const next: AppAccessUser = {
+    email,
+    displayName:
+      input.displayName?.trim() || prev?.displayName || undefined,
+    isAdmin: Boolean(input.isAdmin),
+    isKpiResponsible: Boolean(input.isKpiResponsible),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const draft =
+    idx >= 0
+      ? users.map((u, i) => (i === idx ? next : u))
+      : [...users, next];
+
+  if (!draft.some((u) => u.isAdmin)) {
+    throw new Error("Il faut au moins un administrateur");
+  }
+
+  db.settings.accessUsers = draft.sort((a, b) =>
+    a.email.localeCompare(b.email, "fr"),
+  );
+  await writeDb(db);
+  return db.settings.accessUsers;
+}
+
+export async function removeAccessUser(email: string): Promise<AppAccessUser[]> {
+  const e = normalizeEmail(email);
+  const db = await ensureDb();
+  const users = normalizeAccessUsers(db.settings.accessUsers);
+  const target = findAccessUser(users, e);
+  if (!target) {
+    throw new Error("Utilisateur introuvable");
+  }
+  const draft = users.filter((u) => u.email !== e);
+  if (!draft.some((u) => u.isAdmin)) {
+    throw new Error("Impossible de retirer le dernier administrateur");
+  }
+  db.settings.accessUsers = draft;
+  await writeDb(db);
+  return db.settings.accessUsers;
 }
 
 export async function addLogEvent(

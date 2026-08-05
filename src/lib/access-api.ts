@@ -14,7 +14,7 @@ export async function requireAdminApi(): Promise<
         {
           ok: false,
           error:
-            "Accès réservé à l’administrateur KPI (q.devits@coverseal.com).",
+            "Accès réservé aux administrateurs KPI·IT.",
         },
         { status: 403 },
       ),

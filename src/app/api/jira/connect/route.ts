@@ -11,9 +11,10 @@ import {
 import { testJiraConnection } from "@/lib/jira";
 import { supabaseConfigured } from "@/lib/supabase-db";
 import { atlassianOAuthConfigured } from "@/lib/jira-oauth";
-import { buildAppUser, canAccessAdminPages, isAdmin } from "@/lib/roles";
+import { canAccessAdminPages, isAdmin } from "@/lib/roles";
 import {
   clearUserSession,
+  resolveAppUser,
   resolveCurrentUser,
   writeUserSession,
 } from "@/lib/user-session";
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
   }
 
   const actor = await resolveCurrentUser();
-  const targetUser = buildAppUser(email);
+  const targetUser = await resolveAppUser(email);
   if (actor && !canAccessAdminPages(actor)) {
     return NextResponse.json(
       {
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
       {
         ok: false,
         error:
-          "Le token API partagé doit être celui d’un compte admin (ex. q.devits@coverseal.com).",
+          "Le token API partagé doit être celui d’un compte administrateur KPI·IT.",
       },
       { status: 403 },
     );
