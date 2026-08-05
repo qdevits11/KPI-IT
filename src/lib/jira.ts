@@ -104,7 +104,6 @@ export function buildWeekJql(
   conn: JiraConnection,
   year: number,
   week: number,
-  _now = new Date(),
 ): WeekJqlBundle {
   const { start, endExclusive, endInclusive } = isoWeekDateRange(year, week);
   const base = conn.jqlBase.trim();
