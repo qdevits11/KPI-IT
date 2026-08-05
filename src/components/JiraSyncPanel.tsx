@@ -104,6 +104,13 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState(DEFAULT_FORM);
+  const [saveFields, setSaveFields] = useState({
+    demandesItHebdo: true,
+    demandesNonResoluesHebdo: false,
+    ticketsHorsSlaCloture: true,
+    ticketsHorsSlaPriseEnCharge: true,
+    ticketsBreakdown: true,
+  });
 
   const composedWeekId = `${year}-S${String(week).padStart(2, "0")}`;
 
@@ -211,6 +218,8 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           week,
           dryRun: opts.dryRun,
           useMock: opts.useMock,
+          saveFields,
+          forceOpenLive: saveFields.demandesNonResoluesHebdo,
         }),
       });
       const json = await res.json();
@@ -236,9 +245,14 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
       setWeekId(json.weekId ?? composedWeekId);
 
       const label = json.dryRun ? "Test" : "Sync";
+      const saved =
+        !json.dryRun && json.savedFields?.length
+          ? ` · enregistré : ${json.savedFields.join(", ")}`
+          : json.dryRun
+            ? " (non enregistré)"
+            : "";
       setResult(
-        `${label} ${json.mode} OK — ${json.year}-S${String(json.week).padStart(2, "0")}` +
-          (json.dryRun ? " (non enregistré)" : " (enregistré au dashboard)"),
+        `${label} ${json.mode} OK — ${json.year}-S${String(json.week).padStart(2, "0")}${saved}`,
       );
 
       if (!json.dryRun) {
@@ -247,7 +261,46 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     });
   }
 
+  function applySelectionToDb() {
+    if (!values) {
+      setError("Lancez d’abord un test pour obtenir des valeurs.");
+      return;
+    }
+    setResult(null);
+    setError(null);
+    setWarnings([]);
+    startTransition(async () => {
+      const res = await fetch("/api/jira/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          year,
+          week,
+          dryRun: false,
+          saveFields,
+          forceOpenLive: saveFields.demandesNonResoluesHebdo,
+          applyValues: values,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setError(json.error ?? "Enregistrement échoué");
+        return;
+      }
+      setValues(json.values ?? values);
+      setExcelBaseline(json.excelBaseline ?? excelBaseline);
+      setWarnings(json.warnings ?? []);
+      setSaved(true);
+      setLastMode("apply");
+      setResult(
+        `Base mise à jour — ${json.weekId} : ${(json.savedFields ?? []).join(", ") || "aucun champ"}`,
+      );
+      await loadMeta();
+    });
+  }
+
   const weekValid = year >= 2000 && year <= 2100 && week >= 1 && week <= 53;
+  const anySaveField = Object.values(saveFields).some(Boolean);
 
   return (
     <div className="space-y-8">
@@ -393,8 +446,8 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           Tester une semaine
         </h2>
         <p className="text-sm text-[var(--muted)]">
-          Choisissez l’année et le numéro de semaine ISO, puis lancez un test
-          (lecture seule) ou enregistrez les valeurs dans le dashboard.
+          Choisissez l’année / semaine, testez, puis cochez uniquement les KPI
+          à écrire en base (les autres restent inchangés).
         </p>
 
         <div className="flex flex-wrap items-end gap-3">
@@ -431,6 +484,49 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           </p>
         </div>
 
+        <fieldset className="space-y-2 rounded-lg border border-[var(--line)] bg-[var(--wash)] p-3">
+          <legend className="px-1 text-xs uppercase tracking-wider text-[var(--muted)]">
+            Enregistrer en base
+          </legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <SaveCheck
+              label="Tickets créés"
+              checked={saveFields.demandesItHebdo}
+              onChange={(v) =>
+                setSaveFields((f) => ({ ...f, demandesItHebdo: v }))
+              }
+            />
+            <SaveCheck
+              label="Hors SLA clôture"
+              checked={saveFields.ticketsHorsSlaCloture}
+              onChange={(v) =>
+                setSaveFields((f) => ({ ...f, ticketsHorsSlaCloture: v }))
+              }
+            />
+            <SaveCheck
+              label="Hors SLA prise en charge"
+              checked={saveFields.ticketsHorsSlaPriseEnCharge}
+              onChange={(v) =>
+                setSaveFields((f) => ({ ...f, ticketsHorsSlaPriseEnCharge: v }))
+              }
+            />
+            <SaveCheck
+              label="Non résolus (écrase le figé)"
+              checked={saveFields.demandesNonResoluesHebdo}
+              onChange={(v) =>
+                setSaveFields((f) => ({ ...f, demandesNonResoluesHebdo: v }))
+              }
+            />
+            <SaveCheck
+              label="Répartition type / assigné"
+              checked={saveFields.ticketsBreakdown}
+              onChange={(v) =>
+                setSaveFields((f) => ({ ...f, ticketsBreakdown: v }))
+              }
+            />
+          </div>
+        </fieldset>
+
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -442,11 +538,21 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           </button>
           <button
             type="button"
-            disabled={pending || !connected || !weekValid}
+            disabled={
+              pending || !connected || !weekValid || !values || !anySaveField
+            }
+            onClick={() => applySelectionToDb()}
+            className="rounded-md border border-[var(--line)] px-4 py-2 text-sm disabled:opacity-50"
+          >
+            Appliquer la sélection à la base
+          </button>
+          <button
+            type="button"
+            disabled={pending || !connected || !weekValid || !anySaveField}
             onClick={() => runQuery({ dryRun: false, useMock: false })}
             className="rounded-md border border-[var(--line)] px-4 py-2 text-sm disabled:opacity-50"
           >
-            Tester + enregistrer
+            Re-fetch Jira + enregistrer
           </button>
           <button
             type="button"
@@ -562,6 +668,28 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         </section>
       )}
     </div>
+  );
+}
+
+function SaveCheck({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--ink)]">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="size-4 accent-[var(--accent)]"
+      />
+      {label}
+    </label>
   );
 }
 
