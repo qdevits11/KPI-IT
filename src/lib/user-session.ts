@@ -15,6 +15,7 @@ export const USER_SESSION_COOKIE = "kpi_app_user";
 export interface UserSessionPayload {
   email: string;
   displayName?: string;
+  avatarUrl?: string;
   /** Tokens OAuth personnels (actions tickets) — optionnel. */
   authMode?: "basic" | "oauth";
   accessToken?: string;
@@ -119,17 +120,34 @@ export async function readUserSession(): Promise<UserSessionPayload | null> {
 export async function resolveCurrentUser(): Promise<AppUser | null> {
   const session = await readUserSession();
   if (!session?.email) return null;
-  const { getAccessRightsForEmail } = await import("./store");
+  const { getAccessRightsForEmail, getPeopleDirectory } = await import(
+    "./store"
+  );
   const rights = await getAccessRightsForEmail(session.email);
-  return buildAppUser(session.email, session.displayName, rights);
+  let avatarUrl = session.avatarUrl;
+  if (!avatarUrl && session.displayName) {
+    const people = await getPeopleDirectory();
+    avatarUrl =
+      people[session.displayName]?.avatarUrl ||
+      Object.values(people).find(
+        (p) => p.displayName.toLowerCase() === session.displayName?.toLowerCase(),
+      )?.avatarUrl;
+  }
+  return buildAppUser(
+    session.email,
+    session.displayName,
+    rights,
+    avatarUrl,
+  );
 }
 
 /** Résout les droits d’un email depuis la base (hors session). */
 export async function resolveAppUser(
   email: string,
   displayName?: string,
+  avatarUrl?: string,
 ): Promise<AppUser> {
   const { getAccessRightsForEmail } = await import("./store");
   const rights = await getAccessRightsForEmail(email);
-  return buildAppUser(email, displayName, rights);
+  return buildAppUser(email, displayName, rights, avatarUrl);
 }

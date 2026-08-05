@@ -134,6 +134,7 @@ export function seedDatabase(): AppDatabase {
       jiraConfigured: false,
       responsibles: [...DEFAULT_RESPONSIBLES],
       accessUsers: [],
+      peopleDirectory: {},
     },
   };
 }

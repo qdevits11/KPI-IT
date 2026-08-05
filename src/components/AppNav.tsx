@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import type { AppUser } from "@/lib/roles";
 import { formatUserBadges, isAdminNavHref } from "@/lib/roles";
+import { PersonAvatar } from "./PersonAvatar";
 
 const LINKS = [
   { href: "/semaine", label: "Semaine en cours" },
@@ -98,10 +99,17 @@ export function AppNav() {
           <div className="flex flex-wrap items-center justify-end gap-2 text-[11px] text-[var(--muted)]">
             {user ? (
               <>
-                <span>
-                  {user.displayName || user.email}
-                  {" · "}
-                  {formatUserBadges(user)}
+                <span className="inline-flex items-center gap-2">
+                  <PersonAvatar
+                    name={user.displayName || user.email}
+                    avatarUrl={user.avatarUrl}
+                    size="sm"
+                  />
+                  <span>
+                    {user.displayName || user.email}
+                    {" · "}
+                    {formatUserBadges(user)}
+                  </span>
                 </span>
                 <button
                   type="button"

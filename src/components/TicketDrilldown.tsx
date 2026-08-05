@@ -7,6 +7,8 @@ import type {
   TicketSearchFilter,
 } from "@/lib/jira-tickets";
 import { TicketActionsPanel } from "./TicketActionsPanel";
+import { PersonLabel } from "./PersonAvatar";
+import { usePeopleAvatars } from "./PeopleProvider";
 
 export type DrilldownQuery = TicketSearchFilter;
 
@@ -87,6 +89,7 @@ export function TicketDrilldown({
   const [localRequester, setLocalRequester] = useState(query.requester ?? "");
   const [textQuery, setTextQuery] = useState("");
   const [actionKey, setActionKey] = useState<string | null>(null);
+  const { avatarUrl } = usePeopleAvatars();
 
   const load = useCallback(async (filter: DrilldownQuery) => {
     setError(null);
@@ -313,10 +316,20 @@ export function TicketDrilldown({
                         {t.type}
                       </td>
                       <td className="px-2 py-2 align-top text-[var(--ink-soft)]">
-                        {t.assignee}
+                        <PersonLabel
+                          name={t.assignee}
+                          avatarUrl={t.assigneeAvatarUrl || avatarUrl(t.assignee)}
+                          size="xs"
+                        />
                       </td>
                       <td className="px-2 py-2 align-top text-[var(--ink-soft)]">
-                        {t.requester}
+                        <PersonLabel
+                          name={t.requester}
+                          avatarUrl={
+                            t.requesterAvatarUrl || avatarUrl(t.requester)
+                          }
+                          size="xs"
+                        />
                       </td>
                       <td className="px-2 py-2 align-top tabular-nums text-[var(--muted)]">
                         {formatCreated(t.created)}

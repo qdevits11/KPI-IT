@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Sora, Source_Sans_3 } from "next/font/google";
 import { AppNav } from "@/components/AppNav";
+import { PeopleProvider } from "@/components/PeopleProvider";
 import "./globals.css";
 
 const display = Sora({
@@ -29,13 +30,15 @@ export default function RootLayout({
   return (
     <html lang="fr" className={`${display.variable} ${body.variable} h-full`}>
       <body className="min-h-full flex flex-col font-[family-name:var(--font-body)] antialiased">
-        <AppNav />
-        <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
-          {children}
-        </main>
-        <footer className="border-t border-[var(--line)] py-4 text-center text-xs text-[var(--muted)]">
-          KPI·IT — Jira + encodage (automations, Odoo, phishing, maintenance)
-        </footer>
+        <PeopleProvider>
+          <AppNav />
+          <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
+            {children}
+          </main>
+          <footer className="border-t border-[var(--line)] py-4 text-center text-xs text-[var(--muted)]">
+            KPI·IT — Jira + encodage (automations, Odoo, phishing, maintenance)
+          </footer>
+        </PeopleProvider>
       </body>
     </html>
   );

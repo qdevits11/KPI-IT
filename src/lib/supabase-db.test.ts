@@ -35,6 +35,7 @@ function sampleDb(): AppDatabase {
       jiraConfigured: false,
       responsibles: ["A"],
       accessUsers: [],
+      peopleDirectory: {},
     },
   };
 }

@@ -18,6 +18,7 @@ import {
   getDatabase,
   patchTicketsBreakdown,
   clearTicketsBreakdown,
+  mergePeopleFromJira,
 } from "@/lib/store";
 import { buildWeekDashboard } from "@/lib/formulas";
 import { weekId, parseWeekId } from "@/lib/types";
@@ -32,6 +33,7 @@ import {
   type SaveFields,
 } from "@/lib/save-fields";
 import { requireAdminApi } from "@/lib/access-api";
+import type { PersonDirectoryEntry } from "@/lib/avatars";
 
 async function persistBreakdowns(
   year: number,
@@ -40,6 +42,7 @@ async function persistBreakdowns(
     byType: Record<string, number>;
     byAssignee: Record<string, number>;
     byRequester: Record<string, number>;
+    people?: PersonDirectoryEntry[];
   },
   saveFields: SaveFields,
 ): Promise<void> {
@@ -55,6 +58,9 @@ async function persistBreakdowns(
   if (bd.requester) patch.byRequester = result.byRequester;
   if (Object.keys(patch).length > 0) {
     await patchTicketsBreakdown(key, patch);
+  }
+  if (result.people?.length) {
+    await mergePeopleFromJira(result.people);
   }
 }
 

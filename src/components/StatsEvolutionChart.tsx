@@ -2,6 +2,8 @@
 
 import { useId, useMemo, useState } from "react";
 import type { TicketStatRow } from "@/lib/types";
+import { PersonAvatar } from "./PersonAvatar";
+import { usePeopleAvatars } from "./PeopleProvider";
 
 const PALETTE = [
   "#0f766e",
@@ -47,6 +49,7 @@ export function StatsEvolutionChart({
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   const [showTotal, setShowTotal] = useState(true);
   const [hover, setHover] = useState<number | null>(null);
+  const { avatarUrl } = usePeopleAvatars();
 
   const visibleSeries = useMemo(
     () => series.filter((s) => !hidden.has(s.name)),
@@ -282,6 +285,11 @@ export function StatsEvolutionChart({
                 className="flex justify-between gap-3 tabular-nums"
               >
                 <span className="flex min-w-0 items-center gap-2 truncate text-[var(--ink-soft)]">
+                  <PersonAvatar
+                    name={s.name}
+                    avatarUrl={avatarUrl(s.name)}
+                    size="xs"
+                  />
                   <span
                     className="size-2.5 shrink-0 rounded-full"
                     style={{
@@ -313,6 +321,11 @@ export function StatsEvolutionChart({
                     : "border-transparent bg-transparent text-[var(--muted)] line-through opacity-60"
                 }`}
               >
+                <PersonAvatar
+                  name={s.name}
+                  avatarUrl={avatarUrl(s.name)}
+                  size="xs"
+                />
                 <span
                   className="size-2.5 rounded-full"
                   style={{ background: on ? PALETTE[i % PALETTE.length] : "#94a3b8" }}

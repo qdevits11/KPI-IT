@@ -13,6 +13,8 @@ import {
   type DrilldownQuery,
 } from "./TicketDrilldown";
 import { TicketActionsPanel } from "./TicketActionsPanel";
+import { PersonLabel } from "./PersonAvatar";
+import { usePeopleAvatars } from "./PeopleProvider";
 
 function formatAge(days: number): string {
   if (days <= 0) return "< 1 j";
@@ -47,8 +49,10 @@ function PersonPanel({
 }) {
   const [open, setOpen] = useState(group.name === "Non assigné");
   const [actionKey, setActionKey] = useState<string | null>(null);
+  const { avatarUrl } = usePeopleAvatars();
   const typeEntries = Object.entries(group.byType).sort((a, b) => b[1] - a[1]);
   const maxType = Math.max(...typeEntries.map(([, n]) => n), 1);
+  const photo = group.avatarUrl || avatarUrl(group.name);
 
   return (
     <li className="rounded-xl border border-[var(--line)] bg-[var(--surface)]">
@@ -58,7 +62,12 @@ function PersonPanel({
           onClick={() => setOpen((v) => !v)}
           className="min-w-0 flex-1 text-left"
         >
-          <p className="font-medium text-[var(--ink)]">{group.name}</p>
+          <PersonLabel
+            name={group.name}
+            avatarUrl={photo}
+            size="md"
+            className="font-medium text-[var(--ink)]"
+          />
           <p className="mt-0.5 text-xs text-[var(--muted)]">
             Âge moy. {formatAge(group.avgAgeDays)} · plus ancien{" "}
             {formatAge(group.oldestAgeDays)}

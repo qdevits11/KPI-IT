@@ -10,10 +10,17 @@ import {
   categoryOf,
   isoWeekDateRange,
   personName,
+  pickAvatarUrl,
   resolveCategorySource,
   searchAll,
+  type JiraUser,
 } from "./jira";
 import { parseWeekId } from "./types";
+import {
+  mergePeopleDirectory,
+  personEntryFromJiraUser,
+  type PersonDirectoryEntry,
+} from "./avatars";
 
 export interface TicketListItem {
   key: string;
@@ -22,13 +29,16 @@ export interface TicketListItem {
   ageDays: number;
   status: string;
   assignee: string;
+  assigneeAvatarUrl?: string;
   requester: string;
+  requesterAvatarUrl?: string;
   type: string;
   browseUrl: string;
 }
 
 export interface AssigneeOpenGroup {
   name: string;
+  avatarUrl?: string;
   count: number;
   byType: Record<string, number>;
   oldestAgeDays: number;
@@ -93,9 +103,9 @@ function mapIssue(
       created: string;
       summary?: string;
       status?: { name?: string };
-      assignee?: Parameters<typeof personName>[0];
-      reporter?: Parameters<typeof personName>[0];
-      creator?: Parameters<typeof personName>[0];
+      assignee?: JiraUser | null;
+      reporter?: JiraUser | null;
+      creator?: JiraUser | null;
       [k: string]: unknown;
     };
   },
@@ -106,20 +116,61 @@ function mapIssue(
   >,
   now: Date,
 ): TicketListItem {
+  const assignee = issue.fields.assignee;
+  const requester = issue.fields.reporter ?? issue.fields.creator;
   return {
     key: issue.key,
     summary: (issue.fields.summary ?? "").trim() || "(sans titre)",
     created: issue.fields.created,
     ageDays: ticketAgeDays(issue.fields.created, now),
     status: issue.fields.status?.name?.trim() || "—",
-    assignee: personName(issue.fields.assignee, "Non assigné"),
-    requester: personName(
-      issue.fields.reporter ?? issue.fields.creator,
-      "Inconnu",
-    ),
+    assignee: personName(assignee, "Non assigné"),
+    assigneeAvatarUrl: pickAvatarUrl(assignee?.avatarUrls),
+    requester: personName(requester, "Inconnu"),
+    requesterAvatarUrl: pickAvatarUrl(requester?.avatarUrls),
     type: categoryOf(issue as never, categorySource),
     browseUrl: jiraBrowseUrl(conn.baseUrl, issue.key),
   };
+}
+
+export function peopleFromTickets(
+  tickets: TicketListItem[],
+  rawIssues?: Array<{
+    fields: {
+      assignee?: JiraUser | null;
+      reporter?: JiraUser | null;
+      creator?: JiraUser | null;
+    };
+  }>,
+): PersonDirectoryEntry[] {
+  const bag: PersonDirectoryEntry[] = [];
+  if (rawIssues) {
+    for (const issue of rawIssues) {
+      const a = personEntryFromJiraUser(issue.fields.assignee);
+      if (a) bag.push(a);
+      const r = personEntryFromJiraUser(
+        issue.fields.reporter ?? issue.fields.creator,
+      );
+      if (r) bag.push(r);
+    }
+  }
+  for (const t of tickets) {
+    if (t.assigneeAvatarUrl) {
+      bag.push({
+        displayName: t.assignee,
+        avatarUrl: t.assigneeAvatarUrl,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    if (t.requesterAvatarUrl) {
+      bag.push({
+        displayName: t.requester,
+        avatarUrl: t.requesterAvatarUrl,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  }
+  return Object.values(mergePeopleDirectory({}, bag));
 }
 
 export function aggregateByAssignee(
@@ -137,13 +188,16 @@ export function aggregateByAssignee(
     const byType: Record<string, number> = {};
     let ageSum = 0;
     let oldest = 0;
+    let avatarUrl: string | undefined;
     for (const t of list) {
       byType[t.type] = (byType[t.type] ?? 0) + 1;
       ageSum += t.ageDays;
       if (t.ageDays > oldest) oldest = t.ageDays;
+      if (!avatarUrl && t.assigneeAvatarUrl) avatarUrl = t.assigneeAvatarUrl;
     }
     groups.push({
       name,
+      avatarUrl,
       count: list.length,
       byType,
       oldestAgeDays: oldest,
@@ -252,6 +306,13 @@ export async function fetchOpenTicketsSnapshot(
   const byAssignee = aggregateByAssignee(tickets);
   const unassigned =
     byAssignee.find((g) => g.name === "Non assigné")?.count ?? 0;
+
+  try {
+    const { mergePeopleFromJira } = await import("./store");
+    await mergePeopleFromJira(peopleFromTickets(tickets, issues));
+  } catch {
+    // persistance optionnelle
+  }
 
   return {
     fetchedAt: now.toISOString(),

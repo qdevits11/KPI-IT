@@ -5,6 +5,7 @@
 import type { JiraConnection } from "./jira-auth";
 import { jiraApiFetch } from "./jira";
 import { resolveFreshJiraConnection } from "./jira-oauth";
+import { pickAvatarUrl } from "./avatars";
 
 export interface JiraTransitionOption {
   id: string;
@@ -16,6 +17,7 @@ export interface JiraAssignableUser {
   accountId: string;
   displayName: string;
   emailAddress?: string;
+  avatarUrl?: string;
 }
 
 export interface JiraCategoryOption {
@@ -29,6 +31,7 @@ export interface IssueActionMeta {
   status: string;
   assigneeAccountId: string | null;
   assigneeName: string;
+  assigneeAvatarUrl?: string;
   category: string | null;
   transitions: JiraTransitionOption[];
   assignable: JiraAssignableUser[];
@@ -90,6 +93,7 @@ export async function getIssueActionMeta(
       assignee?: {
         accountId?: string;
         displayName?: string;
+        avatarUrls?: Record<string, string>;
       } | null;
       [k: string]: unknown;
     };
@@ -110,6 +114,7 @@ export async function getIssueActionMeta(
         accountId?: string;
         displayName?: string;
         emailAddress?: string;
+        avatarUrls?: Record<string, string>;
       }>) ?? [])
     : [];
 
@@ -152,6 +157,7 @@ export async function getIssueActionMeta(
     status: issue.fields.status?.name ?? "—",
     assigneeAccountId: issue.fields.assignee?.accountId ?? null,
     assigneeName: issue.fields.assignee?.displayName ?? "Non assigné",
+    assigneeAvatarUrl: pickAvatarUrl(issue.fields.assignee?.avatarUrls),
     category,
     transitions: (transitionsJson.transitions ?? []).map((t) => ({
       id: t.id,
@@ -164,6 +170,7 @@ export async function getIssueActionMeta(
         accountId: u.accountId!,
         displayName: u.displayName || u.emailAddress || u.accountId!,
         emailAddress: u.emailAddress,
+        avatarUrl: pickAvatarUrl(u.avatarUrls),
       })),
     categories,
     categoryFieldId: catField,

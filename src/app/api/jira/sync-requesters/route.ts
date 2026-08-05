@@ -192,6 +192,10 @@ export async function POST(request: Request) {
             patch.byRequester = result.byRequester;
           }
           await patchTicketsBreakdown(id, patch);
+          if (result.people?.length) {
+            const { mergePeopleFromJira } = await import("@/lib/store");
+            await mergePeopleFromJira(result.people);
+          }
         }
 
         results.push({

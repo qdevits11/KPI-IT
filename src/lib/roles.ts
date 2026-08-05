@@ -12,6 +12,7 @@ export const DEFAULT_ADMIN_EMAIL = "q.devits@coverseal.com";
 export interface AppUser {
   email: string;
   displayName?: string;
+  avatarUrl?: string;
   isAdmin: boolean;
   isKpiResponsible: boolean;
 }
@@ -97,10 +98,12 @@ export function buildAppUser(
   email: string,
   displayName?: string,
   rights?: { isAdmin?: boolean; isKpiResponsible?: boolean },
+  avatarUrl?: string,
 ): AppUser {
   return {
     email: normalizeEmail(email),
     displayName: displayName?.trim() || undefined,
+    avatarUrl: avatarUrl?.trim() || undefined,
     isAdmin: Boolean(rights?.isAdmin),
     isKpiResponsible: Boolean(rights?.isKpiResponsible),
   };

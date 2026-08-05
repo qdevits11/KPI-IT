@@ -12,6 +12,7 @@ import {
   attachUserSessionCookie,
   type UserSessionPayload,
 } from "@/lib/user-session";
+import { pickAvatarUrl } from "@/lib/avatars";
 
 export const dynamic = "force-dynamic";
 
@@ -25,38 +26,42 @@ function safeNext(raw: string | undefined): string {
 async function resolveLoginIdentity(accessToken: string): Promise<{
   email: string;
   displayName?: string;
+  avatarUrl?: string;
 }> {
   const me = await fetchAtlassianMe(accessToken);
   let email = (me.email || "").trim().toLowerCase();
   let displayName = me.name?.trim() || undefined;
+  let avatarUrl: string | undefined = me.picture?.trim() || undefined;
 
-  if (!email || !email.includes("@")) {
-    try {
-      const resources = await fetchAccessibleResources(accessToken);
-      const site = resources[0];
-      if (site) {
-        const res = await fetch(
-          `https://api.atlassian.com/ex/jira/${site.id}/rest/api/3/myself`,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              Accept: "application/json",
-            },
-            cache: "no-store",
+  try {
+    const resources = await fetchAccessibleResources(accessToken);
+    const site = resources[0];
+    if (site) {
+      const res = await fetch(
+        `https://api.atlassian.com/ex/jira/${site.id}/rest/api/3/myself`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            Accept: "application/json",
           },
-        );
-        if (res.ok) {
-          const myself = (await res.json()) as {
-            emailAddress?: string;
-            displayName?: string;
-          };
-          email = (myself.emailAddress || "").trim().toLowerCase();
-          displayName = myself.displayName?.trim() || displayName;
+          cache: "no-store",
+        },
+      );
+      if (res.ok) {
+        const myself = (await res.json()) as {
+          emailAddress?: string;
+          displayName?: string;
+          avatarUrls?: Record<string, string>;
+        };
+        if (myself.emailAddress?.includes("@")) {
+          email = myself.emailAddress.trim().toLowerCase();
         }
+        displayName = myself.displayName?.trim() || displayName;
+        avatarUrl = pickAvatarUrl(myself.avatarUrls) || avatarUrl;
       }
-    } catch {
-      // validated below
     }
+  } catch {
+    // validated below
   }
 
   if (!email || !email.includes("@")) {
@@ -64,7 +69,7 @@ async function resolveLoginIdentity(accessToken: string): Promise<{
       "Impossible de lire l’email du compte Atlassian. Vérifiez les scopes OAuth (read:jira-user).",
     );
   }
-  return { email, displayName };
+  return { email, displayName, avatarUrl };
 }
 
 export async function GET(request: Request) {
@@ -100,11 +105,26 @@ export async function GET(request: Request) {
     const payload: UserSessionPayload = {
       email: identity.email,
       displayName: identity.displayName,
+      avatarUrl: identity.avatarUrl,
       authMode: "oauth",
       connectedAt: new Date().toISOString(),
     };
 
-    // Cookie sur la réponse de redirect (fiable) — identité seule, pas les tokens.
+    if (identity.displayName && identity.avatarUrl) {
+      try {
+        const { mergePeopleFromJira } = await import("@/lib/store");
+        await mergePeopleFromJira([
+          {
+            displayName: identity.displayName,
+            avatarUrl: identity.avatarUrl,
+            updatedAt: new Date().toISOString(),
+          },
+        ]);
+      } catch {
+        // ignore
+      }
+    }
+
     const response = NextResponse.redirect(`${origin}${next}`);
     attachUserSessionCookie(response, payload);
     return response;

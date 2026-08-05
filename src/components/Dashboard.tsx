@@ -12,6 +12,8 @@ import {
   TicketDrilldown,
   type DrilldownQuery,
 } from "./TicketDrilldown";
+import { PersonLabel } from "./PersonAvatar";
+import { usePeopleAvatars } from "./PeopleProvider";
 import type { TicketStatDimension } from "@/lib/types";
 
 interface WeekOption {
@@ -74,6 +76,7 @@ function Breakdown({
   weekId: string;
   onDrill: (q: DrilldownQuery) => void;
 }) {
+  const { avatarUrl } = usePeopleAvatars();
   const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
   if (entries.length === 0) {
     return (
@@ -81,6 +84,7 @@ function Breakdown({
     );
   }
   const max = Math.max(...entries.map(([, v]) => v), 1);
+  const showAvatar = dimension === "assignee" || dimension === "requester";
 
   function filterFor(name: string): DrilldownQuery {
     const base: DrilldownQuery = { scope: "created", weekId };
@@ -99,7 +103,16 @@ function Breakdown({
           <li key={name} className="grid grid-cols-[1fr_auto] items-center gap-3 text-sm">
             <div>
               <div className="flex justify-between gap-2">
-                <span className="text-[var(--ink-soft)]">{name}</span>
+                {showAvatar ? (
+                  <PersonLabel
+                    name={name}
+                    avatarUrl={avatarUrl(name)}
+                    size="xs"
+                    className="min-w-0 text-[var(--ink-soft)]"
+                  />
+                ) : (
+                  <span className="text-[var(--ink-soft)]">{name}</span>
+                )}
                 <ClickableCount
                   value={count}
                   onClick={() => onDrill(filterFor(name))}

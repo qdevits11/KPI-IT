@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import type { TicketStatDimension } from "@/lib/types";
+import { PersonLabel } from "./PersonAvatar";
+import { usePeopleAvatars } from "./PeopleProvider";
 
 interface OverviewBlock {
   dimension: TicketStatDimension;
@@ -28,6 +30,7 @@ export function StatsOverview({ initialYear = 2026 }: { initialYear?: number }) 
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const { avatarUrl } = usePeopleAvatars();
 
   const load = useCallback(async (y: number) => {
     setError(null);
@@ -125,13 +128,22 @@ export function StatsOverview({ initialYear = 2026 }: { initialYear?: number }) 
                   {block.top.map((row, i) => (
                     <li
                       key={row.name}
-                      className="flex items-baseline justify-between gap-2 text-sm"
+                      className="flex items-center justify-between gap-2 text-sm"
                     >
-                      <span className="min-w-0 truncate text-[var(--ink-soft)]">
-                        <span className="mr-2 tabular-nums text-xs text-[var(--muted)]">
+                      <span className="flex min-w-0 items-center gap-2 truncate text-[var(--ink-soft)]">
+                        <span className="tabular-nums text-xs text-[var(--muted)]">
                           {i + 1}.
                         </span>
-                        {row.name}
+                        {block.dimension === "type" ? (
+                          <span className="truncate">{row.name}</span>
+                        ) : (
+                          <PersonLabel
+                            name={row.name}
+                            avatarUrl={avatarUrl(row.name)}
+                            size="xs"
+                            className="min-w-0"
+                          />
+                        )}
                       </span>
                       <span className="shrink-0 tabular-nums text-[var(--ink)]">
                         {row.total}

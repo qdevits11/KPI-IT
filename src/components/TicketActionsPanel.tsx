@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import type { IssueActionMeta } from "@/lib/jira-actions";
+import { PersonLabel } from "./PersonAvatar";
+import { usePeopleAvatars } from "./PeopleProvider";
 
 export function TicketActionsPanel({
   issueKey,
@@ -19,6 +21,7 @@ export function TicketActionsPanel({
   const [transitionId, setTransitionId] = useState("");
   const [accountId, setAccountId] = useState("");
   const [category, setCategory] = useState("");
+  const { avatarUrl } = usePeopleAvatars();
 
   const load = useCallback(async () => {
     setError(null);
@@ -131,7 +134,14 @@ export function TicketActionsPanel({
             Statut actuel : <span className="text-[var(--ink)]">{meta.status}</span>
             {" · "}
             Assigné :{" "}
-            <span className="text-[var(--ink)]">{meta.assigneeName}</span>
+            <PersonLabel
+              name={meta.assigneeName}
+              avatarUrl={
+                meta.assigneeAvatarUrl || avatarUrl(meta.assigneeName)
+              }
+              size="xs"
+              className="text-[var(--ink)]"
+            />
             {meta.category ? (
               <>
                 {" · "}Type :{" "}

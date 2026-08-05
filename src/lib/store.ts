@@ -28,6 +28,11 @@ import {
   rightsFromAccessEntry,
 } from "./roles";
 import {
+  mergePeopleDirectory,
+  type PeopleDirectory,
+  type PersonDirectoryEntry,
+} from "./avatars";
+import {
   blobConfigured,
   loadDbFromBlob,
   saveDbToBlob,
@@ -296,6 +301,7 @@ function migrateSettings(db: AppDatabase): boolean {
       jiraConfigured: false,
       responsibles: [...DEFAULT_RESPONSIBLES],
       accessUsers: normalizeAccessUsers(null),
+      peopleDirectory: {},
     };
     return true;
   }
@@ -306,6 +312,10 @@ function migrateSettings(db: AppDatabase): boolean {
   const before = JSON.stringify(db.settings.accessUsers ?? null);
   db.settings.accessUsers = normalizeAccessUsers(db.settings.accessUsers);
   if (JSON.stringify(db.settings.accessUsers) !== before) {
+    changed = true;
+  }
+  if (!db.settings.peopleDirectory || typeof db.settings.peopleDirectory !== "object") {
+    db.settings.peopleDirectory = {};
     changed = true;
   }
   return changed;
@@ -429,6 +439,26 @@ export async function removeAccessUser(email: string): Promise<AppAccessUser[]> 
   db.settings.accessUsers = draft;
   await writeDb(db);
   return db.settings.accessUsers;
+}
+
+export async function getPeopleDirectory(): Promise<PeopleDirectory> {
+  const db = await ensureDb();
+  return db.settings.peopleDirectory ?? {};
+}
+
+export async function mergePeopleFromJira(
+  people: PersonDirectoryEntry[],
+): Promise<PeopleDirectory> {
+  if (!people.length) {
+    return getPeopleDirectory();
+  }
+  const db = await ensureDb();
+  db.settings.peopleDirectory = mergePeopleDirectory(
+    db.settings.peopleDirectory,
+    people,
+  );
+  await writeDb(db);
+  return db.settings.peopleDirectory;
 }
 
 export async function addLogEvent(

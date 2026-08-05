@@ -8,6 +8,8 @@ import {
   TicketDrilldown,
   type DrilldownQuery,
 } from "./TicketDrilldown";
+import { PersonLabel } from "./PersonAvatar";
+import { usePeopleAvatars } from "./PeopleProvider";
 
 interface StatsResponse {
   year: number;
@@ -55,6 +57,8 @@ export function TicketStatsView({
   const [query, setQuery] = useState("");
   const [view, setView] = useState<ViewMode>("ranking");
   const [drill, setDrill] = useState<DrilldownQuery | null>(null);
+  const { avatarUrl } = usePeopleAvatars();
+  const showAvatar = dimension === "assignee" || dimension === "requester";
 
   const load = useCallback(
     async (y: number) => {
@@ -256,7 +260,15 @@ export function TicketStatsView({
                       className="border-b border-[var(--line)]/60 hover:bg-[var(--wash)]/40"
                     >
                       <td className="sticky left-0 z-10 bg-[var(--surface)] px-3 py-1.5 font-medium text-[var(--ink)]">
-                        {row.name}
+                        {showAvatar ? (
+                          <PersonLabel
+                            name={row.name}
+                            avatarUrl={avatarUrl(row.name)}
+                            size="xs"
+                          />
+                        ) : (
+                          row.name
+                        )}
                       </td>
                       {data.stats.weeks.map((wk) => {
                         const n = row.byWeek[wk] ?? 0;
@@ -322,7 +334,16 @@ export function TicketStatsView({
                   </span>
                   <div>
                     <div className="flex justify-between gap-2">
-                      <span className="text-[var(--ink)]">{row.name}</span>
+                      {showAvatar ? (
+                        <PersonLabel
+                          name={row.name}
+                          avatarUrl={avatarUrl(row.name)}
+                          size="sm"
+                          className="min-w-0 text-[var(--ink)]"
+                        />
+                      ) : (
+                        <span className="text-[var(--ink)]">{row.name}</span>
+                      )}
                       <span className="tabular-nums text-[var(--muted)]">
                         {pct(row.share)}
                       </span>

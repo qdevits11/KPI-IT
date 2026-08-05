@@ -70,6 +70,8 @@ export interface PhishingEvent {
   responsible?: string;
 }
 
+import type { PeopleDirectory } from "./avatars";
+
 /** Compte avec droits KPI·IT (cases à cocher). */
 export type AppAccessUser = {
   email: string;
@@ -101,6 +103,8 @@ export interface AppDatabase {
      * Géré dans Configuration → Droits d’accès.
      */
     accessUsers: AppAccessUser[];
+    /** Photos de profil Jira (clé = displayName). */
+    peopleDirectory: PeopleDirectory;
   };
 }
 

@@ -8,6 +8,10 @@ import {
   resolveJiraConnection,
 } from "./jira-auth";
 import { countOverBusinessSla } from "./business-hours";
+import {
+  personEntryFromJiraUser,
+  type PersonDirectoryEntry,
+} from "./avatars";
 
 export type { JiraConnection };
 
@@ -33,10 +37,16 @@ async function jiraFetch(
 /** Export pour actions d’écriture tickets. */
 export { jiraFetch as jiraApiFetch };
 
-interface JiraUser {
+export interface JiraUser {
   displayName?: string;
   emailAddress?: string;
   accountId?: string;
+  avatarUrls?: {
+    "16x16"?: string;
+    "24x24"?: string;
+    "32x32"?: string;
+    "48x48"?: string;
+  };
 }
 
 interface JiraIssue {
@@ -521,6 +531,19 @@ export function personName(
   return name || fallback;
 }
 
+export { pickAvatarUrl } from "./avatars";
+export type { PersonDirectoryEntry } from "./avatars";
+
+function pushPerson(
+  bag: PersonDirectoryEntry[],
+  user: JiraUser | null | undefined,
+  fallbackName?: string,
+) {
+  const entry = personEntryFromJiraUser(user, fallbackName);
+  if (entry) bag.push(entry);
+}
+
+
 function normalizeComponentNames(raw: unknown): string[] {
   if (!Array.isArray(raw) || raw.length === 0) return [];
   const names: string[] = [];
@@ -819,6 +842,7 @@ export interface JiraWeekSyncResult {
   byType: Record<string, number>;
   byAssignee: Record<string, number>;
   byRequester: Record<string, number>;
+  people: PersonDirectoryEntry[];
   jql: WeekJqlBundle;
   warnings: string[];
   probe: JiraProbeResult;
@@ -969,6 +993,7 @@ export async function fetchJiraWeekStats(
   const byType: Record<string, number> = {};
   const byAssignee: Record<string, number> = {};
   const byRequester: Record<string, number> = {};
+  const people: PersonDirectoryEntry[] = [];
   const categorySource = await resolveCategorySource(
     connection,
     createdForBreakdown,
@@ -979,11 +1004,17 @@ export async function fetchJiraWeekStats(
     byType[cat] = (byType[cat] ?? 0) + 1;
     const who = personName(issue.fields.assignee, "Non assigné");
     byAssignee[who] = (byAssignee[who] ?? 0) + 1;
+    pushPerson(people, issue.fields.assignee, who);
     const requester = personName(
       issue.fields.reporter ?? issue.fields.creator,
       "Inconnu",
     );
     byRequester[requester] = (byRequester[requester] ?? 0) + 1;
+    pushPerson(
+      people,
+      issue.fields.reporter ?? issue.fields.creator,
+      requester,
+    );
   }
 
   if (
@@ -1016,6 +1047,7 @@ export async function fetchJiraWeekStats(
     byType,
     byAssignee,
     byRequester,
+    people,
     jql,
     warnings,
     probe,
@@ -1081,6 +1113,7 @@ export function mockJiraWeekStats(
       "David Nguyen": Math.round(created * 0.15),
       Autre: Math.max(0, created - Math.round(created * 0.9)),
     },
+    people: [],
     jql,
     warnings: ["Mode démo — données fictives"],
     probe: {
@@ -1107,6 +1140,7 @@ export interface CreatedBreakdownResult {
   byType: Record<string, number>;
   byAssignee: Record<string, number>;
   byRequester: Record<string, number>;
+  people: PersonDirectoryEntry[];
   createdCount: number;
   jql: WeekJqlBundle;
   warnings: string[];
@@ -1166,6 +1200,7 @@ export async function fetchJiraCreatedBreakdown(
   const byType: Record<string, number> = {};
   const byAssignee: Record<string, number> = {};
   const byRequester: Record<string, number> = {};
+  const people: PersonDirectoryEntry[] = [];
   const categorySource = await resolveCategorySource(
     connection,
     createdIssues,
@@ -1176,11 +1211,17 @@ export async function fetchJiraCreatedBreakdown(
     byType[cat] = (byType[cat] ?? 0) + 1;
     const who = personName(issue.fields.assignee, "Non assigné");
     byAssignee[who] = (byAssignee[who] ?? 0) + 1;
+    pushPerson(people, issue.fields.assignee, who);
     const requester = personName(
       issue.fields.reporter ?? issue.fields.creator,
       "Inconnu",
     );
     byRequester[requester] = (byRequester[requester] ?? 0) + 1;
+    pushPerson(
+      people,
+      issue.fields.reporter ?? issue.fields.creator,
+      requester,
+    );
   }
 
   if (
@@ -1225,6 +1266,7 @@ export async function fetchJiraCreatedBreakdown(
     byType,
     byAssignee,
     byRequester,
+    people,
     createdCount,
     jql,
     warnings,
@@ -1244,6 +1286,7 @@ export function mockCreatedBreakdown(
     byType: mock.byType,
     byAssignee: mock.byAssignee,
     byRequester: mock.byRequester,
+    people: mock.people,
     createdCount: mock.patch.demandesItHebdo ?? 0,
     jql: mock.jql,
     warnings: ["Mode démo — demandeurs fictifs"],

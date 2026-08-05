@@ -140,6 +140,7 @@ export async function fetchAtlassianMe(accessToken: string): Promise<{
   account_id?: string;
   email?: string;
   name?: string;
+  picture?: string;
 }> {
   const res = await fetch("https://api.atlassian.com/me", {
     headers: {
@@ -153,6 +154,7 @@ export async function fetchAtlassianMe(accessToken: string): Promise<{
     account_id?: string;
     email?: string;
     name?: string;
+    picture?: string;
   };
 }
 
@@ -261,35 +263,39 @@ export async function persistOAuthUserLogin(opts: {
   const me = await fetchAtlassianMe(opts.accessToken);
   let email = (me.email || "").trim().toLowerCase();
   let displayName = me.name?.trim() || undefined;
+  let avatarUrl = me.picture?.trim() || undefined;
 
-  // Fallback : profil Jira si /me ne renvoie pas d’email
-  if (!email || !email.includes("@")) {
-    try {
-      const resources = await fetchAccessibleResources(opts.accessToken);
-      const site = pickResource(resources, opts.preferredBaseUrl);
-      if (site) {
-        const res = await fetch(
-          `https://api.atlassian.com/ex/jira/${site.id}/rest/api/3/myself`,
-          {
-            headers: {
-              Authorization: `Bearer ${opts.accessToken}`,
-              Accept: "application/json",
-            },
-            cache: "no-store",
+  // Fallback / complément : profil Jira (email + avatar)
+  try {
+    const resources = await fetchAccessibleResources(opts.accessToken);
+    const site = pickResource(resources, opts.preferredBaseUrl);
+    if (site) {
+      const res = await fetch(
+        `https://api.atlassian.com/ex/jira/${site.id}/rest/api/3/myself`,
+        {
+          headers: {
+            Authorization: `Bearer ${opts.accessToken}`,
+            Accept: "application/json",
           },
-        );
-        if (res.ok) {
-          const myself = (await res.json()) as {
-            emailAddress?: string;
-            displayName?: string;
-          };
-          email = (myself.emailAddress || email || "").trim().toLowerCase();
-          displayName = myself.displayName?.trim() || displayName;
+          cache: "no-store",
+        },
+      );
+      if (res.ok) {
+        const myself = (await res.json()) as {
+          emailAddress?: string;
+          displayName?: string;
+          avatarUrls?: Record<string, string>;
+        };
+        if (myself.emailAddress?.includes("@")) {
+          email = myself.emailAddress.trim().toLowerCase();
         }
+        displayName = myself.displayName?.trim() || displayName;
+        const { pickAvatarUrl } = await import("./avatars");
+        avatarUrl = pickAvatarUrl(myself.avatarUrls) || avatarUrl;
       }
-    } catch {
-      // ignore — on valide l’email ci-dessous
     }
+  } catch {
+    // ignore — on valide l’email ci-dessous
   }
 
   if (!email || !email.includes("@")) {
@@ -301,6 +307,7 @@ export async function persistOAuthUserLogin(opts: {
   await writeUserSession({
     email,
     displayName,
+    avatarUrl,
     authMode: "oauth",
     connectedAt: new Date().toISOString(),
   });
