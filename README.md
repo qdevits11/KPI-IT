@@ -52,30 +52,6 @@ Heures ouvrées = hors week-ends et jours fériés belges (liste n8n).
 
 Variables d'env optionnelles : voir `.env.example`. Sur Vercel, définir `JIRA_COOKIE_SECRET`.
 
-### Email Microsoft 365 (noreply@coverseal.com)
-
-Envoi via **Exchange Online** (`smtp.office365.com:587`, STARTTLS).
-
-**Admin M365 (une fois)** — boîte `noreply@coverseal.com` :
-1. Centre d’admin Microsoft 365 → Utilisateurs → `noreply@coverseal.com`
-2. Mail → **Gérer les applications de messagerie** → activer **Authenticated SMTP**
-3. Si MFA sur le compte : créer un **mot de passe d’application** et l’utiliser comme `SMTP_PASS`
-
-**Vercel → Environment Variables** :
-
-| Variable | Valeur |
-|----------|--------|
-| `SMTP_HOST` | `smtp.office365.com` (défaut si omis) |
-| `SMTP_PORT` | `587` |
-| `SMTP_USER` | `noreply@coverseal.com` |
-| `SMTP_PASS` | mot de passe (ou app password) de la boîte |
-| `SMTP_FROM` | `KPI IT <noreply@coverseal.com>` (défaut) |
-| `SMTP_TO` | `q.devits@coverseal.com` (plusieurs : séparés par `,`) |
-| `CRON_SECRET` | token pour `/api/mail/cron` |
-
-Depuis **Sync Jira** : **Vérifier SMTP** puis **Envoyer le rapport**.  
-Cron Vercel : lundi 07:00 UTC → sync semaine précédente + email.
-
 ## Scripts
 
 - `npm run dev` / `build` / `start`

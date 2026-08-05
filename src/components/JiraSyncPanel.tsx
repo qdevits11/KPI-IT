@@ -94,30 +94,20 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState(DEFAULT_FORM);
-  const [smtp, setSmtp] = useState<{
-    configured: boolean;
-    host: string | null;
-    from: string | null;
-    to: string[];
-  } | null>(null);
-  const [mailTo, setMailTo] = useState("");
-  const [mailMsg, setMailMsg] = useState<string | null>(null);
 
   const composedWeekId = `${year}-S${String(week).padStart(2, "0")}`;
 
   const loadMeta = useCallback(async () => {
-    const [connectRes, syncRes, kpisRes, mailRes] = await Promise.all([
+    const [connectRes, syncRes, kpisRes] = await Promise.all([
       fetch("/api/jira/connect"),
       fetch(
         `/api/jira/sync?year=${encodeURIComponent(String(year))}&weekNum=${encodeURIComponent(String(week))}`,
       ),
       fetch(`/api/kpis?week=${encodeURIComponent(composedWeekId)}`),
-      fetch("/api/mail/send"),
     ]);
     const connect = await connectRes.json();
     const sync = await syncRes.json();
     const kpis = await kpisRes.json();
-    const mail = await mailRes.json();
 
     setConnected(Boolean(connect.connected));
     setSource(connect.source);
@@ -126,15 +116,6 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     setDateRange(sync.dateRange ?? null);
     setWeeks(kpis.weeks);
     setWeekId(composedWeekId);
-    setSmtp({
-      configured: Boolean(mail.configured),
-      host: mail.host ?? null,
-      from: mail.from ?? null,
-      to: mail.to ?? [],
-    });
-    setMailTo((prev) =>
-      prev.trim() ? prev : (mail.to ?? []).join(", "),
-    );
 
     if (connect.connection) {
       setForm((f) => ({
@@ -534,105 +515,6 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
             ))}
           </ul>
         )}
-      </section>
-
-      <section className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
-        <h2 className="font-[family-name:var(--font-display)] text-xl">
-          Envoyer par email (Office 365)
-        </h2>
-        <p className="text-sm text-[var(--muted)]">
-          Expéditeur <code className="text-xs">noreply@coverseal.com</code> via{" "}
-          <code className="text-xs">smtp.office365.com</code>. Sur Vercel :
-          <code className="text-xs"> SMTP_USER</code>,{" "}
-          <code className="text-xs">SMTP_PASS</code>,{" "}
-          <code className="text-xs">SMTP_TO</code>. Activez « Authenticated
-          SMTP » sur la boîte noreply.
-        </p>
-        {smtp ? (
-          <p className="text-xs text-[var(--muted)]">
-            {smtp.configured ? (
-              <>
-                Office 365 : {smtp.host}
-                {smtp.from ? ` · de ${smtp.from}` : ""}
-              </>
-            ) : (
-              <span className="text-[var(--warn)]">
-                Non configuré — ajoutez SMTP_PASS + SMTP_TO sur Vercel (user =
-                noreply@coverseal.com).
-              </span>
-            )}
-          </p>
-        ) : null}
-        <label className="flex max-w-xl flex-col gap-1 text-sm">
-          <span className="text-[var(--muted)]">Destinataires</span>
-          <input
-            type="text"
-            value={mailTo}
-            onChange={(e) => setMailTo(e.target.value)}
-            placeholder="q.devits@coverseal.com"
-            className="rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-2 outline-none focus:border-[var(--accent)]"
-          />
-        </label>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={pending || !smtp?.configured || !weekValid}
-            onClick={() => {
-              setMailMsg(null);
-              setError(null);
-              startTransition(async () => {
-                const res = await fetch("/api/mail/send", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    year,
-                    week,
-                    syncFirst: true,
-                    save: true,
-                    to: mailTo || undefined,
-                  }),
-                });
-                const json = await res.json();
-                if (!res.ok || !json.ok) {
-                  setError(json.error ?? "Envoi email échoué");
-                  return;
-                }
-                setValues(json.values);
-                setMailMsg(
-                  `Email envoyé à ${json.to.join(", ")} — ${json.weekId}`,
-                );
-              });
-            }}
-            className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            Envoyer le rapport
-          </button>
-          <button
-            type="button"
-            disabled={pending || !smtp?.configured}
-            onClick={() => {
-              setMailMsg(null);
-              setError(null);
-              startTransition(async () => {
-                const res = await fetch("/api/mail/send", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ verifyOnly: true }),
-                });
-                const json = await res.json();
-                if (!res.ok || !json.ok) {
-                  setError(json.error ?? "SMTP invalide");
-                  return;
-                }
-                setMailMsg("Connexion SMTP OK");
-              });
-            }}
-            className="rounded-md border border-[var(--line)] px-4 py-2 text-sm disabled:opacity-50"
-          >
-            Vérifier SMTP
-          </button>
-        </div>
-        {mailMsg && <p className="text-sm text-[var(--ok)]">{mailMsg}</p>}
       </section>
 
       {jql && (
