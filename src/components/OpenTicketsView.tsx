@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import type {
   AssigneeOpenGroup,
@@ -12,12 +12,6 @@ import {
   TicketDrilldown,
   type DrilldownQuery,
 } from "./TicketDrilldown";
-
-interface OpenResponse extends OpenTicketsSnapshot {
-  ok: boolean;
-  error?: string;
-  configured?: boolean;
-}
 
 function formatAge(days: number): string {
   if (days <= 0) return "< 1 j";
@@ -164,33 +158,20 @@ function PersonPanel({
   );
 }
 
-export function OpenTicketsView() {
-  const [data, setData] = useState<OpenResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+export function OpenTicketsView({
+  initialData,
+  initialError,
+}: {
+  initialData: OpenTicketsSnapshot | null;
+  initialError?: string | null;
+}) {
+  const [data] = useState(initialData);
+  const [error] = useState(initialError ?? null);
   const [drill, setDrill] = useState<{
     query: DrilldownQuery;
     tickets?: TicketListItem[];
   } | null>(null);
   const [filterName, setFilterName] = useState("");
-
-  const load = useCallback(async () => {
-    setError(null);
-    const res = await fetch("/api/jira/open");
-    const json = (await res.json()) as OpenResponse;
-    if (!res.ok || !json.ok) {
-      setError(json.error ?? "Impossible de charger les tickets ouverts");
-      setData(null);
-      return;
-    }
-    setData(json);
-  }, []);
-
-  useEffect(() => {
-    startTransition(() => {
-      void load();
-    });
-  }, [load]);
 
   const groups = useMemo(() => {
     if (!data) return [];
@@ -215,28 +196,15 @@ export function OpenTicketsView() {
           </h1>
           <p className="mt-2 max-w-xl text-sm text-[var(--muted)]">
             Stock actuel des tickets non résolus : non attribués, charge par
-            personne, types et ancienneté. Cliquez un nombre pour affiner.
+            personne, types et ancienneté. Mis à jour à chaque ouverture de la
+            page — cliquez un nombre pour affiner.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {data?.fetchedAt && (
-            <p className="text-xs text-[var(--muted)]">
-              Au {formatFetchedAt(data.fetchedAt)}
-            </p>
-          )}
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() =>
-              startTransition(() => {
-                void load();
-              })
-            }
-            className="rounded-md bg-[var(--ink)] px-3 py-1.5 text-sm text-[var(--paper)] transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            {pending ? "Chargement…" : "Actualiser"}
-          </button>
-        </div>
+        {data?.fetchedAt && (
+          <p className="text-xs text-[var(--muted)]">
+            Au {formatFetchedAt(data.fetchedAt)}
+          </p>
+        )}
       </div>
 
       {error && (
@@ -251,10 +219,6 @@ export function OpenTicketsView() {
         </div>
       )}
 
-      {pending && !data && (
-        <p className="text-sm text-[var(--muted)]">Lecture Jira…</p>
-      )}
-
       {data && (
         <>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -266,9 +230,7 @@ export function OpenTicketsView() {
                 <ClickableCount
                   value={data.total}
                   className="text-4xl"
-                  onClick={() =>
-                    openDrill({ scope: "open" }, data.tickets)
-                  }
+                  onClick={() => openDrill({ scope: "open" }, data.tickets)}
                 />
               </p>
             </div>
