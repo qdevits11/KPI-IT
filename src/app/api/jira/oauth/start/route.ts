@@ -5,12 +5,20 @@ import {
   atlassianOAuthConfigured,
   atlassianRedirectUri,
   buildAtlassianAuthorizeUrl,
+  JIRA_OAUTH_NEXT_COOKIE,
   JIRA_OAUTH_STATE_COOKIE,
 } from "@/lib/jira-oauth";
 
 export const dynamic = "force-dynamic";
 
-/** Démarre le flux OAuth Atlassian (SSO Microsoft possible sur l’écran de login). */
+function safeNext(raw: string | null): string {
+  if (!raw) return "/";
+  if (!raw.startsWith("/") || raw.startsWith("//")) return "/";
+  if (raw.startsWith("/login")) return "/";
+  return raw;
+}
+
+/** Démarre le flux OAuth Atlassian pour la connexion utilisateur. */
 export async function GET(request: Request) {
   if (!atlassianOAuthConfigured()) {
     return NextResponse.json(
@@ -23,9 +31,11 @@ export async function GET(request: Request) {
     );
   }
 
-  const origin = new URL(request.url).origin;
+  const url = new URL(request.url);
+  const origin = url.origin;
   const redirectUri = atlassianRedirectUri(origin);
   const state = randomBytes(24).toString("hex");
+  const next = safeNext(url.searchParams.get("next"));
   const jar = await cookies();
   jar.set(JIRA_OAUTH_STATE_COOKIE, state, {
     httpOnly: true,
@@ -34,7 +44,14 @@ export async function GET(request: Request) {
     path: "/",
     maxAge: 600,
   });
+  jar.set(JIRA_OAUTH_NEXT_COOKIE, next, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 600,
+  });
 
-  const url = buildAtlassianAuthorizeUrl({ state, redirectUri });
-  return NextResponse.redirect(url);
+  const authorizeUrl = buildAtlassianAuthorizeUrl({ state, redirectUri });
+  return NextResponse.redirect(authorizeUrl);
 }

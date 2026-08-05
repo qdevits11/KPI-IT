@@ -11,10 +11,15 @@ import {
   writeJiraConnection,
   type JiraConnection,
 } from "./jira-auth";
-import { isAdmin } from "./roles";
-import { resolveAppUser, writeUserSession } from "./user-session";
+import {
+  readUserSession,
+  writeUserSession,
+  type UserSessionPayload,
+} from "./user-session";
 
 export const JIRA_OAUTH_STATE_COOKIE = "kpi_jira_oauth_state";
+/** Destination après login OAuth (chemin relatif). */
+export const JIRA_OAUTH_NEXT_COOKIE = "kpi_jira_oauth_next";
 
 export const JIRA_OAUTH_SCOPES = [
   "read:jira-work",
@@ -177,8 +182,7 @@ function pickResource(
   return resources[0] ?? null;
 }
 
-/** Construit / met à jour la connexion après OAuth réussi. */
-export async function persistOAuthConnection(opts: {
+async function buildOAuthConnection(opts: {
   accessToken: string;
   refreshToken?: string;
   expiresIn: number;
@@ -189,7 +193,10 @@ export async function persistOAuthConnection(opts: {
     fetchAtlassianMe(opts.accessToken),
     resolveJiraConnection(),
   ]);
-  const site = pickResource(resources, opts.preferredBaseUrl ?? existing?.baseUrl);
+  const site = pickResource(
+    resources,
+    opts.preferredBaseUrl ?? existing?.baseUrl,
+  );
   if (!site) {
     throw new Error(
       "Aucun site Jira autorisé pour ce compte. Vérifiez le consentement OAuth.",
@@ -212,7 +219,8 @@ export async function persistOAuthConnection(opts: {
     tokenExpiresAt: expiresAt,
     accountDisplayName: me.name || me.email,
     jqlBase: existing?.jqlBase || DEFAULT_JIRA_SETTINGS.jqlBase,
-    openStatusJql: existing?.openStatusJql || DEFAULT_JIRA_SETTINGS.openStatusJql,
+    openStatusJql:
+      existing?.openStatusJql || DEFAULT_JIRA_SETTINGS.openStatusJql,
     datePriseEnChargeJql:
       existing?.datePriseEnChargeJql ||
       DEFAULT_JIRA_SETTINGS.datePriseEnChargeJql,
@@ -224,7 +232,8 @@ export async function persistOAuthConnection(opts: {
       DEFAULT_JIRA_SETTINGS.slaPriseEnChargeHours,
     slaClotureHours:
       existing?.slaClotureHours ?? DEFAULT_JIRA_SETTINGS.slaClotureHours,
-    categoryField: existing?.categoryField || DEFAULT_JIRA_SETTINGS.categoryField,
+    categoryField:
+      existing?.categoryField || DEFAULT_JIRA_SETTINGS.categoryField,
     categoryCustomFieldId: normalizeCustomFieldId(
       existing?.categoryCustomFieldId ||
         DEFAULT_JIRA_SETTINGS.categoryCustomFieldId,
@@ -235,10 +244,22 @@ export async function persistOAuthConnection(opts: {
   if (!conn) {
     throw new Error("Impossible de normaliser la connexion OAuth");
   }
+  return conn;
+}
 
-  const user = await resolveAppUser(conn.email, conn.accountDisplayName);
+/**
+ * Login utilisateur : session navigateur uniquement.
+ * N’écrase jamais le token de synchronisation partagé.
+ */
+export async function persistOAuthUserLogin(opts: {
+  accessToken: string;
+  refreshToken?: string;
+  expiresIn: number;
+  preferredBaseUrl?: string;
+}): Promise<{ email: string; displayName?: string; connection: JiraConnection }> {
+  const conn = await buildOAuthConnection(opts);
   await writeUserSession({
-    email: user.email,
+    email: conn.email,
     displayName: conn.accountDisplayName,
     authMode: "oauth",
     accessToken: conn.accessToken,
@@ -248,16 +269,68 @@ export async function persistOAuthConnection(opts: {
     baseUrl: conn.baseUrl,
     connectedAt: conn.connectedAt,
   });
+  return {
+    email: conn.email,
+    displayName: conn.accountDisplayName,
+    connection: conn,
+  };
+}
 
-  // Compte partagé (sync KPI) : réservé à l’admin pour ne pas écraser le token de sync
-  if (isAdmin(user)) {
-    await writeJiraConnection(conn);
-  }
-
+/**
+ * Met à jour uniquement le compte Jira partagé (sync KPI).
+ * N’écrit pas la session utilisateur.
+ */
+export async function persistSharedOAuthTokens(opts: {
+  accessToken: string;
+  refreshToken?: string;
+  expiresIn: number;
+  preferredBaseUrl?: string;
+}): Promise<JiraConnection> {
+  const conn = await buildOAuthConnection(opts);
+  await writeJiraConnection(conn);
   return conn;
 }
 
-/** Rafraîchit le Bearer si proche de l’expiration ; persiste le nouveau couple. */
+/** Alias login-only (ne touche pas au token de sync). */
+export async function persistOAuthConnection(opts: {
+  accessToken: string;
+  refreshToken?: string;
+  expiresIn: number;
+  preferredBaseUrl?: string;
+}): Promise<JiraConnection> {
+  const { connection } = await persistOAuthUserLogin(opts);
+  return connection;
+}
+
+function connectionFromUserSession(
+  session: UserSessionPayload,
+): JiraConnection | null {
+  if (session.authMode !== "oauth" || !session.accessToken || !session.baseUrl) {
+    return null;
+  }
+  return normalizeConnection({
+    baseUrl: session.baseUrl,
+    email: session.email,
+    apiToken: "",
+    authMode: "oauth",
+    accessToken: session.accessToken,
+    refreshToken: session.refreshToken,
+    cloudId: session.cloudId,
+    tokenExpiresAt: session.tokenExpiresAt,
+    accountDisplayName: session.displayName,
+    jqlBase: DEFAULT_JIRA_SETTINGS.jqlBase,
+    openStatusJql: DEFAULT_JIRA_SETTINGS.openStatusJql,
+    datePriseEnChargeJql: DEFAULT_JIRA_SETTINGS.datePriseEnChargeJql,
+    datePriseEnChargeFieldId: DEFAULT_JIRA_SETTINGS.datePriseEnChargeFieldId,
+    slaPriseEnChargeHours: DEFAULT_JIRA_SETTINGS.slaPriseEnChargeHours,
+    slaClotureHours: DEFAULT_JIRA_SETTINGS.slaClotureHours,
+    categoryField: DEFAULT_JIRA_SETTINGS.categoryField,
+    categoryCustomFieldId: DEFAULT_JIRA_SETTINGS.categoryCustomFieldId,
+    connectedAt: session.connectedAt,
+  });
+}
+
+/** Rafraîchit le Bearer du compte partagé (sync) sans toucher à la session user. */
 export async function ensureFreshOAuthConnection(
   conn: JiraConnection,
 ): Promise<JiraConnection> {
@@ -272,7 +345,7 @@ export async function ensureFreshOAuthConnection(
 
   if (!conn.refreshToken) {
     throw new Error(
-      "Session OAuth expirée — reconnectez-vous via Atlassian / Microsoft.",
+      "Session OAuth expirée — reconnectez le compte de synchronisation.",
     );
   }
   if (!atlassianOAuthConfigured()) {
@@ -280,7 +353,7 @@ export async function ensureFreshOAuthConnection(
   }
 
   const tokens = await refreshAccessToken(conn.refreshToken);
-  return persistOAuthConnection({
+  return persistSharedOAuthTokens({
     accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token || conn.refreshToken,
     expiresIn: tokens.expires_in,
@@ -288,7 +361,35 @@ export async function ensureFreshOAuthConnection(
   });
 }
 
-/** Connexion prête pour lectures / écritures (refresh OAuth inclus). */
+async function ensureFreshPersonalOAuth(
+  session: UserSessionPayload,
+): Promise<JiraConnection | null> {
+  let conn = connectionFromUserSession(session);
+  if (!conn) return null;
+
+  const expiresAt = conn.tokenExpiresAt
+    ? Date.parse(conn.tokenExpiresAt)
+    : 0;
+  const stillValid =
+    Number.isFinite(expiresAt) && expiresAt > Date.now() + 60_000;
+  if (stillValid) return conn;
+
+  if (!conn.refreshToken || !atlassianOAuthConfigured()) return null;
+  const tokens = await refreshAccessToken(conn.refreshToken);
+  await persistOAuthUserLogin({
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token || conn.refreshToken,
+    expiresIn: tokens.expires_in,
+    preferredBaseUrl: conn.baseUrl,
+  });
+  const refreshed = await readUserSession();
+  return refreshed ? connectionFromUserSession(refreshed) : null;
+}
+
+/**
+ * Connexion partagée pour sync / lectures KPI (token actuel en base).
+ * Refresh OAuth partagé si besoin — n’altère pas la session utilisateur.
+ */
 export async function resolveFreshJiraConnection(): Promise<JiraConnection | null> {
   const conn = await resolveJiraConnection();
   if (!conn) return null;
@@ -296,9 +397,29 @@ export async function resolveFreshJiraConnection(): Promise<JiraConnection | nul
     try {
       return await ensureFreshOAuthConnection(conn);
     } catch (err) {
-      console.warn("Refresh OAuth Jira échoué:", err);
+      console.warn("Refresh OAuth Jira (sync) échoué:", err);
       return null;
     }
   }
   return conn;
+}
+
+/**
+ * Connexion pour actions tickets : OAuth personnel (login) en priorité,
+ * sinon compte partagé s’il est en OAuth.
+ */
+export async function resolveTicketWriteConnection(): Promise<JiraConnection | null> {
+  const session = await readUserSession();
+  if (session?.authMode === "oauth" && session.accessToken) {
+    try {
+      const personal = await ensureFreshPersonalOAuth(session);
+      if (personal) return personal;
+    } catch (err) {
+      console.warn("Refresh OAuth personnel échoué:", err);
+    }
+  }
+
+  const shared = await resolveFreshJiraConnection();
+  if (shared?.authMode === "oauth") return shared;
+  return null;
 }

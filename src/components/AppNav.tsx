@@ -22,7 +22,6 @@ export function AppNav() {
   const pathname = usePathname();
   const [user, setUser] = useState<AppUser | null>(null);
   const [adminPages, setAdminPages] = useState(false);
-  const [oauthConfigured, setOauthConfigured] = useState(false);
 
   const loadMe = useCallback(async () => {
     const res = await fetch("/api/me");
@@ -30,11 +29,9 @@ export function AppNav() {
     const json = (await res.json()) as {
       user: AppUser | null;
       permissions?: { adminPages?: boolean };
-      oauthConfigured?: boolean;
     };
     setUser(json.user);
     setAdminPages(Boolean(json.permissions?.adminPages));
-    setOauthConfigured(Boolean(json.oauthConfigured));
   }, []);
 
   useEffect(() => {
@@ -45,7 +42,19 @@ export function AppNav() {
     await fetch("/api/me", { method: "DELETE" });
     setUser(null);
     setAdminPages(false);
-    window.location.href = "/";
+    window.location.href = "/login";
+  }
+
+  if (pathname === "/login" || pathname.startsWith("/login/")) {
+    return (
+      <header className="border-b border-[var(--line)] bg-[var(--surface)]/80 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-center px-4 py-3 sm:px-6">
+          <span className="font-[family-name:var(--font-display)] text-xl tracking-tight text-[var(--ink)]">
+            KPI<span className="text-[var(--accent)]">·</span>IT
+          </span>
+        </div>
+      </header>
+    );
   }
 
   const visibleLinks = LINKS.filter((link) => {
@@ -102,14 +111,14 @@ export function AppNav() {
                   Quitter la session
                 </button>
               </>
-            ) : oauthConfigured ? (
+            ) : (
               <Link
-                href="/api/jira/oauth/start"
+                href="/login"
                 className="underline-offset-2 hover:underline"
               >
-                Se connecter (Microsoft / Atlassian)
+                Se connecter
               </Link>
-            ) : null}
+            )}
           </div>
         </div>
       </div>

@@ -5,7 +5,7 @@ import {
   setIssueCategory,
   transitionIssue,
 } from "@/lib/jira-actions";
-import { resolveFreshJiraConnection } from "@/lib/jira-oauth";
+import { resolveTicketWriteConnection } from "@/lib/jira-oauth";
 import { sanitizeConnection } from "@/lib/jira-auth";
 
 export const dynamic = "force-dynamic";
@@ -14,13 +14,14 @@ type Params = { params: Promise<{ key: string }> };
 
 export async function GET(_request: Request, { params }: Params) {
   const { key } = await params;
-  const conn = await resolveFreshJiraConnection();
+  const conn = await resolveTicketWriteConnection();
   if (!conn) {
     return NextResponse.json(
       {
         ok: false,
+        needOAuth: true,
         error:
-          "Connectez votre compte Atlassian (Microsoft) pour modifier les tickets.",
+          "Reconnectez-vous (Microsoft / Atlassian) pour modifier les tickets.",
       },
       { status: 401 },
     );
@@ -46,13 +47,14 @@ export async function GET(_request: Request, { params }: Params) {
 
 export async function POST(request: Request, { params }: Params) {
   const { key } = await params;
-  const conn = await resolveFreshJiraConnection();
+  const conn = await resolveTicketWriteConnection();
   if (!conn) {
     return NextResponse.json(
       {
         ok: false,
+        needOAuth: true,
         error:
-          "Connectez votre compte Atlassian (Microsoft) pour modifier les tickets.",
+          "Reconnectez-vous (Microsoft / Atlassian) pour modifier les tickets.",
       },
       { status: 401 },
     );
@@ -63,7 +65,7 @@ export async function POST(request: Request, { params }: Params) {
       {
         ok: false,
         error:
-          "Les modifications de tickets nécessitent une connexion OAuth Atlassian (bouton Microsoft / Atlassian). Le token API reste pour la sync KPI.",
+          "Les modifications de tickets nécessitent une connexion OAuth (Microsoft / Atlassian).",
         needOAuth: true,
       },
       { status: 403 },

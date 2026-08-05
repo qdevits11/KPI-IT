@@ -85,14 +85,14 @@ export function TicketActionsPanel({
     return (
       <div className="rounded-md border border-[var(--warn)]/40 bg-[var(--warn)]/10 px-3 py-2 text-sm text-[var(--ink)]">
         <p>
-          Pour changer statut, assigné ou type, connectez-vous avec votre compte
-          Atlassian (Microsoft SSO).
+          Pour changer statut, assigné ou type, reconnectez-vous avec Microsoft
+          / Atlassian (session utilisateur). La sync KPI garde son propre token.
         </p>
         <Link
-          href="/api/jira/oauth/start"
+          href="/api/jira/oauth/start?next=/tickets-ouverts"
           className="mt-2 inline-block font-medium text-[var(--accent-deep)] hover:underline"
         >
-          Se connecter avec Microsoft / Atlassian →
+          Reconnecter Microsoft / Atlassian →
         </Link>
       </div>
     );
@@ -114,7 +114,7 @@ export function TicketActionsPanel({
           {error}{" "}
           {needOAuth && (
             <Link
-              href="/api/jira/oauth/start"
+              href="/api/jira/oauth/start?next=/tickets-ouverts"
               className="underline text-[var(--accent-deep)]"
             >
               OAuth

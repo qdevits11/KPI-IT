@@ -12,12 +12,8 @@ import { testJiraConnection } from "@/lib/jira";
 import { supabaseConfigured } from "@/lib/supabase-db";
 import { atlassianOAuthConfigured } from "@/lib/jira-oauth";
 import { canAccessAdminPages, isAdmin } from "@/lib/roles";
-import {
-  clearUserSession,
-  resolveAppUser,
-  resolveCurrentUser,
-  writeUserSession,
-} from "@/lib/user-session";
+import { resolveAppUser, resolveCurrentUser } from "@/lib/user-session";
+import { requireAdminApi } from "@/lib/access-api";
 
 export async function GET() {
   const { connection, source } = await resolveJiraConnectionSource();
@@ -35,14 +31,19 @@ export async function GET() {
   });
 }
 
+/**
+ * Configure le token de synchronisation partagé (email + API token).
+ * N’écrit / n’efface jamais la session utilisateur.
+ */
 export async function POST(request: Request) {
   const body = (await request.json()) as Partial<JiraConnection> & {
     action?: "connect" | "test" | "disconnect";
   };
 
   if (body.action === "disconnect") {
+    const gate = await requireAdminApi();
+    if ("response" in gate) return gate.response;
     await clearJiraConnection();
-    await clearUserSession();
     return NextResponse.json({ ok: true, connected: false });
   }
 
@@ -65,23 +66,24 @@ export async function POST(request: Request) {
   }
 
   const actor = await resolveCurrentUser();
-  const targetUser = await resolveAppUser(email);
-  if (actor && !canAccessAdminPages(actor)) {
+  if (!actor || !canAccessAdminPages(actor)) {
     return NextResponse.json(
       {
         ok: false,
         error:
-          "Seul un administrateur peut enregistrer un token API Jira partagé.",
+          "Seul un administrateur peut enregistrer le token de synchronisation Jira.",
       },
       { status: 403 },
     );
   }
+
+  const targetUser = await resolveAppUser(email);
   if (!isAdmin(targetUser)) {
     return NextResponse.json(
       {
         ok: false,
         error:
-          "Le token API partagé doit être celui d’un compte administrateur KPI·IT.",
+          "Le token API de sync doit être celui d’un compte administrateur KPI·IT.",
       },
       { status: 403 },
     );
@@ -132,13 +134,6 @@ export async function POST(request: Request) {
   }
 
   await writeJiraConnection(conn);
-  await writeUserSession({
-    email: targetUser.email,
-    displayName: test.displayName,
-    authMode: "basic",
-    baseUrl: conn.baseUrl,
-    connectedAt: conn.connectedAt,
-  });
 
   return NextResponse.json({
     ok: true,
@@ -146,15 +141,13 @@ export async function POST(request: Request) {
     displayName: test.displayName,
     source: supabaseConfigured() ? "supabase" : "cookie",
     connection: sanitizeConnection(conn),
-    user: targetUser,
   });
 }
 
+/** Déconnecte uniquement le compte de sync (pas la session utilisateur). */
 export async function DELETE() {
-  const user = await resolveCurrentUser();
-  if (canAccessAdminPages(user)) {
-    await clearJiraConnection();
-  }
-  await clearUserSession();
+  const gate = await requireAdminApi();
+  if ("response" in gate) return gate.response;
+  await clearJiraConnection();
   return NextResponse.json({ ok: true, connected: false });
 }
