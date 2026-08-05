@@ -20,7 +20,9 @@ interface JiraIssue {
   key: string;
   fields: {
     created: string;
+    summary?: string;
     resolutiondate: string | null;
+    status?: { name?: string };
     issuetype?: { name: string };
     assignee?: JiraUser | null;
     reporter?: JiraUser | null;
@@ -391,7 +393,8 @@ export async function countJql(
   return count;
 }
 
-async function searchAll(
+/** Recherche paginée Jira (issues complètes). */
+export async function searchAll(
   conn: JiraConnection,
   jql: string,
   fields: string,
@@ -500,7 +503,10 @@ export async function testJiraConnection(conn: JiraConnection): Promise<{
   }
 }
 
-function personName(user: JiraUser | null | undefined, fallback: string): string {
+export function personName(
+  user: JiraUser | null | undefined,
+  fallback: string,
+): string {
   if (!user) return fallback;
   const name =
     user.displayName?.trim() ||
@@ -670,7 +676,7 @@ async function fetchJiraFieldNames(
 }
 
 /** Résout la vraie source de catégorie IT (évite le Request Type « mail »). */
-async function resolveCategorySource(
+export async function resolveCategorySource(
   connection: JiraConnection,
   issues: JiraIssue[],
   warnings: string[],

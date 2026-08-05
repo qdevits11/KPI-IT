@@ -7,6 +7,12 @@ import type { KpiValue, LogEvent, PhishingEvent, WeeklyRow } from "@/lib/types";
 import { CATEGORY_LABELS } from "@/lib/formulas";
 import { WeekSelector } from "./WeekSelector";
 import { KpiCard } from "./KpiCard";
+import {
+  ClickableCount,
+  TicketDrilldown,
+  type DrilldownQuery,
+} from "./TicketDrilldown";
+import type { TicketStatDimension } from "@/lib/types";
 
 interface WeekOption {
   id: string;
@@ -58,9 +64,15 @@ const CATEGORY_ORDER = [
 function Breakdown({
   title,
   data,
+  dimension,
+  weekId,
+  onDrill,
 }: {
   title: string;
   data: Record<string, number>;
+  dimension: TicketStatDimension;
+  weekId: string;
+  onDrill: (q: DrilldownQuery) => void;
 }) {
   const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
   if (entries.length === 0) {
@@ -69,6 +81,14 @@ function Breakdown({
     );
   }
   const max = Math.max(...entries.map(([, v]) => v), 1);
+
+  function filterFor(name: string): DrilldownQuery {
+    const base: DrilldownQuery = { scope: "created", weekId };
+    if (dimension === "assignee") return { ...base, assignee: name };
+    if (dimension === "requester") return { ...base, requester: name };
+    return { ...base, type: name };
+  }
+
   return (
     <div className="space-y-2">
       <h3 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
@@ -80,7 +100,10 @@ function Breakdown({
             <div>
               <div className="flex justify-between gap-2">
                 <span className="text-[var(--ink-soft)]">{name}</span>
-                <span className="tabular-nums text-[var(--ink)]">{count}</span>
+                <ClickableCount
+                  value={count}
+                  onClick={() => onDrill(filterFor(name))}
+                />
               </div>
               <div className="mt-1 h-1.5 overflow-hidden rounded bg-[var(--wash)]">
                 <div
@@ -275,6 +298,7 @@ export function Dashboard({
   const [error, setError] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [drill, setDrill] = useState<DrilldownQuery | null>(null);
 
   const load = useCallback(async (id: string) => {
     setError(null);
@@ -500,18 +524,34 @@ export function Dashboard({
                   Stats annuelles →
                 </Link>
               </div>
-              <Breakdown title="Tickets par type" data={data.ticketsByType} />
+              <Breakdown
+                title="Tickets par type"
+                data={data.ticketsByType}
+                dimension="type"
+                weekId={weekId}
+                onDrill={setDrill}
+              />
               <Breakdown
                 title="Tickets par assigné (Jira)"
                 data={data.ticketsByAssignee}
+                dimension="assignee"
+                weekId={weekId}
+                onDrill={setDrill}
               />
               <Breakdown
                 title="Tickets par demandeur"
                 data={data.ticketsByRequester ?? {}}
+                dimension="requester"
+                weekId={weekId}
+                onDrill={setDrill}
               />
             </div>
           </section>
         </>
+      )}
+
+      {drill && (
+        <TicketDrilldown query={drill} onClose={() => setDrill(null)} />
       )}
     </div>
   );

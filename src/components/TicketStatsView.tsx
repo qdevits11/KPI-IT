@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import type { TicketStatDimension, TicketStatsPayload } from "@/lib/types";
 import { StatsEvolutionChart } from "./StatsEvolutionChart";
+import {
+  ClickableCount,
+  TicketDrilldown,
+  type DrilldownQuery,
+} from "./TicketDrilldown";
 
 interface StatsResponse {
   year: number;
@@ -27,6 +32,15 @@ function pct(share: number): string {
   return `${(share * 100).toFixed(1)} %`;
 }
 
+function dimFilter(
+  dimension: TicketStatDimension,
+  name: string,
+): Pick<DrilldownQuery, "assignee" | "requester" | "type"> {
+  if (dimension === "assignee") return { assignee: name };
+  if (dimension === "requester") return { requester: name };
+  return { type: name };
+}
+
 export function TicketStatsView({
   dimension,
   initialYear = 2026,
@@ -40,6 +54,7 @@ export function TicketStatsView({
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState("");
   const [view, setView] = useState<ViewMode>("ranking");
+  const [drill, setDrill] = useState<DrilldownQuery | null>(null);
 
   const load = useCallback(
     async (y: number) => {
@@ -74,6 +89,30 @@ export function TicketStatsView({
     [filtered],
   );
 
+  function openPersonYear(name: string) {
+    setDrill({
+      scope: "created",
+      year,
+      ...dimFilter(dimension, name),
+    });
+  }
+
+  function openPersonWeek(name: string, weekId: string) {
+    setDrill({
+      scope: "created",
+      weekId,
+      ...dimFilter(dimension, name),
+    });
+  }
+
+  function openWeekTotal(weekId: string) {
+    setDrill({ scope: "created", weekId });
+  }
+
+  function openYearTotal() {
+    setDrill({ scope: "created", year });
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -83,7 +122,8 @@ export function TicketStatsView({
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-[var(--muted)]">
             {data?.stats.description ??
-              "Analyse des tickets créés sur l’année sélectionnée."}
+              "Analyse des tickets créés sur l’année sélectionnée."}{" "}
+            Cliquez un nombre pour lister les tickets Jira.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -150,8 +190,12 @@ export function TicketStatsView({
               <p className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">
                 Total année
               </p>
-              <p className="mt-0.5 font-[family-name:var(--font-display)] text-2xl tabular-nums text-[var(--ink)]">
-                {data.stats.grandTotal.toLocaleString("fr-BE")}
+              <p className="mt-0.5 font-[family-name:var(--font-display)] text-2xl text-[var(--ink)]">
+                <ClickableCount
+                  value={data.stats.grandTotal}
+                  className="text-2xl"
+                  onClick={openYearTotal}
+                />
               </p>
             </div>
             <div>
@@ -219,18 +263,27 @@ export function TicketStatsView({
                         return (
                           <td
                             key={wk}
-                            className={`px-2 py-1.5 text-center tabular-nums ${
-                              n === 0
-                                ? "text-[var(--muted)]/50"
-                                : "text-[var(--ink-soft)]"
-                            }`}
+                            className="px-2 py-1.5 text-center"
                           >
-                            {n || "·"}
+                            {n === 0 ? (
+                              <span className="tabular-nums text-[var(--muted)]/50">
+                                ·
+                              </span>
+                            ) : (
+                              <ClickableCount
+                                value={n}
+                                className="text-[var(--ink-soft)]"
+                                onClick={() => openPersonWeek(row.name, wk)}
+                              />
+                            )}
                           </td>
                         );
                       })}
-                      <td className="px-3 py-1.5 text-right font-medium tabular-nums text-[var(--ink)]">
-                        {row.total}
+                      <td className="px-3 py-1.5 text-right font-medium">
+                        <ClickableCount
+                          value={row.total}
+                          onClick={() => openPersonYear(row.name)}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -239,15 +292,18 @@ export function TicketStatsView({
                       Total
                     </td>
                     {data.stats.weeks.map((wk) => (
-                      <td
-                        key={wk}
-                        className="px-2 py-2 text-center tabular-nums text-[var(--ink)]"
-                      >
-                        {data.stats.weekTotals[wk] ?? 0}
+                      <td key={wk} className="px-2 py-2 text-center">
+                        <ClickableCount
+                          value={data.stats.weekTotals[wk] ?? 0}
+                          onClick={() => openWeekTotal(wk)}
+                        />
                       </td>
                     ))}
-                    <td className="px-3 py-2 text-right tabular-nums text-[var(--ink)]">
-                      {data.stats.grandTotal}
+                    <td className="px-3 py-2 text-right">
+                      <ClickableCount
+                        value={data.stats.grandTotal}
+                        onClick={openYearTotal}
+                      />
                     </td>
                   </tr>
                 </tbody>
@@ -280,14 +336,20 @@ export function TicketStatsView({
                       />
                     </div>
                   </div>
-                  <span className="min-w-[3rem] text-right font-medium tabular-nums text-[var(--ink)]">
-                    {row.total}
-                  </span>
+                  <ClickableCount
+                    value={row.total}
+                    className="min-w-[3rem] text-right font-medium"
+                    onClick={() => openPersonYear(row.name)}
+                  />
                 </li>
               ))}
             </ul>
           )}
         </>
+      )}
+
+      {drill && (
+        <TicketDrilldown query={drill} onClose={() => setDrill(null)} />
       )}
     </div>
   );
