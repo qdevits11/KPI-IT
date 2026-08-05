@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/jira/cron/snapshot-open",
+      "schedule": "55 21 * * 0"
+    },
+    {
+      "path": "/api/jira/cron/snapshot-open",
+      "schedule": "55 22 * * 0"
+    }
+  ]
+}

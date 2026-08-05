@@ -28,6 +28,11 @@ export interface WeeklyRow extends WeekRef {
   demandesItHebdo: number | null;
   /** # Demandes non résolues — Hebdo (stock en fin de semaine) */
   demandesNonResoluesHebdo: number | null;
+  /**
+   * Instant où le stock « non résolus » a été figé (dimanche 23:59 Bruxelles).
+   * null = pas encore figé (semaine courante = snapshot live à la sync).
+   */
+  openFrozenAt: string | null;
   informations: string;
   reaction: string;
   jiraSyncedAt: string | null;

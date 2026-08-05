@@ -165,7 +165,7 @@ export const FORMULAS: FormulaDefinition[] = [
     category: "ticketing",
     name: "Demandes non résolues (hebdo)",
     description:
-      "Snapshot des tickets encore ouverts au moment de la sync (n8n: status NOT IN (Partenaire, Canceled, Done)). Pas un historique de fin de semaine.",
+      "Snapshot des tickets encore ouverts. Semaine en cours = live à la sync. Semaines passées = figé dimanche 23:59 Europe/Brussels (cron), sinon valeur Excel/manuelle conservée.",
     formula:
       "JQL: project = CSD AND status NOT IN (Partenaire, Canceled, Done)",
     inputs: [

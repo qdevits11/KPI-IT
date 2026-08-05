@@ -472,7 +472,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
             <KpiTile
               label="Non résolus"
               value={values.demandesNonResoluesHebdo}
-              hint="Snapshot ouvert actuel (≠ Excel historique)"
+              hint="Live si semaine en cours · figé dimanche 23:59 sinon"
               baseline={excelBaseline?.demandesNonResoluesHebdo}
             />
             <KpiTile
@@ -492,9 +492,9 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
 
         {values && excelBaseline && (
           <p className="text-xs text-[var(--muted)]">
-            Comparaison Excel (base) affichée sous chaque KPI. Les « non
-            résolus » Excel sont un stock de fin de semaine : le test Jira
-            renvoie le snapshot ouvert <em>maintenant</em>, donc peut différer.
+            Comparaison Excel sous chaque KPI. Les « non résolus » des semaines
+            passées sont figés le dimanche 23:59 (cron Bruxelles) et ne sont
+            plus écrasés par un test live.
           </p>
         )}
 

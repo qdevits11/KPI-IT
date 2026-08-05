@@ -21,6 +21,8 @@ import {
 import { buildWeekDashboard } from "@/lib/formulas";
 import { weekId, parseWeekId } from "@/lib/types";
 import excelSeed from "@/data/seed-from-excel.json";
+import { isIsoWeekCompleted } from "@/lib/open-snapshot";
+import type { WeeklyRow } from "@/lib/types";
 
 function excelBaseline(year: number, week: number) {
   const row = (
@@ -42,6 +44,79 @@ function excelBaseline(year: number, week: number) {
     ticketsHorsSlaCloture: row.ticketsHorsSlaCloture,
     ticketsHorsSlaPriseEnCharge: row.ticketsHorsSlaPriseEnCharge,
   };
+}
+
+/**
+ * Pour une semaine terminée déjà figée : on garde le stock dimanche 23:59.
+ * Semaine courante : snapshot live.
+ */
+function applyOpenSnapshotPolicy(
+  year: number,
+  week: number,
+  patch: JiraWeekSyncResult["patch"],
+  existing: WeeklyRow | null,
+  forceOpenLive: boolean,
+): {
+  patch: JiraWeekSyncResult["patch"];
+  openMode: "live" | "frozen" | "preserved";
+  warnings: string[];
+} {
+  const warnings: string[] = [];
+  const completed = isIsoWeekCompleted(year, week);
+  const liveOpen = patch.demandesNonResoluesHebdo;
+
+  if (!completed) {
+    warnings.push(
+      "Non résolus = snapshot live (semaine en cours). Figement auto dimanche 23:59 Europe/Brussels via cron.",
+    );
+    return { patch, openMode: "live", warnings };
+  }
+
+  if (
+    !forceOpenLive &&
+    existing?.openFrozenAt &&
+    existing.demandesNonResoluesHebdo != null
+  ) {
+    warnings.push(
+      `Non résolus conservés (figés ${existing.openFrozenAt}) = ${existing.demandesNonResoluesHebdo}. Live Jira maintenant = ${liveOpen}. Cron dimanche 23:59 Bruxelles.`,
+    );
+    return {
+      patch: {
+        ...patch,
+        demandesNonResoluesHebdo: existing.demandesNonResoluesHebdo,
+      },
+      openMode: "preserved",
+      warnings,
+    };
+  }
+
+  if (
+    !forceOpenLive &&
+    completed &&
+    existing?.demandesNonResoluesHebdo != null &&
+    !existing.openFrozenAt
+  ) {
+    // Valeur Excel / manuelle sans marqueur : la protéger aussi
+    warnings.push(
+      `Non résolus conservés (valeur existante ${existing.demandesNonResoluesHebdo}, semaine terminée). Live = ${liveOpen}.`,
+    );
+    return {
+      patch: {
+        ...patch,
+        demandesNonResoluesHebdo: existing.demandesNonResoluesHebdo,
+        openFrozenAt: existing.openFrozenAt ?? "preserved-existing",
+      },
+      openMode: "preserved",
+      warnings,
+    };
+  }
+
+  warnings.push(
+    forceOpenLive
+      ? `Non résolus écrasés par le live Jira (${liveOpen}) — forceOpenLive.`
+      : `Non résolus = live Jira (${liveOpen}) — pas encore de figement cron pour cette semaine.`,
+  );
+  return { patch, openMode: forceOpenLive ? "live" : "live", warnings };
 }
 
 function resolveTargetWeek(body: {
@@ -141,6 +216,8 @@ export async function POST(request: Request) {
     useMock?: boolean;
     /** true = calcule sans écrire en base */
     dryRun?: boolean;
+    /** true = écraser le stock figé par le snapshot live */
+    forceOpenLive?: boolean;
   };
 
   const target = resolveTargetWeek(body);
@@ -150,16 +227,32 @@ export async function POST(request: Request) {
 
   const { id, year, week } = target;
   const dryRun = Boolean(body.dryRun);
+  const forceOpenLive = Boolean(body.forceOpenLive);
   const conn = await resolveJiraConnection();
 
   try {
     if (body.useMock) {
       const result = mockJiraWeekStats(year, week);
-      const values = valuesFromPatch(result);
+      const existing = (await getDatabase()).weeks.find(
+        (w) => weekId(w) === id,
+      ) ?? null;
+      const policy = applyOpenSnapshotPolicy(
+        year,
+        week,
+        result.patch,
+        existing,
+        forceOpenLive,
+      );
+      const merged = {
+        ...result,
+        patch: policy.patch,
+        warnings: [...result.warnings, ...policy.warnings],
+      };
+      const values = valuesFromPatch(merged);
 
       if (!dryRun) {
         await ensureWeek(id);
-        await updateWeeklyRow(id, result.patch);
+        await updateWeeklyRow(id, merged.patch);
         await setTicketsBreakdown(
           weekKey(year, week),
           result.byType,
@@ -174,13 +267,14 @@ export async function POST(request: Request) {
           year,
           month: Math.min(12, Math.ceil(week / 4.345)),
           week,
-          ...result.patch,
+          ...merged.patch,
         } as never);
 
       return NextResponse.json({
         ok: true,
         mode: "mock",
         dryRun,
+        openMode: policy.openMode,
         weekId: id,
         year,
         week,
@@ -188,7 +282,7 @@ export async function POST(request: Request) {
         excelBaseline: excelBaseline(year, week),
         dashboard: dryRun ? null : buildWeekDashboard(db, row),
         jql: result.jql,
-        warnings: result.warnings,
+        warnings: merged.warnings,
         probe: result.probe,
         diagnostics: result.diagnostics,
       });
@@ -206,11 +300,25 @@ export async function POST(request: Request) {
     }
 
     const result = await fetchJiraWeekStats(year, week, conn);
-    const values = valuesFromPatch(result);
+    await ensureWeek(id);
+    const existing =
+      (await getDatabase()).weeks.find((w) => weekId(w) === id) ?? null;
+    const policy = applyOpenSnapshotPolicy(
+      year,
+      week,
+      result.patch,
+      existing,
+      forceOpenLive,
+    );
+    const merged = {
+      ...result,
+      patch: policy.patch,
+      warnings: [...result.warnings, ...policy.warnings],
+    };
+    const values = valuesFromPatch(merged);
 
     if (!dryRun) {
-      await ensureWeek(id);
-      await updateWeeklyRow(id, result.patch);
+      await updateWeeklyRow(id, merged.patch);
       await setTicketsBreakdown(
         weekKey(year, week),
         result.byType,
@@ -225,13 +333,14 @@ export async function POST(request: Request) {
         year,
         month: Math.min(12, Math.ceil(week / 4.345)),
         week,
-        ...result.patch,
+        ...merged.patch,
       } as never);
 
     return NextResponse.json({
       ok: true,
       mode: "jira",
       dryRun,
+      openMode: policy.openMode,
       weekId: id,
       year,
       week,
@@ -239,9 +348,13 @@ export async function POST(request: Request) {
       excelBaseline: excelBaseline(year, week),
       dashboard: dryRun ? null : buildWeekDashboard(db, row),
       jql: result.jql,
-      warnings: result.warnings,
+      warnings: merged.warnings,
       probe: result.probe,
-      diagnostics: result.diagnostics,
+      diagnostics: {
+        ...result.diagnostics,
+        openCountLive: result.diagnostics.openCount,
+        openCountStored: values.demandesNonResoluesHebdo,
+      },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Erreur Jira";

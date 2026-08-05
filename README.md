@@ -50,7 +50,11 @@ Dans l'UI **Sync Jira** : URL du site + email Atlassian + [API token](https://id
 
 Heures ouvrées = hors week-ends et jours fériés belges, fuseau **Europe/Brussels** (comme n8n / site Jira).
 
-Les « non résolues » Excel sont un stock de fin de semaine ; la sync Jira renvoie le snapshot ouvert **au moment du test** (comme n8n).
+Les « non résolues » :
+- **semaine en cours** → snapshot live à chaque sync
+- **semaines passées** → figées le **dimanche 23:59 Europe/Brussels** par cron Vercel (`/api/jira/cron/snapshot-open`), puis conservées
+
+Définir `CRON_SECRET` + credentials Jira (`JIRA_*`) sur Vercel. Cron UTC : `55 21 * * 0` et `55 22 * * 0` (couvre CET/CEST).
 
 Variables d'env optionnelles : voir `.env.example`. Sur Vercel, définir `JIRA_COOKIE_SECRET`.
 
