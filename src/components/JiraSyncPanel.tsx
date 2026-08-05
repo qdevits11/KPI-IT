@@ -114,6 +114,11 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
   });
   const [reqFrom, setReqFrom] = useState(2);
   const [reqTo, setReqTo] = useState(31);
+  const [importParts, setImportParts] = useState({
+    assignee: true,
+    requester: true,
+    type: false,
+  });
   const [reqProgress, setReqProgress] = useState<{
     current: number;
     total: number;
@@ -311,13 +316,28 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     });
   }
 
-  async function syncRequestersRange(opts: { useMock: boolean }) {
+  async function syncBreakdownRange(opts: { useMock: boolean }) {
     const from = Math.min(reqFrom, reqTo);
     const to = Math.max(reqFrom, reqTo);
     if (from < 1 || to > 53) {
       setError("Plage de semaines invalide (1–53).");
       return;
     }
+    const parts = (
+      [
+        importParts.type ? "type" : null,
+        importParts.assignee ? "assignee" : null,
+        importParts.requester ? "requester" : null,
+      ] as const
+    ).filter((p): p is "type" | "assignee" | "requester" => p != null);
+
+    if (parts.length === 0) {
+      setError(
+        "Cochez au moins une ventilation (responsable, demandeur ou type).",
+      );
+      return;
+    }
+
     setError(null);
     setResult(null);
     setReqBusy(true);
@@ -325,13 +345,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     let ok = 0;
     let failed = 0;
     let lastError: string | undefined;
-    setReqProgress({
-      current: 0,
-      total,
-      weekId: `${year}-S${String(from).padStart(2, "0")}`,
-      ok: 0,
-      failed: 0,
-    });
+    let sampleAssignees: string[] = [];
 
     for (let w = from; w <= to; w++) {
       const weekIdLabel = `${year}-S${String(w).padStart(2, "0")}`;
@@ -350,6 +364,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           body: JSON.stringify({
             year,
             week: w,
+            parts,
             useMock: opts.useMock,
             dryRun: false,
           }),
@@ -360,6 +375,10 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           lastError = `${weekIdLabel}: ${json.error ?? "échec"}`;
         } else {
           ok += 1;
+          const row = json.results?.[0];
+          if (row?.sampleAssignees?.length && !sampleAssignees.length) {
+            sampleAssignees = row.sampleAssignees;
+          }
         }
       } catch (err) {
         failed += 1;
@@ -379,24 +398,58 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     }
 
     setReqBusy(false);
+    const partsLabel = parts
+      .map((p) =>
+        p === "assignee"
+          ? "responsables"
+          : p === "requester"
+            ? "demandeurs"
+            : "types",
+      )
+      .join(", ");
     setResult(
-      `Demandeurs S${String(from).padStart(2, "0")}–S${String(to).padStart(2, "0")} : ${ok} OK` +
+      `Import ${partsLabel} S${String(from).padStart(2, "0")}–S${String(to).padStart(2, "0")} : ${ok} OK` +
         (failed ? `, ${failed} échec(s)` : "") +
-        " — KPI / types / assignés inchangés.",
+        (sampleAssignees.length
+          ? ` — ex. responsables : ${sampleAssignees.join(", ")}`
+          : "") +
+        " — KPI hebdo inchangés.",
     );
     if (failed && lastError) setError(lastError);
   }
 
-  async function clearRequesters(scope: "range" | "year") {
+  async function clearBreakdowns(scope: "range" | "year") {
     const from = Math.min(reqFrom, reqTo);
     const to = Math.max(reqFrom, reqTo);
+    const parts = (
+      [
+        importParts.type ? "type" : null,
+        importParts.assignee ? "assignee" : null,
+        importParts.requester ? "requester" : null,
+      ] as const
+    ).filter((p): p is "type" | "assignee" | "requester" => p != null);
+
+    if (parts.length === 0) {
+      setError("Cochez au moins une ventilation à effacer.");
+      return;
+    }
+
+    const partsLabel = parts
+      .map((p) =>
+        p === "assignee"
+          ? "responsables"
+          : p === "requester"
+            ? "demandeurs"
+            : "types",
+      )
+      .join(", ");
     const label =
       scope === "year"
         ? `toute l’année ${year}`
         : `S${String(from).padStart(2, "0")}–S${String(to).padStart(2, "0")} (${year})`;
     if (
       !window.confirm(
-        `Effacer les demandeurs pour ${label} ?\nLes KPI, types et responsables ne seront pas touchés.`,
+        `Effacer ${partsLabel} pour ${label} ?\nLes KPI hebdo ne seront pas touchés.`,
       )
     ) {
       return;
@@ -410,8 +463,8 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           scope === "year"
-            ? { action: "clear", year }
-            : { action: "clear", year, weekFrom: from, weekTo: to },
+            ? { action: "clear", year, parts }
+            : { action: "clear", year, weekFrom: from, weekTo: to, parts },
         ),
       });
       const json = await res.json();
@@ -421,7 +474,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
       }
       setReqProgress(null);
       setResult(
-        `Demandeurs effacés (${label}) : ${json.removed ?? 0} semaine(s) retirée(s), ${json.remaining ?? 0} restante(s).`,
+        `${partsLabel} effacés (${label}) : ${json.removed ?? 0} entrée(s) retirée(s).`,
       );
     } catch (err) {
       setError(
@@ -441,6 +494,8 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     reqFrom <= 53 &&
     reqTo >= 1 &&
     reqTo <= 53;
+  const anyImportPart =
+    importParts.assignee || importParts.requester || importParts.type;
 
   return (
     <div className="space-y-8">
@@ -796,12 +851,13 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
 
       <section className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
         <h2 className="font-[family-name:var(--font-display)] text-xl">
-          Importer les demandeurs (plage)
+          Importer ventilations (plage)
         </h2>
         <p className="text-sm text-[var(--muted)]">
-          Remplit uniquement la ventilation <strong>par demandeur</strong>{" "}
-          (reporter Jira) pour chaque semaine de la plage. Les KPI, types et
-          responsables ne sont pas modifiés.
+          Remplit les statistiques <strong>par responsable</strong>,{" "}
+          <strong>par demandeur</strong> et/ou <strong>par type</strong> à
+          partir des tickets créés Jira. Les KPI hebdo (créés, SLA, non
+          résolus) ne sont pas modifiés.
         </p>
 
         <div className="flex flex-wrap items-end gap-3">
@@ -845,37 +901,66 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           </p>
         </div>
 
+        <fieldset className="space-y-2 rounded-lg border border-[var(--line)] bg-[var(--wash)] p-3">
+          <legend className="px-1 text-xs uppercase tracking-wider text-[var(--muted)]">
+            Ventilations à importer / effacer
+          </legend>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <SaveCheck
+              label="Responsables (assignee)"
+              checked={importParts.assignee}
+              onChange={(v) =>
+                setImportParts((p) => ({ ...p, assignee: v }))
+              }
+            />
+            <SaveCheck
+              label="Demandeurs (reporter)"
+              checked={importParts.requester}
+              onChange={(v) =>
+                setImportParts((p) => ({ ...p, requester: v }))
+              }
+            />
+            <SaveCheck
+              label="Types de demande"
+              checked={importParts.type}
+              onChange={(v) => setImportParts((p) => ({ ...p, type: v }))}
+            />
+          </div>
+        </fieldset>
+
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={pending || reqBusy || !connected || !rangeValid}
-            onClick={() => void syncRequestersRange({ useMock: false })}
+            disabled={
+              pending || reqBusy || !connected || !rangeValid || !anyImportPart
+            }
+            onClick={() => void syncBreakdownRange({ useMock: false })}
             className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             {reqBusy
               ? `Import… ${reqProgress?.current ?? 0}/${reqProgress?.total ?? 0}`
-              : "Importer les demandeurs Jira"}
+              : "Importer depuis Jira"}
           </button>
           <button
             type="button"
-            disabled={pending || reqBusy || !rangeValid}
-            onClick={() => void syncRequestersRange({ useMock: true })}
+            disabled={pending || reqBusy || !rangeValid || !anyImportPart}
+            onClick={() => void syncBreakdownRange({ useMock: true })}
             className="rounded-md border border-[var(--line)] px-4 py-2 text-sm disabled:opacity-50"
           >
             Import démo (fictif)
           </button>
           <button
             type="button"
-            disabled={pending || reqBusy || !rangeValid}
-            onClick={() => void clearRequesters("range")}
+            disabled={pending || reqBusy || !rangeValid || !anyImportPart}
+            onClick={() => void clearBreakdowns("range")}
             className="rounded-md border border-[var(--crit)]/40 px-4 py-2 text-sm text-[var(--crit)] disabled:opacity-50"
           >
             Effacer la plage
           </button>
           <button
             type="button"
-            disabled={pending || reqBusy || year < 2000}
-            onClick={() => void clearRequesters("year")}
+            disabled={pending || reqBusy || year < 2000 || !anyImportPart}
+            onClick={() => void clearBreakdowns("year")}
             className="rounded-md border border-[var(--crit)]/40 px-4 py-2 text-sm text-[var(--crit)] disabled:opacity-50"
           >
             Effacer toute l’année
@@ -900,12 +985,15 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           </div>
         )}
 
-        {result && result.toLowerCase().includes("demandeur") && (
-          <p className="text-sm text-[var(--ok)]">{result}</p>
-        )}
-        {error && (
-          <p className="text-sm text-[var(--crit)]">{error}</p>
-        )}
+        {result &&
+          (result.toLowerCase().includes("responsable") ||
+            result.toLowerCase().includes("demandeur") ||
+            result.toLowerCase().includes("type") ||
+            result.toLowerCase().includes("import") ||
+            result.toLowerCase().includes("effac")) && (
+            <p className="text-sm text-[var(--ok)]">{result}</p>
+          )}
+        {error && <p className="text-sm text-[var(--crit)]">{error}</p>}
       </section>
 
       {jql && (

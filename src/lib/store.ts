@@ -313,62 +313,136 @@ export async function setTicketsBreakdown(
   await writeDb(db);
 }
 
+/** Met à jour sélectivement type / assigné / demandeur pour une semaine. */
+export async function patchTicketsBreakdown(
+  weekKey: string,
+  patch: {
+    byType?: Record<string, number>;
+    byAssignee?: Record<string, number>;
+    byRequester?: Record<string, number>;
+  },
+): Promise<void> {
+  const db = await ensureDb();
+  if (!db.ticketsByRequester) db.ticketsByRequester = {};
+  if (patch.byType !== undefined) db.ticketsByType[weekKey] = patch.byType;
+  if (patch.byAssignee !== undefined) {
+    db.ticketsByAssignee[weekKey] = patch.byAssignee;
+  }
+  if (patch.byRequester !== undefined) {
+    db.ticketsByRequester[weekKey] = patch.byRequester;
+  }
+  await writeDb(db);
+}
+
 /** Met à jour uniquement la ventilation par demandeur (reporter). */
 export async function setTicketsByRequester(
   weekKey: string,
   byRequester: Record<string, number>,
 ): Promise<void> {
+  await patchTicketsBreakdown(weekKey, { byRequester });
+}
+
+export type BreakdownPart = "type" | "assignee" | "requester";
+
+function filterWeekKeys(
+  keys: string[],
+  options?: { year?: number; weekFrom?: number; weekTo?: number },
+): Set<string> {
+  const year = options?.year;
+  const from = options?.weekFrom ?? 1;
+  const to = options?.weekTo ?? 53;
+  const lo = Math.min(from, to);
+  const hi = Math.max(from, to);
+  const remove = new Set<string>();
+  for (const key of keys) {
+    const m = key.match(/^(\d{4})-S(\d{2})$/);
+    if (!m) continue;
+    const y = Number(m[1]);
+    const w = Number(m[2]);
+    const inYear = year == null || y === year;
+    const inRange =
+      options?.weekFrom == null && options?.weekTo == null
+        ? true
+        : w >= lo && w <= hi;
+    // If only year given (no week range), clear whole year
+    const weekOk =
+      options?.weekFrom != null || options?.weekTo != null ? inRange : true;
+    if (inYear && weekOk) remove.add(key);
+  }
+  return remove;
+}
+
+/**
+ * Efface des ventilations (type / assigné / demandeur).
+ */
+export async function clearTicketsBreakdown(options?: {
+  year?: number;
+  weekFrom?: number;
+  weekTo?: number;
+  parts?: BreakdownPart[];
+}): Promise<{ removed: number; remaining: number }> {
   const db = await ensureDb();
   if (!db.ticketsByRequester) db.ticketsByRequester = {};
-  db.ticketsByRequester[weekKey] = byRequester;
+  const parts: BreakdownPart[] =
+    options?.parts && options.parts.length > 0
+      ? options.parts
+      : ["requester"];
+
+  const collections: Record<
+    BreakdownPart,
+    Record<string, Record<string, number>>
+  > = {
+    type: db.ticketsByType,
+    assignee: db.ticketsByAssignee,
+    requester: db.ticketsByRequester,
+  };
+
+  let removed = 0;
+  let remaining = 0;
+
+  for (const part of parts) {
+    const bag = collections[part] ?? {};
+    const before = Object.keys(bag).length;
+    if (
+      options?.year == null &&
+      options?.weekFrom == null &&
+      options?.weekTo == null
+    ) {
+      collections[part] = {};
+      removed += before;
+    } else {
+      const toRemove = filterWeekKeys(Object.keys(bag), options);
+      const next: Record<string, Record<string, number>> = {};
+      for (const [key, value] of Object.entries(bag)) {
+        if (toRemove.has(key)) continue;
+        next[key] = value;
+      }
+      collections[part] = next;
+      removed += before - Object.keys(next).length;
+      remaining += Object.keys(next).length;
+    }
+  }
+
+  db.ticketsByType = collections.type;
+  db.ticketsByAssignee = collections.assignee;
+  db.ticketsByRequester = collections.requester;
   await writeDb(db);
+
+  if (parts.length === 1) {
+    remaining = Object.keys(collections[parts[0]]).length;
+  }
+
+  return { removed, remaining };
 }
 
 /**
  * Efface les ventilations demandeurs.
- * - sans filtre : tout
- * - year : uniquement l’année
- * - weekFrom/weekTo : plage ISO dans l’année
+ * @deprecated préférer clearTicketsBreakdown({ parts: ["requester"], ... })
  */
 export async function clearTicketsByRequester(options?: {
   year?: number;
   weekFrom?: number;
   weekTo?: number;
 }): Promise<{ removed: number; remaining: number }> {
-  const db = await ensureDb();
-  if (!db.ticketsByRequester) db.ticketsByRequester = {};
-  const before = Object.keys(db.ticketsByRequester).length;
-
-  if (
-    options?.year == null &&
-    options?.weekFrom == null &&
-    options?.weekTo == null
-  ) {
-    db.ticketsByRequester = {};
-  } else {
-    const year = options.year;
-    const from = options.weekFrom ?? 1;
-    const to = options.weekTo ?? 53;
-    const lo = Math.min(from, to);
-    const hi = Math.max(from, to);
-    const next: Record<string, Record<string, number>> = {};
-    for (const [key, value] of Object.entries(db.ticketsByRequester)) {
-      const m = key.match(/^(\d{4})-S(\d{2})$/);
-      if (!m) {
-        next[key] = value;
-        continue;
-      }
-      const y = Number(m[1]);
-      const w = Number(m[2]);
-      const inYear = year == null || y === year;
-      const inRange = w >= lo && w <= hi;
-      if (inYear && inRange) continue;
-      next[key] = value;
-    }
-    db.ticketsByRequester = next;
-  }
-
-  await writeDb(db);
-  const remaining = Object.keys(db.ticketsByRequester).length;
-  return { removed: before - remaining, remaining };
+  return clearTicketsBreakdown({ ...options, parts: ["requester"] });
 }

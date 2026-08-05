@@ -10,14 +10,21 @@ function authHeader(conn: JiraConnection): string {
   return `Basic ${Buffer.from(`${conn.email}:${conn.apiToken}`).toString("base64")}`;
 }
 
+interface JiraUser {
+  displayName?: string;
+  emailAddress?: string;
+  accountId?: string;
+}
+
 interface JiraIssue {
   key: string;
   fields: {
     created: string;
     resolutiondate: string | null;
     issuetype?: { name: string };
-    assignee?: { displayName: string } | null;
-    reporter?: { displayName: string } | null;
+    assignee?: JiraUser | null;
+    reporter?: JiraUser | null;
+    creator?: JiraUser | null;
     labels?: string[];
     components?: { name: string }[];
     [custom: string]: unknown;
@@ -187,6 +194,7 @@ function normalizeIssues(raw: unknown[] | undefined): JiraIssue[] {
         issuetype: fieldsObj.issuetype as JiraIssue["fields"]["issuetype"],
         assignee: fieldsObj.assignee as JiraIssue["fields"]["assignee"],
         reporter: fieldsObj.reporter as JiraIssue["fields"]["reporter"],
+        creator: fieldsObj.creator as JiraIssue["fields"]["creator"],
         labels: fieldsObj.labels as string[] | undefined,
         components: fieldsObj.components as { name: string }[] | undefined,
         ...fieldsObj,
@@ -489,6 +497,15 @@ export async function testJiraConnection(conn: JiraConnection): Promise<{
   }
 }
 
+function personName(user: JiraUser | null | undefined, fallback: string): string {
+  if (!user) return fallback;
+  const name =
+    user.displayName?.trim() ||
+    user.emailAddress?.trim() ||
+    user.accountId?.trim();
+  return name || fallback;
+}
+
 function categoryOf(
   issue: JiraIssue,
   field: JiraConnection["categoryField"],
@@ -662,9 +679,12 @@ export async function fetchJiraWeekStats(
   for (const issue of createdIssues) {
     const cat = categoryOf(issue, connection.categoryField);
     byType[cat] = (byType[cat] ?? 0) + 1;
-    const who = issue.fields.assignee?.displayName ?? "Non assigné";
+    const who = personName(issue.fields.assignee, "Non assigné");
     byAssignee[who] = (byAssignee[who] ?? 0) + 1;
-    const requester = issue.fields.reporter?.displayName ?? "Inconnu";
+    const requester = personName(
+      issue.fields.reporter ?? issue.fields.creator,
+      "Inconnu",
+    );
     byRequester[requester] = (byRequester[requester] ?? 0) + 1;
   }
 
@@ -797,21 +817,30 @@ export async function fetchJiraCreatedBreakdown(
 
   const jql = buildWeekJql(connection, year, week);
   const warnings: string[] = [];
-  const createdIssues = await searchAll(
-    connection,
-    jql.created,
-    "created,assignee,reporter,labels,components,issuetype",
-  ).catch((err: Error) => {
-    warnings.push(`Search créés: ${err.message.slice(0, 160)}`);
-    return [] as JiraIssue[];
-  });
+  // *all : plus fiable que la liste de champs (sinon assignee/reporter parfois absents)
+  let createdIssues = await searchAll(connection, jql.created, "*all").catch(
+    (err: Error) => {
+      warnings.push(`Search créés (*all): ${err.message.slice(0, 160)}`);
+      return [] as JiraIssue[];
+    },
+  );
+  if (createdIssues.length === 0) {
+    createdIssues = await searchAll(
+      connection,
+      jql.created,
+      "created,assignee,reporter,creator,labels,components,issuetype",
+    ).catch((err: Error) => {
+      warnings.push(`Search créés (fields): ${err.message.slice(0, 160)}`);
+      return [] as JiraIssue[];
+    });
+  }
 
   const approx = await countJql(connection, jql.created).catch(() => 0);
   let createdCount = createdIssues.length;
   if (createdIssues.length === 0 && approx > 0) {
     createdCount = approx;
     warnings.push(
-      `Search/jql a renvoyé 0 issue mais approximate-count = ${approx}. Répartition demandeurs indisponible.`,
+      `Search/jql a renvoyé 0 issue mais approximate-count = ${approx}. Répartition type/responsable/demandeur indisponible.`,
     );
   } else if (approx > createdIssues.length && createdIssues.length > 0) {
     createdCount = approx;
@@ -826,10 +855,23 @@ export async function fetchJiraCreatedBreakdown(
   for (const issue of createdIssues) {
     const cat = categoryOf(issue, connection.categoryField);
     byType[cat] = (byType[cat] ?? 0) + 1;
-    const who = issue.fields.assignee?.displayName ?? "Non assigné";
+    const who = personName(issue.fields.assignee, "Non assigné");
     byAssignee[who] = (byAssignee[who] ?? 0) + 1;
-    const requester = issue.fields.reporter?.displayName ?? "Inconnu";
+    const requester = personName(
+      issue.fields.reporter ?? issue.fields.creator,
+      "Inconnu",
+    );
     byRequester[requester] = (byRequester[requester] ?? 0) + 1;
+  }
+
+  if (
+    createdIssues.length > 0 &&
+    Object.keys(byAssignee).length === 1 &&
+    byAssignee["Non assigné"]
+  ) {
+    warnings.push(
+      "Tous les tickets sont « Non assigné » — vérifiez le champ assignee dans Jira.",
+    );
   }
 
   return {
