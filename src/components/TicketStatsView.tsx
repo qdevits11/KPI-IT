@@ -2,12 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import type { TicketStatDimension, TicketStatsPayload } from "@/lib/types";
+import { StatsEvolutionChart } from "./StatsEvolutionChart";
 
 interface StatsResponse {
   year: number;
   years: number[];
   stats: TicketStatsPayload;
 }
+
+type ViewMode = "ranking" | "matrix" | "chart";
+
+const VIEW_OPTIONS: Array<{ id: ViewMode; label: string }> = [
+  { id: "ranking", label: "Classement" },
+  { id: "chart", label: "Graphique" },
+  { id: "matrix", label: "Matrice" },
+];
 
 function weekLabel(weekKey: string): string {
   const m = weekKey.match(/S(\d{2})$/);
@@ -30,7 +39,7 @@ export function TicketStatsView({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState("");
-  const [showMatrix, setShowMatrix] = useState(false);
+  const [view, setView] = useState<ViewMode>("ranking");
 
   const load = useCallback(
     async (y: number) => {
@@ -102,13 +111,26 @@ export function TicketStatsView({
               className="w-40 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 text-[var(--ink)] sm:w-48"
             />
           </label>
-          <button
-            type="button"
-            onClick={() => setShowMatrix((v) => !v)}
-            className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--ink-soft)] transition-colors hover:bg-[var(--wash)]"
+          <div
+            role="group"
+            aria-label="Mode d’affichage"
+            className="flex rounded-md border border-[var(--line)] bg-[var(--surface)] p-0.5"
           >
-            {showMatrix ? "Vue classement" : "Matrice hebdo"}
-          </button>
+            {VIEW_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setView(opt.id)}
+                className={`rounded px-2.5 py-1.5 text-sm transition-colors ${
+                  view === opt.id
+                    ? "bg-[var(--ink)] text-[var(--paper)]"
+                    : "text-[var(--muted)] hover:text-[var(--ink)]"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -157,7 +179,13 @@ export function TicketStatsView({
                 ? " Synchronisez Jira pour peupler les demandeurs (reporter)."
                 : " Vérifiez le seed Excel ou une sync Jira."}
             </p>
-          ) : showMatrix ? (
+          ) : view === "chart" ? (
+            <StatsEvolutionChart
+              weeks={data.stats.weeks}
+              rows={filtered}
+              weekTotals={data.stats.weekTotals}
+            />
+          ) : view === "matrix" ? (
             <div className="overflow-x-auto rounded-xl border border-[var(--line)] bg-[var(--surface)]">
               <table className="min-w-full border-collapse text-sm">
                 <thead>
