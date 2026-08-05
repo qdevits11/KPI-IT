@@ -664,9 +664,6 @@ export async function fetchJiraWeekStats(
   }
 
   warnings.push(
-    "Non résolues = snapshot actuel (comme n8n au moment de la sync), pas le stock Excel de fin de semaine historique.",
-  );
-  warnings.push(
     "SLA calculées en heures ouvrées Europe/Brussels (week-ends + fériés BE exclus), seuil 24h / 48h.",
   );
 

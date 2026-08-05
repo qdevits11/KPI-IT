@@ -65,6 +65,7 @@ function emptyWeek(year: number, month: number, week: number): WeeklyRow {
     ticketsHorsSlaPriseEnCharge: null,
     demandesItHebdo: null,
     demandesNonResoluesHebdo: null,
+    openFrozenAt: null,
     informations: "",
     reaction: "",
     jiraSyncedAt: null,
@@ -94,6 +95,9 @@ export function seedDatabase(): AppDatabase {
     ticketsHorsSlaPriseEnCharge: w.ticketsHorsSlaPriseEnCharge,
     demandesItHebdo: w.demandesItHebdo,
     demandesNonResoluesHebdo: w.demandesNonResoluesHebdo,
+    // Valeurs Excel = stock déjà figé (ne pas écraser par un snapshot live)
+    openFrozenAt:
+      w.demandesNonResoluesHebdo != null ? "excel-import" : null,
     informations: w.informations,
     reaction: w.reaction,
     updatedAt: new Date().toISOString(),
