@@ -10,13 +10,16 @@ import {
 } from "@/lib/jira-auth";
 import { testJiraConnection } from "@/lib/jira";
 import { supabaseConfigured } from "@/lib/supabase-db";
+import { atlassianOAuthConfigured } from "@/lib/jira-oauth";
 
 export async function GET() {
   const { connection, source } = await resolveJiraConnectionSource();
   return NextResponse.json({
     connected: Boolean(connection),
     source,
+    authMode: connection?.authMode ?? null,
     supabaseConfigured: supabaseConfigured(),
+    oauthConfigured: atlassianOAuthConfigured(),
     connection: connection ? sanitizeConnection(connection) : null,
     defaults: DEFAULT_JIRA_SETTINGS,
   });
@@ -54,6 +57,7 @@ export async function POST(request: Request) {
     baseUrl,
     email,
     apiToken,
+    authMode: "basic",
     jqlBase: body.jqlBase?.trim() || DEFAULT_JIRA_SETTINGS.jqlBase,
     openStatusJql:
       body.openStatusJql?.trim() || DEFAULT_JIRA_SETTINGS.openStatusJql,

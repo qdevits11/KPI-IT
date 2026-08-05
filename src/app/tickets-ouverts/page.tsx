@@ -1,5 +1,5 @@
 import { OpenTicketsView } from "@/components/OpenTicketsView";
-import { resolveJiraConnection } from "@/lib/jira-auth";
+import { resolveFreshJiraConnection } from "@/lib/jira-oauth";
 import { fetchOpenTicketsSnapshot } from "@/lib/jira-tickets";
 import type { OpenTicketsSnapshot } from "@/lib/jira-tickets";
 
@@ -9,10 +9,10 @@ export default async function TicketsOuvertsPage() {
   let initial: OpenTicketsSnapshot | null = null;
   let initialError: string | null = null;
 
-  const conn = await resolveJiraConnection();
+  const conn = await resolveFreshJiraConnection();
   if (!conn) {
     initialError =
-      "Connectez d’abord votre compte Jira (page Sync Jira).";
+      "Connectez d’abord votre compte Jira (page Sync Jira — OAuth Microsoft/Atlassian ou token API).";
   } else {
     try {
       initial = await fetchOpenTicketsSnapshot(conn);

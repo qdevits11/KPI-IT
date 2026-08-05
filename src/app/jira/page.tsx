@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { JiraSyncPanel } from "@/components/JiraSyncPanel";
 import { currentWeekId } from "@/lib/store";
 
@@ -13,5 +14,9 @@ export default async function JiraPage({
     params.week && /^\d{4}-S\d{2}$/.test(params.week)
       ? params.week
       : currentWeekId();
-  return <JiraSyncPanel initialWeek={week} />;
+  return (
+    <Suspense fallback={<p className="text-sm text-[var(--muted)]">Chargement…</p>}>
+      <JiraSyncPanel initialWeek={week} />
+    </Suspense>
+  );
 }

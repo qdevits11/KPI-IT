@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { Fragment } from "react";
 import type {
   TicketListItem,
   TicketSearchFilter,
 } from "@/lib/jira-tickets";
+import { TicketActionsPanel } from "./TicketActionsPanel";
 
 export type DrilldownQuery = TicketSearchFilter;
 
@@ -84,6 +86,7 @@ export function TicketDrilldown({
   const [localAssignee, setLocalAssignee] = useState(query.assignee ?? "");
   const [localRequester, setLocalRequester] = useState(query.requester ?? "");
   const [textQuery, setTextQuery] = useState("");
+  const [actionKey, setActionKey] = useState<string | null>(null);
 
   const load = useCallback(async (filter: DrilldownQuery) => {
     setError(null);
@@ -282,42 +285,57 @@ export function TicketDrilldown({
               </thead>
               <tbody>
                 {filtered.map((t) => (
-                  <tr
-                    key={t.key}
-                    className="border-b border-[var(--line)]/50 hover:bg-[var(--wash)]/50"
-                  >
-                    <td className="px-2 py-2 align-top">
-                      <a
-                        href={t.browseUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-medium text-[var(--accent-deep)] hover:underline"
-                      >
-                        {t.key}
-                      </a>
-                      <p className="mt-0.5 max-w-xs text-xs text-[var(--ink-soft)] line-clamp-2">
-                        {t.summary}
-                      </p>
-                    </td>
-                    <td className="px-2 py-2 align-top text-[var(--ink-soft)]">
-                      {t.type}
-                    </td>
-                    <td className="px-2 py-2 align-top text-[var(--ink-soft)]">
-                      {t.assignee}
-                    </td>
-                    <td className="px-2 py-2 align-top text-[var(--ink-soft)]">
-                      {t.requester}
-                    </td>
-                    <td className="px-2 py-2 align-top tabular-nums text-[var(--muted)]">
-                      {formatCreated(t.created)}
-                    </td>
-                    <td className="px-2 py-2 align-top tabular-nums text-[var(--ink)]">
-                      {formatAge(t.ageDays)}
-                    </td>
-                    <td className="px-2 py-2 align-top text-[var(--muted)]">
-                      {t.status}
-                    </td>
-                  </tr>
+                  <Fragment key={t.key}>
+                    <tr className="border-b border-[var(--line)]/50 hover:bg-[var(--wash)]/50">
+                      <td className="px-2 py-2 align-top">
+                        <a
+                          href={t.browseUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-medium text-[var(--accent-deep)] hover:underline"
+                        >
+                          {t.key}
+                        </a>
+                        <p className="mt-0.5 max-w-xs text-xs text-[var(--ink-soft)] line-clamp-2">
+                          {t.summary}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActionKey((k) => (k === t.key ? null : t.key))
+                          }
+                          className="mt-1 text-xs font-medium text-[var(--accent-deep)] hover:underline"
+                        >
+                          {actionKey === t.key ? "Masquer actions" : "Gérer"}
+                        </button>
+                      </td>
+                      <td className="px-2 py-2 align-top text-[var(--ink-soft)]">
+                        {t.type}
+                      </td>
+                      <td className="px-2 py-2 align-top text-[var(--ink-soft)]">
+                        {t.assignee}
+                      </td>
+                      <td className="px-2 py-2 align-top text-[var(--ink-soft)]">
+                        {t.requester}
+                      </td>
+                      <td className="px-2 py-2 align-top tabular-nums text-[var(--muted)]">
+                        {formatCreated(t.created)}
+                      </td>
+                      <td className="px-2 py-2 align-top tabular-nums text-[var(--ink)]">
+                        {formatAge(t.ageDays)}
+                      </td>
+                      <td className="px-2 py-2 align-top text-[var(--muted)]">
+                        {t.status}
+                      </td>
+                    </tr>
+                    {actionKey === t.key && (
+                      <tr className="border-b border-[var(--line)]/50">
+                        <td colSpan={7} className="px-2 py-2">
+                          <TicketActionsPanel issueKey={t.key} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

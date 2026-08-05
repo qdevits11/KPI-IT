@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, Fragment } from "react";
 import Link from "next/link";
 import type {
   AssigneeOpenGroup,
@@ -12,6 +12,7 @@ import {
   TicketDrilldown,
   type DrilldownQuery,
 } from "./TicketDrilldown";
+import { TicketActionsPanel } from "./TicketActionsPanel";
 
 function formatAge(days: number): string {
   if (days <= 0) return "< 1 j";
@@ -45,6 +46,7 @@ function PersonPanel({
   onDrill: (query: DrilldownQuery, tickets?: TicketListItem[]) => void;
 }) {
   const [open, setOpen] = useState(group.name === "Non assigné");
+  const [actionKey, setActionKey] = useState<string | null>(null);
   const typeEntries = Object.entries(group.byType).sort((a, b) => b[1] - a[1]);
   const maxType = Math.max(...typeEntries.map(([, n]) => n), 1);
 
@@ -121,33 +123,48 @@ function PersonPanel({
               </thead>
               <tbody>
                 {group.tickets.map((t) => (
-                  <tr
-                    key={t.key}
-                    className="border-b border-[var(--line)]/40 last:border-0"
-                  >
-                    <td className="py-1.5 pr-3 align-top">
-                      <a
-                        href={t.browseUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-medium text-[var(--accent-deep)] hover:underline"
-                      >
-                        {t.key}
-                      </a>
-                      <p className="max-w-xs text-xs text-[var(--ink-soft)] line-clamp-1">
-                        {t.summary}
-                      </p>
-                    </td>
-                    <td className="py-1.5 pr-3 align-top text-[var(--ink-soft)]">
-                      {t.type}
-                    </td>
-                    <td className="py-1.5 pr-3 align-top tabular-nums text-[var(--ink)]">
-                      {formatAge(t.ageDays)}
-                    </td>
-                    <td className="py-1.5 align-top text-[var(--muted)]">
-                      {t.status}
-                    </td>
-                  </tr>
+                  <Fragment key={t.key}>
+                    <tr className="border-b border-[var(--line)]/40 last:border-0">
+                      <td className="py-1.5 pr-3 align-top">
+                        <a
+                          href={t.browseUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-medium text-[var(--accent-deep)] hover:underline"
+                        >
+                          {t.key}
+                        </a>
+                        <p className="max-w-xs text-xs text-[var(--ink-soft)] line-clamp-1">
+                          {t.summary}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActionKey((k) => (k === t.key ? null : t.key))
+                          }
+                          className="mt-1 text-xs font-medium text-[var(--accent-deep)] hover:underline"
+                        >
+                          {actionKey === t.key ? "Masquer" : "Gérer"}
+                        </button>
+                      </td>
+                      <td className="py-1.5 pr-3 align-top text-[var(--ink-soft)]">
+                        {t.type}
+                      </td>
+                      <td className="py-1.5 pr-3 align-top tabular-nums text-[var(--ink)]">
+                        {formatAge(t.ageDays)}
+                      </td>
+                      <td className="py-1.5 align-top text-[var(--muted)]">
+                        {t.status}
+                      </td>
+                    </tr>
+                    {actionKey === t.key && (
+                      <tr className="border-b border-[var(--line)]/40">
+                        <td colSpan={4} className="py-2">
+                          <TicketActionsPanel issueKey={t.key} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

@@ -12,6 +12,7 @@ function sampleConn(overrides: Partial<JiraConnection> = {}): JiraConnection {
     baseUrl: "https://coverseal.atlassian.net",
     email: "it@coverseal.com",
     apiToken: "secret-token-xyz",
+    authMode: "basic",
     ...DEFAULT_JIRA_SETTINGS,
     connectedAt: "2026-08-05T12:00:00.000Z",
     ...overrides,

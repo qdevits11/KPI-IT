@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
 import { WeekSelector } from "./WeekSelector";
 
 interface WeekOption {
@@ -11,6 +12,8 @@ interface WeekOption {
 interface ConnectionView {
   baseUrl: string;
   email: string;
+  authMode?: "basic" | "oauth";
+  accountDisplayName?: string;
   jqlBase: string;
   openStatusJql: string;
   datePriseEnChargeJql: string;
@@ -75,6 +78,7 @@ function parseInitialWeek(initialWeek: string): { year: number; week: number } {
 }
 
 export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
+  const searchParams = useSearchParams();
   const initial = parseInitialWeek(initialWeek);
   const [year, setYear] = useState(initial.year);
   const [week, setWeek] = useState(initial.week);
@@ -85,6 +89,8 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     null,
   );
   const [supabaseReady, setSupabaseReady] = useState(false);
+  const [oauthReady, setOauthReady] = useState(false);
+  const [authMode, setAuthMode] = useState<"basic" | "oauth" | null>(null);
   const [connection, setConnection] = useState<ConnectionView | null>(null);
   const [jql, setJql] = useState<JqlPreview | null>(null);
   const [dateRange, setDateRange] = useState<{
@@ -174,6 +180,8 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
     setConnected(Boolean(connect.connected));
     setSource(connect.source);
     setSupabaseReady(Boolean(connect.supabaseConfigured));
+    setOauthReady(Boolean(connect.oauthConfigured));
+    setAuthMode(connect.authMode ?? connect.connection?.authMode ?? null);
     setConnection(connect.connection);
     setJql(sync.previewJql);
     setDateRange(sync.dateRange ?? null);
@@ -205,6 +213,24 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
       void loadMeta();
     });
   }, [loadMeta]);
+
+  useEffect(() => {
+    const oauth = searchParams.get("oauth");
+    if (!oauth) return;
+    if (oauth === "ok") {
+      setResult(
+        "Connexion Atlassian OK — vous pouvez modifier statut, assigné et type sur les tickets.",
+      );
+      startTransition(() => {
+        void loadMeta();
+      });
+    } else if (oauth === "error") {
+      setError(
+        searchParams.get("message") ||
+          "Échec de la connexion Atlassian / Microsoft",
+      );
+    }
+  }, [searchParams, loadMeta]);
 
   function applyWeekId(id: string) {
     const m = id.match(/^(\d{4})-S(\d{2})$/);
@@ -652,6 +678,7 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
             {connected ? (
               <span className="text-[var(--ok)]">
                 Connecté
+                {authMode === "oauth" ? " · OAuth" : ""}
                 {source === "supabase"
                   ? " (Supabase)"
                   : source === "cookie"
@@ -659,7 +686,9 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
                     : source === "env"
                       ? " (env)"
                       : ""}
-                {connection ? ` — ${connection.email}` : ""}
+                {connection
+                  ? ` — ${connection.accountDisplayName || connection.email}`
+                  : ""}
               </span>
             ) : (
               <span className="text-[var(--warn)]">Non connecté</span>
@@ -667,11 +696,40 @@ export function JiraSyncPanel({ initialWeek }: { initialWeek: string }) {
           </p>
         </div>
 
+        <div className="rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/5 p-4 space-y-2">
+          <p className="text-sm font-medium text-[var(--ink)]">
+            Connexion personnelle (Microsoft / Atlassian)
+          </p>
+          <p className="text-xs text-[var(--muted)]">
+            Pour changer le statut, l’assigné ou le type d’un ticket, connectez
+            votre compte. Sur l’écran Atlassian, choisissez Microsoft si votre
+            organisation l’utilise. Requiert une app OAuth 2.0
+            (ATLASSIAN_CLIENT_ID / SECRET sur Vercel).
+          </p>
+          {oauthReady ? (
+            <a
+              href="/api/jira/oauth/start"
+              className="inline-flex rounded-md bg-[var(--ink)] px-4 py-2 text-sm font-medium text-[var(--paper)] hover:opacity-90"
+            >
+              Se connecter avec Microsoft / Atlassian
+            </a>
+          ) : (
+            <p className="text-xs text-[var(--warn)]">
+              OAuth non configuré — ajoutez ATLASSIAN_CLIENT_ID et
+              ATLASSIAN_CLIENT_SECRET, callback{" "}
+              <code className="text-[10px]">
+                …/api/jira/oauth/callback
+              </code>
+              .
+            </p>
+          )}
+        </div>
+
         <p className="text-xs text-[var(--muted)]">
-          Email + token API enregistrés{" "}
+          Alternative : email + token API (sync KPI / lectures). Enregistrés{" "}
           {supabaseReady
-            ? "chiffrés dans Supabase (partagés entre périphériques)."
-            : "dans un cookie navigateur (appareil uniquement — configurez SUPABASE_* sur Vercel pour partager)."}{" "}
+            ? "chiffrés dans Supabase."
+            : "en cookie local."}{" "}
           Token :{" "}
           <a
             className="text-[var(--accent)] underline"

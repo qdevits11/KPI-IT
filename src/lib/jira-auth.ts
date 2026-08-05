@@ -11,10 +11,24 @@ export const JIRA_COOKIE = "kpi_jira_session";
 
 export type JiraConnectionSource = "supabase" | "cookie" | "env";
 
+export type JiraAuthMode = "basic" | "oauth";
+
 export interface JiraConnection {
   baseUrl: string;
   email: string;
+  /** Token API Atlassian (mode basic). Vide en mode OAuth. */
   apiToken: string;
+  /** basic = email+token API ; oauth = connexion Atlassian (SSO Microsoft possible). */
+  authMode: JiraAuthMode;
+  /** Bearer OAuth (mode oauth). */
+  accessToken?: string;
+  refreshToken?: string;
+  /** Cloud ID site Jira (mode oauth). */
+  cloudId?: string;
+  /** ISO expiry de accessToken. */
+  tokenExpiresAt?: string;
+  /** Nom affiché du compte OAuth. */
+  accountDisplayName?: string;
   /** Filtre JQL de base — n8n: project = CSD */
   jqlBase: string;
   /**
@@ -100,13 +114,24 @@ export function decryptConnection(token: string): JiraConnection | null {
 }
 
 /** Migre d'anciennes sessions (champs SLA JSM) vers le modèle n8n */
-function normalizeConnection(
+export function normalizeConnection(
   partial: Partial<JiraConnection> & {
     slaResolution?: string;
     slaFirstResponse?: string;
   },
 ): JiraConnection | null {
-  if (!partial.baseUrl || !partial.email || !partial.apiToken) return null;
+  const authMode: JiraAuthMode =
+    partial.authMode === "oauth" ||
+    (Boolean(partial.accessToken) && Boolean(partial.cloudId))
+      ? "oauth"
+      : "basic";
+
+  if (!partial.baseUrl) return null;
+  if (authMode === "oauth") {
+    if (!partial.accessToken || !partial.cloudId) return null;
+  } else if (!partial.email || !partial.apiToken) {
+    return null;
+  }
 
   const rawCategory = (partial.categoryField ?? "").trim();
   const rawCustom =
@@ -123,8 +148,14 @@ function normalizeConnection(
 
   return {
     baseUrl: partial.baseUrl.replace(/\/$/, ""),
-    email: partial.email,
-    apiToken: partial.apiToken,
+    email: partial.email?.trim() || partial.accountDisplayName || "oauth",
+    apiToken: authMode === "oauth" ? "" : partial.apiToken!,
+    authMode,
+    accessToken: authMode === "oauth" ? partial.accessToken : undefined,
+    refreshToken: authMode === "oauth" ? partial.refreshToken : undefined,
+    cloudId: authMode === "oauth" ? partial.cloudId : undefined,
+    tokenExpiresAt: authMode === "oauth" ? partial.tokenExpiresAt : undefined,
+    accountDisplayName: partial.accountDisplayName,
     jqlBase: partial.jqlBase || DEFAULT_JIRA_SETTINGS.jqlBase,
     openStatusJql: partial.openStatusJql || DEFAULT_JIRA_SETTINGS.openStatusJql,
     datePriseEnChargeJql:
@@ -253,6 +284,7 @@ function connectionFromEnv(): JiraConnection | null {
     baseUrl,
     email,
     apiToken,
+    authMode: "basic",
     jqlBase: process.env.JIRA_JQL_BASE ?? DEFAULT_JIRA_SETTINGS.jqlBase,
     openStatusJql:
       process.env.JIRA_OPEN_STATUS_JQL ?? DEFAULT_JIRA_SETTINGS.openStatusJql,
@@ -339,12 +371,28 @@ export async function resolveJiraConnectionSource(): Promise<{
   return { connection: null, source: null };
 }
 
-export function sanitizeConnection(
-  conn: JiraConnection,
-): Omit<JiraConnection, "apiToken"> & { hasToken: boolean } {
+export function sanitizeConnection(conn: JiraConnection): {
+  baseUrl: string;
+  email: string;
+  authMode: JiraAuthMode;
+  accountDisplayName?: string;
+  jqlBase: string;
+  openStatusJql: string;
+  datePriseEnChargeJql: string;
+  datePriseEnChargeFieldId: string;
+  slaPriseEnChargeHours: number;
+  slaClotureHours: number;
+  categoryField: JiraConnection["categoryField"];
+  categoryCustomFieldId: string;
+  connectedAt: string;
+  hasToken: boolean;
+  cloudId?: string;
+} {
   return {
     baseUrl: conn.baseUrl,
     email: conn.email,
+    authMode: conn.authMode ?? "basic",
+    accountDisplayName: conn.accountDisplayName,
     jqlBase: conn.jqlBase,
     openStatusJql: conn.openStatusJql,
     datePriseEnChargeJql: conn.datePriseEnChargeJql,
@@ -354,6 +402,22 @@ export function sanitizeConnection(
     categoryField: conn.categoryField,
     categoryCustomFieldId: conn.categoryCustomFieldId,
     connectedAt: conn.connectedAt,
-    hasToken: true,
+    hasToken: conn.authMode === "oauth" ? Boolean(conn.accessToken) : true,
+    cloudId: conn.cloudId,
   };
+}
+
+/** Base URL API (site direct ou gateway OAuth). */
+export function jiraApiBaseUrl(conn: JiraConnection): string {
+  if (conn.authMode === "oauth" && conn.cloudId) {
+    return `https://api.atlassian.com/ex/jira/${conn.cloudId}`;
+  }
+  return conn.baseUrl.replace(/\/$/, "");
+}
+
+export function jiraAuthHeaderValue(conn: JiraConnection): string {
+  if (conn.authMode === "oauth" && conn.accessToken) {
+    return `Bearer ${conn.accessToken}`;
+  }
+  return `Basic ${Buffer.from(`${conn.email}:${conn.apiToken}`).toString("base64")}`;
 }

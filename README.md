@@ -76,7 +76,9 @@ Les « non résolues » :
 
 Définir `CRON_SECRET` + credentials Jira (`JIRA_*`) sur Vercel. Cron UTC : `55 21 * * 0` et `55 22 * * 0` (couvre CET/CEST).
 
-Variables d'env optionnelles : voir `.env.example`. Sur Vercel, définir `JIRA_COOKIE_SECRET` (chiffrement) + `SUPABASE_*`. Le compte Jira (email + token) est stocké chiffré dans Supabase (`kpi_jira_connection`), partagé entre périphériques.
+Variables d'env optionnelles : voir `.env.example`. Sur Vercel, définir `JIRA_COOKIE_SECRET` (chiffrement) + `SUPABASE_*`. Le compte Jira (email + token ou OAuth) est stocké chiffré dans Supabase (`kpi_jira_connection`), partagé entre périphériques.
+
+Pour modifier tickets (statut, assigné, catégorie) : créez une app OAuth 2.0 sur [developer.atlassian.com](https://developer.atlassian.com/console/myapps/) avec scopes `read:jira-work`, `write:jira-work`, `read:jira-user`, `offline_access`, callback `https://VOTRE_DOMAINE/api/jira/oauth/callback`, puis `ATLASSIAN_CLIENT_ID` / `ATLASSIAN_CLIENT_SECRET`. Sur Sync Jira → « Se connecter avec Microsoft / Atlassian » (SSO Microsoft sur l’écran Atlassian).
 
 ## Scripts
 

@@ -1,14 +1,37 @@
 import type { WeeklyRow } from "./types";
 import { weekId } from "./types";
 import type { JiraConnection } from "./jira-auth";
-import { DEFAULT_JIRA_SETTINGS, resolveJiraConnection } from "./jira-auth";
+import {
+  DEFAULT_JIRA_SETTINGS,
+  jiraApiBaseUrl,
+  jiraAuthHeaderValue,
+  resolveJiraConnection,
+} from "./jira-auth";
 import { countOverBusinessSla } from "./business-hours";
 
 export type { JiraConnection };
 
-function authHeader(conn: JiraConnection): string {
-  return `Basic ${Buffer.from(`${conn.email}:${conn.apiToken}`).toString("base64")}`;
+async function jiraFetch(
+  conn: JiraConnection,
+  path: string,
+  init?: RequestInit,
+): Promise<Response> {
+  const base = jiraApiBaseUrl(conn);
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return fetch(`${base}${normalized}`, {
+    ...init,
+    headers: {
+      Authorization: jiraAuthHeaderValue(conn),
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+    cache: "no-store",
+  });
 }
+
+/** Export pour actions d’écriture tickets. */
+export { jiraFetch as jiraApiFetch };
 
 interface JiraUser {
   displayName?: string;
@@ -133,23 +156,6 @@ export function buildWeekJql(
     priseEnCharge: `${base} AND "${pec}" >= "${startDt}" AND "${pec}" < "${endDt}" ORDER BY created ASC`,
     resolved: `${base} AND resolutiondate >= "${startDt}" AND resolutiondate < "${endDt}" ORDER BY resolutiondate ASC`,
   };
-}
-
-async function jiraFetch(
-  conn: JiraConnection,
-  path: string,
-  init?: RequestInit,
-): Promise<Response> {
-  return fetch(`${conn.baseUrl}${path}`, {
-    ...init,
-    headers: {
-      Authorization: authHeader(conn),
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
 }
 
 interface SearchJqlResponse {
@@ -1038,6 +1044,7 @@ export function mockJiraWeekStats(
       baseUrl: "https://example.atlassian.net",
       email: "demo@example.com",
       apiToken: "x",
+      authMode: "basic",
       ...DEFAULT_JIRA_SETTINGS,
       connectedAt: new Date().toISOString(),
     },
