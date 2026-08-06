@@ -1,24 +1,21 @@
-import { Suspense } from "react";
-import { Dashboard } from "@/components/Dashboard";
+import { redirect } from "next/navigation";
 import { currentWeekId } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
+/** Redirection vers l’accueil unifié. */
 export default async function SemainePage({
   searchParams,
 }: {
-  searchParams: Promise<{ week?: string }>;
+  searchParams: Promise<{ week?: string; forbidden?: string }>;
 }) {
   const params = await searchParams;
   const week =
     params.week && /^\d{4}-S\d{2}$/.test(params.week)
       ? params.week
       : currentWeekId();
-  return (
-    <Suspense
-      fallback={<p className="text-sm text-[var(--muted)]">Chargement…</p>}
-    >
-      <Dashboard initialWeek={week} />
-    </Suspense>
-  );
+  const q = new URLSearchParams();
+  q.set("week", week);
+  if (params.forbidden) q.set("forbidden", params.forbidden);
+  redirect(`/?${q.toString()}`);
 }

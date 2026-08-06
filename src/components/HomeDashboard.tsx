@@ -2,27 +2,52 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import type { KpiValue, WeeklyRow } from "@/lib/types";
+import { useRouter, useSearchParams } from "next/navigation";
+import type { KpiValue, LogEvent, PhishingEvent, WeeklyRow } from "@/lib/types";
 import type { OpenTicketsSnapshot } from "@/lib/jira-tickets";
+import { WeekSelector } from "./WeekSelector";
 import {
   TicketDrilldown,
+  WeekEventsAndBreakdowns,
+  WeekKpiGrid,
+  WeekNotesSection,
+  WeekStatusBadge,
   type DrilldownQuery,
-} from "./TicketDrilldown";
+} from "./WeekDetailSections";
 import {
   QuickEncodeModal,
   type EncodeKind,
 } from "./QuickEncodeModal";
 
+interface WeekOption {
+  id: string;
+  label: string;
+}
+
+interface WeekMeta {
+  currentWeekId: string;
+  isCurrentWeek: boolean;
+  isCompleted: boolean;
+  isLive: boolean;
+  openFrozenAt: string | null;
+  jiraSyncedAt: string | null;
+  dateRangeLabel: string;
+}
+
 type KpisPayload = {
   week: WeeklyRow;
   kpis: KpiValue[];
-  meta: {
-    currentWeekId: string;
-    isCurrentWeek: boolean;
-    isLive: boolean;
-    dateRangeLabel: string;
-    jiraSyncedAt: string | null;
+  weeks: WeekOption[];
+  meta: WeekMeta;
+  events: {
+    automationsMetier: LogEvent[];
+    automationsOdoo: LogEvent[];
+    phishing: PhishingEvent[];
+    maintenances: LogEvent[];
   };
+  ticketsByType: Record<string, number>;
+  ticketsByAssignee: Record<string, number>;
+  ticketsByRequester: Record<string, number>;
 };
 
 function kpiValue(kpis: KpiValue[], id: string): number | null {
@@ -55,8 +80,8 @@ type ActionTileProps = {
   hint: string;
   tone?: "default" | "warn" | "crit" | "accent";
   onClick?: () => void;
-  href?: string;
   cta?: string;
+  disabled?: boolean;
 };
 
 function ActionTile({
@@ -65,8 +90,8 @@ function ActionTile({
   hint,
   tone = "default",
   onClick,
-  href,
   cta,
+  disabled,
 }: ActionTileProps) {
   const toneClass =
     tone === "crit"
@@ -97,7 +122,7 @@ function ActionTile({
         {formatCount(value)}
       </p>
       <p className="mt-2 text-sm text-[var(--ink-soft)]">{hint}</p>
-      {cta && (
+      {cta && !disabled && (
         <p className="mt-4 text-sm font-medium text-[var(--accent-deep)]">
           {cta} <span aria-hidden>→</span>
         </p>
@@ -105,14 +130,14 @@ function ActionTile({
     </>
   );
 
-  const className = `group flex h-full flex-col rounded-xl border bg-[var(--surface)] p-5 text-left transition-[transform,border-color,box-shadow] duration-300 hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-16px_rgba(19,32,51,0.35)] ${toneClass}`;
+  const className = `group flex h-full flex-col rounded-xl border bg-[var(--surface)] p-5 text-left transition-[transform,border-color,box-shadow] duration-300 ${
+    disabled
+      ? "opacity-90"
+      : "hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-16px_rgba(19,32,51,0.35)]"
+  } ${toneClass}`;
 
-  if (href) {
-    return (
-      <Link href={href} className={className}>
-        {inner}
-      </Link>
-    );
+  if (disabled || !onClick) {
+    return <div className={className}>{inner}</div>;
   }
 
   return (
@@ -132,7 +157,15 @@ const CURRENT_WEEK_SYNC_FIELDS = {
   ticketsByRequester: true,
 } as const;
 
-export function HomeDashboard() {
+export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const weekFromUrl = searchParams.get("week");
+  const selectedWeekId =
+    weekFromUrl && /^\d{4}-S\d{2}$/.test(weekFromUrl)
+      ? weekFromUrl
+      : initialWeek;
+
   const [kpis, setKpis] = useState<KpisPayload | null>(null);
   const [openSnap, setOpenSnap] = useState<OpenTicketsSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -143,20 +176,27 @@ export function HomeDashboard() {
   const [drill, setDrill] = useState<DrilldownQuery | null>(null);
   const [encodeKind, setEncodeKind] = useState<EncodeKind | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (weekId: string) => {
     setError(null);
     setOpenError(null);
-    const [kpisRes, openRes] = await Promise.all([
-      fetch("/api/kpis"),
-      fetch("/api/jira/open"),
-    ]);
 
+    const kpisRes = await fetch(`/api/kpis?week=${encodeURIComponent(weekId)}`);
     if (!kpisRes.ok) {
       setError("Impossible de charger les indicateurs de la semaine.");
-    } else {
-      setKpis((await kpisRes.json()) as KpisPayload);
+      setKpis(null);
+      return;
     }
 
+    const payload = (await kpisRes.json()) as KpisPayload;
+    setKpis(payload);
+
+    if (!payload.meta.isLive) {
+      setOpenSnap(null);
+      setOpenError(null);
+      return;
+    }
+
+    const openRes = await fetch("/api/jira/open");
     if (openRes.ok) {
       setOpenSnap((await openRes.json()) as OpenTicketsSnapshot);
     } else {
@@ -173,34 +213,38 @@ export function HomeDashboard() {
 
   useEffect(() => {
     startTransition(() => {
-      void load();
+      void load(selectedWeekId);
     });
-  }, [load]);
+  }, [selectedWeekId, load]);
+
+  function selectWeek(id: string) {
+    router.replace(`/?week=${encodeURIComponent(id)}`, { scroll: false });
+  }
 
   async function refreshAll() {
+    if (!kpis?.meta.isCurrentWeek) return;
     setSyncing(true);
     setMessage(null);
     try {
-      // Sync Jira réservée admin — sinon on recharge juste le stock live + KPI DB
-      if (kpis?.meta.currentWeekId) {
-        const syncRes = await fetch("/api/jira/sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            weekId: kpis.meta.currentWeekId,
-            fields: CURRENT_WEEK_SYNC_FIELDS,
-          }),
-        });
-        if (syncRes.ok) {
-          setMessage("Indicateurs actualisés depuis Jira.");
-        } else if (syncRes.status !== 403) {
-          const body = (await syncRes.json().catch(() => null)) as {
-            error?: string;
-          } | null;
-          setMessage(body?.error ?? "Sync Jira partielle — données rechargées.");
-        }
+      const syncRes = await fetch("/api/jira/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          weekId: selectedWeekId,
+          dryRun: false,
+          forceOpenLive: true,
+          saveFields: CURRENT_WEEK_SYNC_FIELDS,
+        }),
+      });
+      if (syncRes.ok) {
+        setMessage("Indicateurs actualisés depuis Jira.");
+      } else if (syncRes.status !== 403) {
+        const body = (await syncRes.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setMessage(body?.error ?? "Sync Jira partielle — données rechargées.");
       }
-      await load();
+      await load(selectedWeekId);
     } finally {
       setSyncing(false);
     }
@@ -208,6 +252,10 @@ export function HomeDashboard() {
 
   const list = kpis?.kpis ?? [];
   const week = kpis?.week;
+  const meta = kpis?.meta;
+  const isLive = meta?.isLive ?? false;
+  const isCurrentWeek = meta?.isCurrentWeek ?? false;
+
   const created = kpiValue(list, "demandes_it_hebdo");
   const openStock = kpiValue(list, "demandes_non_resolues_hebdo");
   const slaPec = kpiValue(list, "hors_sla_prise_en_charge");
@@ -218,29 +266,52 @@ export function HomeDashboard() {
   const maintenance = kpiValue(list, "maintenances_production");
 
   const busy = pending || syncing;
+  const weekLabel = week
+    ? `S${String(week.week).padStart(2, "0")} — ${week.year}`
+    : "…";
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-[var(--accent)]">
             Tableau de bord
           </p>
           <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl text-[var(--ink)] sm:text-4xl">
-            État actuel
+            {isCurrentWeek ? "État actuel" : `Semaine ${weekLabel}`}
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">
-            Vue d’ensemble pour agir : stock live, SLA de la semaine, et
-            encodage en un clic.{" "}
-            {kpis?.meta.dateRangeLabel
-              ? `Semaine en cours : ${kpis.meta.dateRangeLabel}.`
-              : null}
+            {isLive
+              ? "Vue d’ensemble pour agir : stock live, SLA et encodage en un clic."
+              : "Chiffres arrêtés pour la semaine sélectionnée — ventilations et détail KPI ci-dessous."}{" "}
+            {meta?.dateRangeLabel ? meta.dateRangeLabel : null}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <p className="text-xs text-[var(--muted)]">
-            Sync : {formatSyncedAt(kpis?.meta.jiraSyncedAt ?? null)}
-          </p>
+        <div className="flex flex-col items-start gap-3 sm:items-end">
+          {kpis && (
+            <WeekSelector
+              weeks={kpis.weeks}
+              value={selectedWeekId}
+              onChange={selectWeek}
+              currentWeekId={meta?.currentWeekId}
+            />
+          )}
+          {meta && (
+            <WeekStatusBadge
+              isLive={meta.isLive}
+              isCurrentWeek={meta.isCurrentWeek}
+              isCompleted={meta.isCompleted}
+              openFrozenAt={meta.openFrozenAt}
+            />
+          )}
+        </div>
+      </header>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-xs text-[var(--muted)]">
+          Sync Jira : {formatSyncedAt(meta?.jiraSyncedAt ?? null)}
+        </p>
+        {isCurrentWeek && (
           <button
             type="button"
             onClick={() => void refreshAll()}
@@ -249,14 +320,8 @@ export function HomeDashboard() {
           >
             {syncing ? "Actualisation…" : "Actualiser"}
           </button>
-          <Link
-            href="/semaine"
-            className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--ink-soft)] hover:text-[var(--ink)]"
-          >
-            Détail semaine
-          </Link>
-        </div>
-      </header>
+        )}
+      </div>
 
       {message && (
         <p className="rounded-md border border-[var(--ok)]/30 bg-[var(--ok)]/10 px-3 py-2 text-sm text-[var(--ok)]">
@@ -268,7 +333,7 @@ export function HomeDashboard() {
           {error}
         </p>
       )}
-      {openError && (
+      {openError && isLive && (
         <p className="rounded-md border border-[var(--warn)]/30 bg-[var(--warn)]/10 px-3 py-2 text-sm text-[var(--warn)]">
           {openError}
         </p>
@@ -278,143 +343,180 @@ export function HomeDashboard() {
         <p className="text-sm text-[var(--muted)]">Chargement…</p>
       )}
 
-      <section className="space-y-3">
-        <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
-          Tickets à traiter
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <ActionTile
-            label="Tickets ouverts"
-            value={openSnap?.total ?? openStock}
-            hint="Stock live Jira (tous statuts ouverts)"
-            tone="accent"
-            cta="Voir la liste"
-            onClick={() => setDrill({ scope: "open" })}
-          />
-          <ActionTile
-            label="Non attribués"
-            value={openSnap?.unassigned ?? null}
-            hint="Ouverts sans assigné — à répartir"
-            tone={(openSnap?.unassigned ?? 0) > 0 ? "warn" : "default"}
-            cta="Traiter"
-            onClick={() =>
-              setDrill({ scope: "open", assignee: "Non assigné" })
-            }
-          />
-          <ActionTile
-            label="Créés cette semaine"
-            value={created}
-            hint="Demandes IT ouvertes dans la semaine ISO"
-            cta="Voir la liste"
-            onClick={() =>
-              setDrill({
-                scope: "created",
-                weekId: kpis?.meta.currentWeekId,
-              })
-            }
-          />
-        </div>
-      </section>
+      {kpis && (
+        <>
+          <section className="space-y-3">
+            <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
+              Tickets à traiter
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <ActionTile
+                label="Tickets ouverts"
+                value={isLive ? (openSnap?.total ?? openStock) : openStock}
+                hint={
+                  isLive
+                    ? "Stock live Jira (tous statuts ouverts)"
+                    : "Stock figé en fin de semaine"
+                }
+                tone="accent"
+                cta={isLive ? "Voir la liste" : undefined}
+                onClick={
+                  isLive ? () => setDrill({ scope: "open" }) : undefined
+                }
+                disabled={!isLive}
+              />
+              {isLive && (
+                <ActionTile
+                  label="Non attribués"
+                  value={openSnap?.unassigned ?? null}
+                  hint="Ouverts sans assigné — à répartir"
+                  tone={(openSnap?.unassigned ?? 0) > 0 ? "warn" : "default"}
+                  cta="Traiter"
+                  onClick={() =>
+                    setDrill({ scope: "open", assignee: "Non assigné" })
+                  }
+                />
+              )}
+              <ActionTile
+                label="Créés cette semaine"
+                value={created}
+                hint="Demandes IT ouvertes dans la semaine ISO"
+                cta="Voir la liste"
+                onClick={() =>
+                  setDrill({
+                    scope: "created",
+                    weekId: selectedWeekId,
+                  })
+                }
+              />
+            </div>
+          </section>
 
-      <section className="space-y-3">
-        <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
-          SLA · semaine {week ? `S${String(week.week).padStart(2, "0")}` : "…"}
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <ActionTile
-            label="Hors SLA prise en charge"
-            value={slaPec}
-            hint="> 24 h ouvrées avant prise en charge"
-            tone={(slaPec ?? 0) > 0 ? "crit" : "default"}
-            cta="Voir la liste"
-            onClick={() =>
-              setDrill({
-                scope: "sla_pec",
-                weekId: kpis?.meta.currentWeekId,
-              })
-            }
-          />
-          <ActionTile
-            label="Hors SLA clôture"
-            value={slaClose}
-            hint="> 48 h ouvrées avant clôture"
-            tone={(slaClose ?? 0) > 0 ? "crit" : "default"}
-            cta="Voir la liste"
-            onClick={() =>
-              setDrill({
-                scope: "sla_cloture",
-                weekId: kpis?.meta.currentWeekId,
-              })
-            }
-          />
-        </div>
-      </section>
+          <section className="space-y-3">
+            <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
+              SLA · {weekLabel}
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <ActionTile
+                label="Hors SLA prise en charge"
+                value={slaPec}
+                hint="> 24 h ouvrées avant prise en charge"
+                tone={(slaPec ?? 0) > 0 ? "crit" : "default"}
+                cta="Voir la liste"
+                onClick={() =>
+                  setDrill({
+                    scope: "sla_pec",
+                    weekId: selectedWeekId,
+                  })
+                }
+              />
+              <ActionTile
+                label="Hors SLA clôture"
+                value={slaClose}
+                hint="> 48 h ouvrées avant clôture"
+                tone={(slaClose ?? 0) > 0 ? "crit" : "default"}
+                cta="Voir la liste"
+                onClick={() =>
+                  setDrill({
+                    scope: "sla_cloture",
+                    weekId: selectedWeekId,
+                  })
+                }
+              />
+            </div>
+          </section>
 
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
-            Encodage de la semaine
-          </h2>
-          <Link
-            href="/saisie"
-            className="text-sm font-medium text-[var(--accent-deep)] hover:underline"
-          >
-            Formulaire complet
-          </Link>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <ActionTile
-            label="Automatisations métier"
-            value={metier}
-            hint="Cliquez pour en ajouter une"
-            cta="Encoder"
-            onClick={() => setEncodeKind("metier")}
-          />
-          <ActionTile
-            label="Améliorations Odoo"
-            value={odoo}
-            hint="Cliquez pour en ajouter une"
-            tone="accent"
-            cta="Encoder"
-            onClick={() => setEncodeKind("odoo")}
-          />
-          <ActionTile
-            label="Maintenances prod"
-            value={maintenance}
-            hint="Cliquez pour en ajouter une"
-            cta="Encoder"
-            onClick={() => setEncodeKind("maintenance")}
-          />
-          <ActionTile
-            label="Phishing ratés"
-            value={phishing}
-            hint="Cliquez pour encoder des échecs"
-            tone={(phishing ?? 0) > 0 ? "warn" : "default"}
-            cta="Encoder"
-            onClick={() => setEncodeKind("phishing")}
-          />
-        </div>
-      </section>
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
+                Encodage de la semaine
+              </h2>
+              <Link
+                href="/saisie"
+                className="text-sm font-medium text-[var(--accent-deep)] hover:underline"
+              >
+                Formulaire complet
+              </Link>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <ActionTile
+                label="Automatisations métier"
+                value={metier}
+                hint={
+                  isCurrentWeek
+                    ? "Cliquez pour en ajouter une"
+                    : "Chiffre arrêté pour cette semaine"
+                }
+                cta={isCurrentWeek ? "Encoder" : undefined}
+                onClick={
+                  isCurrentWeek ? () => setEncodeKind("metier") : undefined
+                }
+                disabled={!isCurrentWeek}
+              />
+              <ActionTile
+                label="Améliorations Odoo"
+                value={odoo}
+                hint={
+                  isCurrentWeek
+                    ? "Cliquez pour en ajouter une"
+                    : "Chiffre arrêté pour cette semaine"
+                }
+                tone="accent"
+                cta={isCurrentWeek ? "Encoder" : undefined}
+                onClick={
+                  isCurrentWeek ? () => setEncodeKind("odoo") : undefined
+                }
+                disabled={!isCurrentWeek}
+              />
+              <ActionTile
+                label="Maintenances prod"
+                value={maintenance}
+                hint={
+                  isCurrentWeek
+                    ? "Cliquez pour en ajouter une"
+                    : "Chiffre arrêté pour cette semaine"
+                }
+                cta={isCurrentWeek ? "Encoder" : undefined}
+                onClick={
+                  isCurrentWeek ? () => setEncodeKind("maintenance") : undefined
+                }
+                disabled={!isCurrentWeek}
+              />
+              <ActionTile
+                label="Phishing ratés"
+                value={phishing}
+                hint={
+                  isCurrentWeek
+                    ? "Cliquez pour encoder des échecs"
+                    : "Chiffre arrêté pour cette semaine"
+                }
+                tone={(phishing ?? 0) > 0 ? "warn" : "default"}
+                cta={isCurrentWeek ? "Encoder" : undefined}
+                onClick={
+                  isCurrentWeek ? () => setEncodeKind("phishing") : undefined
+                }
+                disabled={!isCurrentWeek}
+              />
+            </div>
+          </section>
 
-      <section className="rounded-xl border border-[var(--line)] bg-[var(--surface)]/70 px-5 py-4">
-        <p className="text-sm text-[var(--muted)]">
-          Pour l’historique annuel et les ventilations tickets, utilisez{" "}
-          <Link
-            href="/analyse"
-            className="font-medium text-[var(--accent-deep)] hover:underline"
-          >
-            Analyse
-          </Link>
-          . Pour le détail d’une semaine passée :{" "}
-          <Link
-            href="/semaine"
-            className="font-medium text-[var(--accent-deep)] hover:underline"
-          >
-            Semaine
-          </Link>
-          .
-        </p>
-      </section>
+          <WeekKpiGrid kpis={list} />
+
+          <WeekNotesSection
+            informations={kpis.week.informations}
+            reaction={kpis.week.reaction}
+          />
+
+          <WeekEventsAndBreakdowns
+            weekId={selectedWeekId}
+            events={kpis.events}
+            ticketsByType={kpis.ticketsByType}
+            ticketsByAssignee={kpis.ticketsByAssignee}
+            ticketsByRequester={kpis.ticketsByRequester}
+            onDrill={setDrill}
+          />
+        </>
+      )}
 
       {drill && (
         <TicketDrilldown query={drill} onClose={() => setDrill(null)} />
@@ -425,7 +527,7 @@ export function HomeDashboard() {
           onClose={() => setEncodeKind(null)}
           onSaved={() => {
             setMessage("Encodage enregistré.");
-            void load();
+            void load(selectedWeekId);
           }}
         />
       )}

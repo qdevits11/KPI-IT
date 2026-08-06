@@ -257,7 +257,7 @@ export function YearOverview({ initialYear }: { initialYear: number }) {
                   >
                     <td className="sticky left-0 z-10 bg-[var(--surface)] px-3 py-2 font-medium text-[var(--ink)]">
                       <Link
-                        href={`/semaine?week=${row.weekKey}`}
+                        href={`/?week=${row.weekKey}`}
                         className="text-[var(--accent)] hover:underline"
                       >
                         S{String(row.week).padStart(2, "0")}

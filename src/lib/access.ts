@@ -9,7 +9,7 @@ import { resolveCurrentUser } from "@/lib/user-session";
 export async function requireAdminUser(): Promise<AppUser> {
   const user = await resolveCurrentUser();
   if (!canAccessAdminPages(user)) {
-    redirect("/semaine?forbidden=admin");
+    redirect("/?forbidden=admin");
   }
   return user!;
 }
