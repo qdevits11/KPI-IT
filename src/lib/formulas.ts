@@ -406,9 +406,12 @@ export function buildWeekDashboard(
 export function buildYearOverview(
   db: AppDatabase,
   year: number,
+  range?: { weekFrom?: number; weekTo?: number },
 ): YearOverviewRow[] {
+  const lo = range?.weekFrom ?? 1;
+  const hi = range?.weekTo ?? 53;
   return db.weeks
-    .filter((w) => w.year === year)
+    .filter((w) => w.year === year && w.week >= lo && w.week <= hi)
     .sort((a, b) => a.week - b.week)
     .map((w) => {
       const kpis = computeWeekKpis(db, w);

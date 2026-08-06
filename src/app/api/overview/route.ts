@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDatabase } from "@/lib/store";
 import { buildYearOverview } from "@/lib/formulas";
 import { requireSessionApi } from "@/lib/api";
+import { parseWeekRangeParam } from "@/lib/week-range";
 
 export async function GET(request: Request) {
   const gate = await requireSessionApi();
@@ -15,7 +16,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Année invalide" }, { status: 400 });
   }
 
-  const rows = buildYearOverview(db, year);
+  const range = parseWeekRangeParam(
+    searchParams.get("weekFrom"),
+    searchParams.get("weekTo"),
+  );
+
+  const rows = buildYearOverview(db, year, range);
   const years = [...new Set(db.weeks.map((w) => w.year))].sort(
     (a, b) => b - a,
   );
@@ -23,6 +29,8 @@ export async function GET(request: Request) {
   return NextResponse.json({
     year,
     years: years.length > 0 ? years : [db.year],
+    weekFrom: range.weekFrom ?? null,
+    weekTo: range.weekTo ?? null,
     rows,
     totals: {
       automationsMetier: rows.reduce((s, r) => s + r.automationsMetier, 0),

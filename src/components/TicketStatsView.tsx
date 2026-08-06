@@ -10,10 +10,14 @@ import {
 } from "./TicketDrilldown";
 import { PersonLabel } from "./PersonAvatar";
 import { usePeopleAvatars } from "./PeopleProvider";
+import { AnalysePeriodFilter } from "./AnalysePeriodFilter";
+import { weekRangeQuery, type WeekRange } from "@/lib/week-range";
 
 interface StatsResponse {
   year: number;
   years: number[];
+  weekFrom?: number | null;
+  weekTo?: number | null;
   stats: TicketStatsPayload;
 }
 
@@ -51,6 +55,8 @@ export function TicketStatsView({
   initialYear?: number;
 }) {
   const [year, setYear] = useState(initialYear);
+  const [weekFrom, setWeekFrom] = useState<number | undefined>();
+  const [weekTo, setWeekTo] = useState<number | undefined>();
   const [data, setData] = useState<StatsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -61,10 +67,10 @@ export function TicketStatsView({
   const showAvatar = dimension === "assignee" || dimension === "requester";
 
   const load = useCallback(
-    async (y: number) => {
+    async (y: number, range: WeekRange) => {
       setError(null);
       const res = await fetch(
-        `/api/stats?year=${encodeURIComponent(String(y))}&dimension=${encodeURIComponent(dimension)}`,
+        `/api/stats?year=${encodeURIComponent(String(y))}&dimension=${encodeURIComponent(dimension)}${weekRangeQuery(range)}`,
       );
       if (!res.ok) {
         setError("Impossible de charger les statistiques");
@@ -77,9 +83,20 @@ export function TicketStatsView({
 
   useEffect(() => {
     startTransition(() => {
-      void load(year);
+      void load(year, { weekFrom, weekTo });
     });
-  }, [year, load]);
+  }, [year, weekFrom, weekTo, load]);
+
+  function handleYearChange(next: number) {
+    setYear(next);
+    setWeekFrom(undefined);
+    setWeekTo(undefined);
+  }
+
+  function handleRangeChange(range: WeekRange) {
+    setWeekFrom(range.weekFrom);
+    setWeekTo(range.weekTo);
+  }
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -126,54 +143,50 @@ export function TicketStatsView({
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-[var(--muted)]">
             {data?.stats.description ??
-              "Analyse des tickets créés sur l’année sélectionnée."}{" "}
+              "Analyse des tickets créés sur la période sélectionnée."}{" "}
             Cliquez un nombre pour lister les tickets Jira.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
-            Année
-            <select
-              value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
-              className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 text-[var(--ink)]"
+        <div className="flex flex-col items-stretch gap-3 sm:items-end">
+          <AnalysePeriodFilter
+            year={year}
+            years={data?.years ?? [year]}
+            weekFrom={weekFrom}
+            weekTo={weekTo}
+            onYearChange={handleYearChange}
+            onRangeChange={handleRangeChange}
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
+              Filtrer
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Nom…"
+                className="w-40 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 text-[var(--ink)] sm:w-48"
+              />
+            </label>
+            <div
+              role="group"
+              aria-label="Mode d’affichage"
+              className="flex rounded-md border border-[var(--line)] bg-[var(--surface)] p-0.5"
             >
-              {(data?.years ?? [year]).map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
+              {VIEW_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setView(opt.id)}
+                  className={`rounded px-2.5 py-1.5 text-sm transition-colors ${
+                    view === opt.id
+                      ? "bg-[var(--ink)] text-[var(--paper)]"
+                      : "text-[var(--muted)] hover:text-[var(--ink)]"
+                  }`}
+                >
+                  {opt.label}
+                </button>
               ))}
-            </select>
-          </label>
-          <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
-            Filtrer
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Nom…"
-              className="w-40 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 text-[var(--ink)] sm:w-48"
-            />
-          </label>
-          <div
-            role="group"
-            aria-label="Mode d’affichage"
-            className="flex rounded-md border border-[var(--line)] bg-[var(--surface)] p-0.5"
-          >
-            {VIEW_OPTIONS.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => setView(opt.id)}
-                className={`rounded px-2.5 py-1.5 text-sm transition-colors ${
-                  view === opt.id
-                    ? "bg-[var(--ink)] text-[var(--paper)]"
-                    : "text-[var(--muted)] hover:text-[var(--ink)]"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
+            </div>
           </div>
         </div>
       </div>
@@ -192,7 +205,7 @@ export function TicketStatsView({
           <div className="flex flex-wrap gap-6 text-sm">
             <div>
               <p className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">
-                Total année
+                Total période
               </p>
               <p className="mt-0.5 font-[family-name:var(--font-display)] text-2xl text-[var(--ink)]">
                 <ClickableCount
@@ -222,7 +235,7 @@ export function TicketStatsView({
 
           {data.stats.rows.length === 0 ? (
             <p className="rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface)]/60 px-4 py-8 text-center text-sm text-[var(--muted)]">
-              Aucune donnée pour cette dimension en {year}.
+              Aucune donnée pour cette dimension sur la période.
               {dimension === "requester"
                 ? " Synchronisez Jira pour peupler les demandeurs (reporter)."
                 : " Vérifiez une sync Jira dans Admin → Opérations."}

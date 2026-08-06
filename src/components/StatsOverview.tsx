@@ -5,6 +5,8 @@ import Link from "next/link";
 import type { TicketStatDimension } from "@/lib/types";
 import { PersonLabel } from "./PersonAvatar";
 import { usePeopleAvatars } from "./PeopleProvider";
+import { AnalysePeriodFilter } from "./AnalysePeriodFilter";
+import { weekRangeQuery, type WeekRange } from "@/lib/week-range";
 
 interface OverviewBlock {
   dimension: TicketStatDimension;
@@ -27,14 +29,18 @@ function pct(share: number): string {
 
 export function StatsOverview({ initialYear = 2026 }: { initialYear?: number }) {
   const [year, setYear] = useState(initialYear);
+  const [weekFrom, setWeekFrom] = useState<number | undefined>();
+  const [weekTo, setWeekTo] = useState<number | undefined>();
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const { avatarUrl } = usePeopleAvatars();
 
-  const load = useCallback(async (y: number) => {
+  const load = useCallback(async (y: number, range: WeekRange) => {
     setError(null);
-    const res = await fetch(`/api/stats?year=${encodeURIComponent(String(y))}`);
+    const res = await fetch(
+      `/api/stats?year=${encodeURIComponent(String(y))}${weekRangeQuery(range)}`,
+    );
     if (!res.ok) {
       setError("Impossible de charger le résumé statistiques");
       return;
@@ -44,9 +50,20 @@ export function StatsOverview({ initialYear = 2026 }: { initialYear?: number }) 
 
   useEffect(() => {
     startTransition(() => {
-      void load(year);
+      void load(year, { weekFrom, weekTo });
     });
-  }, [year, load]);
+  }, [year, weekFrom, weekTo, load]);
+
+  function handleYearChange(next: number) {
+    setYear(next);
+    setWeekFrom(undefined);
+    setWeekTo(undefined);
+  }
+
+  function handleRangeChange(range: WeekRange) {
+    setWeekFrom(range.weekFrom);
+    setWeekTo(range.weekTo);
+  }
 
   return (
     <div className="space-y-8">
@@ -59,8 +76,8 @@ export function StatsOverview({ initialYear = 2026 }: { initialYear?: number }) 
             Statistiques
           </h1>
           <p className="mt-2 max-w-xl text-sm text-[var(--muted)]">
-            Volumes annuels par assigné Jira, demandeur et type de demande —
-            issus des syncs Jira. Pour le stock{" "}
+            Volumes par assigné Jira, demandeur et type de demande — filtrables
+            par année et plage de semaines. Pour le stock{" "}
             <Link
               href="/tickets-ouverts"
               className="font-medium text-[var(--accent-deep)] hover:underline"
@@ -70,20 +87,14 @@ export function StatsOverview({ initialYear = 2026 }: { initialYear?: number }) 
             , cliquez les nombres pour lister les tickets.
           </p>
         </div>
-        <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
-          Année
-          <select
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-            className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 text-[var(--ink)]"
-          >
-            {(data?.years ?? [year]).map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
-        </label>
+        <AnalysePeriodFilter
+          year={year}
+          years={data?.years ?? [year]}
+          weekFrom={weekFrom}
+          weekTo={weekTo}
+          onYearChange={handleYearChange}
+          onRangeChange={handleRangeChange}
+        />
       </div>
 
       {error && (

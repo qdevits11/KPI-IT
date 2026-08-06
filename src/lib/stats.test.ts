@@ -148,4 +148,28 @@ describe("weeksForYear", () => {
     expect(stats.weeks[0]).toBe("2026-S01");
     expect(stats.weekTotals["2026-S01"]).toBe(0);
   });
+
+  it("filtre une plage de semaines", () => {
+    const stats = buildTicketStats(fixture(), 2026, "assignee", {
+      weekFrom: 31,
+      weekTo: 31,
+    });
+    expect(stats.weeks).toEqual(["2026-S31"]);
+    expect(stats.grandTotal).toBe(7 + 4);
+    expect(stats.rows[0]).toMatchObject({ name: "Gary Schreurs", total: 7 });
+  });
+});
+
+describe("week-range helpers", () => {
+  it("parse et inverse weekFrom > weekTo", async () => {
+    const { parseWeekRangeParam } = await import("./week-range");
+    expect(parseWeekRangeParam("40", "30")).toEqual({
+      weekFrom: 30,
+      weekTo: 40,
+    });
+    expect(parseWeekRangeParam("all", null)).toEqual({
+      weekFrom: undefined,
+      weekTo: undefined,
+    });
+  });
 });

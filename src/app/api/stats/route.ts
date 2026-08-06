@@ -7,6 +7,7 @@ import {
 } from "@/lib/stats";
 import type { TicketStatDimension } from "@/lib/types";
 import { requireSessionApi } from "@/lib/api";
+import { parseWeekRangeParam } from "@/lib/week-range";
 
 const DIMENSIONS = new Set<TicketStatDimension>([
   "assignee",
@@ -26,6 +27,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Année invalide" }, { status: 400 });
   }
 
+  const range = parseWeekRangeParam(
+    searchParams.get("weekFrom"),
+    searchParams.get("weekTo"),
+  );
+
   const years = [
     ...new Set([
       db.year,
@@ -42,7 +48,9 @@ export async function GET(request: Request) {
     return NextResponse.json({
       year,
       years,
-      overview: buildStatsOverview(db, year),
+      weekFrom: range.weekFrom ?? null,
+      weekTo: range.weekTo ?? null,
+      overview: buildStatsOverview(db, year, 5, range),
       dimensions: STAT_DIMENSIONS,
     });
   }
@@ -57,11 +65,14 @@ export async function GET(request: Request) {
   const includeZeros = searchParams.get("zeros") === "1";
   const stats = buildTicketStats(db, year, dimension, {
     hideZeros: !includeZeros,
+    ...range,
   });
 
   return NextResponse.json({
     year,
     years,
+    weekFrom: range.weekFrom ?? null,
+    weekTo: range.weekTo ?? null,
     stats,
     dimensions: STAT_DIMENSIONS,
   });

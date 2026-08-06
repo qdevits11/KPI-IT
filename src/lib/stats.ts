@@ -5,6 +5,10 @@ import type {
   TicketStatsPayload,
 } from "./types";
 import { weekId } from "./types";
+import {
+  filterWeekKeysByRange,
+  type WeekRange,
+} from "./week-range";
 
 export const STAT_DIMENSIONS: Record<
   TicketStatDimension,
@@ -49,6 +53,7 @@ export function weeksForYear(
   db: AppDatabase,
   year: number,
   source?: Record<string, Record<string, number>>,
+  range?: WeekRange,
 ): string[] {
   const weekKeys = new Set<string>();
 
@@ -61,8 +66,13 @@ export function weeksForYear(
     }
   }
 
-  const sorted = [...weekKeys].sort();
+  const sorted = filterWeekKeysByRange([...weekKeys].sort(), range);
   if (sorted.length === 0) return [];
+
+  // Plage explicite : ne pas couper la queue (l’utilisateur a choisi les bornes)
+  if (range?.weekFrom != null || range?.weekTo != null) {
+    return sorted;
+  }
 
   const hasActivity = (key: string): boolean => {
     if (source && Object.values(source[key] ?? {}).some((n) => n > 0)) {
@@ -95,12 +105,16 @@ export function buildTicketStats(
   db: AppDatabase,
   year: number,
   dimension: TicketStatDimension,
-  options?: { hideZeros?: boolean },
+  options?: { hideZeros?: boolean } & WeekRange,
 ): TicketStatsPayload {
   const hideZeros = options?.hideZeros !== false;
+  const range: WeekRange = {
+    weekFrom: options?.weekFrom,
+    weekTo: options?.weekTo,
+  };
   const meta = STAT_DIMENSIONS[dimension];
   const source = sourceFor(db, dimension);
-  const weeks = weeksForYear(db, year, source);
+  const weeks = weeksForYear(db, year, source, range);
 
   const names = new Set<string>();
   for (const wk of weeks) {
@@ -149,6 +163,7 @@ export function buildStatsOverview(
   db: AppDatabase,
   year: number,
   topN = 5,
+  range?: WeekRange,
 ): Array<{
   dimension: TicketStatDimension;
   label: string;
@@ -158,7 +173,7 @@ export function buildStatsOverview(
   top: Array<{ name: string; total: number; share: number }>;
 }> {
   return (Object.keys(STAT_DIMENSIONS) as TicketStatDimension[]).map((dim) => {
-    const stats = buildTicketStats(db, year, dim);
+    const stats = buildTicketStats(db, year, dim, range);
     return {
       dimension: dim,
       label: stats.label,

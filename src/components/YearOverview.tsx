@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import type { YearOverviewRow } from "@/lib/types";
+import { AnalysePeriodFilter } from "./AnalysePeriodFilter";
+import { weekRangeQuery, type WeekRange } from "@/lib/week-range";
 
 type ColumnGroup =
   | "sla"
@@ -67,6 +69,8 @@ function cell(value: number | string | null | undefined): string {
 
 export function YearOverview({ initialYear }: { initialYear: number }) {
   const [year, setYear] = useState(initialYear);
+  const [weekFrom, setWeekFrom] = useState<number | undefined>();
+  const [weekTo, setWeekTo] = useState<number | undefined>();
   const [data, setData] = useState<OverviewPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -75,9 +79,11 @@ export function YearOverview({ initialYear }: { initialYear: number }) {
   );
   const [onlyWithRemarks, setOnlyWithRemarks] = useState(false);
 
-  const load = useCallback(async (y: number) => {
+  const load = useCallback(async (y: number, range: WeekRange) => {
     setError(null);
-    const res = await fetch(`/api/overview?year=${encodeURIComponent(String(y))}`);
+    const res = await fetch(
+      `/api/overview?year=${encodeURIComponent(String(y))}${weekRangeQuery(range)}`,
+    );
     if (!res.ok) {
       setError("Impossible de charger la vue annuelle");
       return;
@@ -87,9 +93,20 @@ export function YearOverview({ initialYear }: { initialYear: number }) {
 
   useEffect(() => {
     startTransition(() => {
-      void load(year);
+      void load(year, { weekFrom, weekTo });
     });
-  }, [year, load]);
+  }, [year, weekFrom, weekTo, load]);
+
+  function handleYearChange(next: number) {
+    setYear(next);
+    setWeekFrom(undefined);
+    setWeekTo(undefined);
+  }
+
+  function handleRangeChange(range: WeekRange) {
+    setWeekFrom(range.weekFrom);
+    setWeekTo(range.weekTo);
+  }
 
   const visibleCols = useMemo(
     () => COLUMNS.filter((c) => activeGroups.has(c.group)),
@@ -127,25 +144,19 @@ export function YearOverview({ initialYear }: { initialYear: number }) {
             Chiffres {year}
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">
-            Une ligne par semaine, tous les indicateurs
-            et les retours (fluctuation + recommandations).
+            Une ligne par semaine, filtrable par année et plage de semaines —
+            indicateurs et retours (fluctuation + recommandations).
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
-            <span className="text-xs uppercase tracking-[0.14em]">Année</span>
-            <select
-              value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
-              className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-[var(--ink)] outline-none focus:border-[var(--accent)]"
-            >
-              {(data?.years ?? [year]).map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </label>
+        <div className="flex flex-col items-stretch gap-3 sm:items-end">
+          <AnalysePeriodFilter
+            year={year}
+            years={data?.years ?? [year]}
+            weekFrom={weekFrom}
+            weekTo={weekTo}
+            onYearChange={handleYearChange}
+            onRangeChange={handleRangeChange}
+          />
           <label className="flex items-center gap-2 text-sm text-[var(--ink-soft)]">
             <input
               type="checkbox"
