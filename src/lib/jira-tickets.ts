@@ -99,6 +99,43 @@ export function buildOpenJql(conn: JiraConnection): string {
   return `${conn.jqlBase.trim()} AND ${conn.openStatusJql} ORDER BY created ASC`;
 }
 
+/** Champs Jira à demander pour les listes tickets (catégorie IT incluse). */
+export function ticketSearchFields(
+  conn: Pick<
+    JiraConnection,
+    "categoryField" | "categoryCustomFieldId" | "datePriseEnChargeFieldId"
+  >,
+  scope: TicketSearchScope,
+): string {
+  const needsDiscovery =
+    !conn.categoryCustomFieldId &&
+    (conn.categoryField === "auto" ||
+      conn.categoryField === "requestType" ||
+      conn.categoryField === "component");
+
+  if (needsDiscovery) return "*all";
+
+  const fields = new Set([
+    "summary",
+    "created",
+    "status",
+    "assignee",
+    "reporter",
+    "creator",
+    "labels",
+    "components",
+    "issuetype",
+    "resolutiondate",
+  ]);
+  if (conn.categoryCustomFieldId) {
+    fields.add(conn.categoryCustomFieldId);
+  }
+  if (scope === "sla_pec") {
+    fields.add(conn.datePriseEnChargeFieldId);
+  }
+  return [...fields].join(",");
+}
+
 function escapeJqlString(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
@@ -338,21 +375,15 @@ export async function fetchOpenTicketsSnapshot(
   const warnings: string[] = [];
   const jql = buildOpenJql(connection);
   const now = new Date();
+  const searchFields = ticketSearchFields(connection, "open");
 
-  let issues = await searchAll(connection, jql, "*all").catch((err: Error) => {
-    warnings.push(`Search ouverts (*all): ${err.message.slice(0, 160)}`);
+  let issues = await searchAll(connection, jql, searchFields).catch((err: Error) => {
+    warnings.push(`Search ouverts (${searchFields}): ${err.message.slice(0, 160)}`);
     return [];
   });
-  if (issues.length === 0) {
-    issues = await searchAll(
-      connection,
-      jql,
-      "summary,created,status,assignee,reporter,creator,labels,components,issuetype" +
-        (connection.categoryCustomFieldId
-          ? `,${connection.categoryCustomFieldId}`
-          : ""),
-    ).catch((err: Error) => {
-      warnings.push(`Search ouverts (fields): ${err.message.slice(0, 160)}`);
+  if (issues.length === 0 && searchFields !== "*all") {
+    issues = await searchAll(connection, jql, "*all").catch((err: Error) => {
+      warnings.push(`Search ouverts (*all): ${err.message.slice(0, 160)}`);
       return [];
     });
   }
@@ -408,13 +439,7 @@ export async function searchTickets(
   };
   // Si assignee échoue en JQL (displayName), on retentera sans assignee.
   let jql = buildTicketSearchJql(connection, jqlFilter);
-  const pecField = connection.datePriseEnChargeFieldId;
-  const searchFields =
-    filter.scope === "sla_pec"
-      ? `summary,created,status,assignee,reporter,creator,labels,components,issuetype,${pecField}`
-      : filter.scope === "sla_cloture"
-        ? "summary,created,status,assignee,reporter,creator,labels,components,issuetype,resolutiondate"
-        : "*all";
+  const searchFields = ticketSearchFields(connection, filter.scope);
 
   let issues = await searchAll(connection, jql, searchFields).catch((err: Error) => {
     warnings.push(`Search: ${err.message.slice(0, 160)}`);
@@ -440,15 +465,8 @@ export async function searchTickets(
     });
   }
 
-  if (issues.length === 0 && searchFields === "*all") {
-    issues = await searchAll(
-      connection,
-      jql,
-      "summary,created,status,assignee,reporter,creator,labels,components,issuetype" +
-        (connection.categoryCustomFieldId
-          ? `,${connection.categoryCustomFieldId}`
-          : ""),
-    ).catch(() => []);
+  if (issues.length === 0 && searchFields !== "*all") {
+    issues = await searchAll(connection, jql, "*all").catch(() => []);
   }
 
   if (filter.scope === "sla_pec" || filter.scope === "sla_cloture") {

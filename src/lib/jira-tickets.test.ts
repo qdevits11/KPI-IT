@@ -6,6 +6,7 @@ import {
   filterTicketList,
   jiraBrowseUrl,
   ticketAgeDays,
+  ticketSearchFields,
   type TicketListItem,
 } from "./jira-tickets";
 import type { JiraConnection } from "./jira-auth";
@@ -120,6 +121,25 @@ describe("jira-tickets helpers", () => {
         weekId: "2026-S32",
       }),
     ).toBe("hors SLA clôture · semaine 2026-S32");
+  });
+
+  it("demande le champ catégorie IT dans les recherches tickets", () => {
+    expect(ticketSearchFields(conn, "open")).toContain(
+      conn.categoryCustomFieldId,
+    );
+    expect(ticketSearchFields(conn, "created")).toContain(
+      conn.categoryCustomFieldId,
+    );
+    expect(ticketSearchFields(conn, "sla_pec")).toContain(
+      conn.categoryCustomFieldId,
+    );
+    expect(ticketSearchFields(conn, "sla_pec")).toContain(
+      conn.datePriseEnChargeFieldId,
+    );
+    expect(ticketSearchFields(conn, "sla_cloture")).toContain(
+      conn.categoryCustomFieldId,
+    );
+    expect(ticketSearchFields(conn, "sla_cloture")).toContain("resolutiondate");
   });
 
   it("décrit les filtres", () => {
