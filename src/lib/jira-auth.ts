@@ -81,7 +81,10 @@ export const DEFAULT_JIRA_SETTINGS = {
 };
 
 function secretKey(): Buffer {
-  const raw = resolveAppSecret("jira-connection");
+  // Conservé pour déchiffrer les ciphers existants chiffrés avec JIRA_API_TOKEN.
+  const raw = resolveAppSecret("jira-connection", [
+    process.env.JIRA_API_TOKEN,
+  ]);
   return createHash("sha256").update(raw).digest();
 }
 
