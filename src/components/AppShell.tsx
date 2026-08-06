@@ -16,6 +16,7 @@ import { PersonAvatar } from "./PersonAvatar";
 const SIDEBAR_COLLAPSED_KEY = "kpi-sidebar-collapsed";
 
 const LINKS = [
+  { href: "/", label: "Accueil", short: "Ac" },
   { href: "/semaine", label: "Semaine", short: "Se" },
   { href: "/tickets-ouverts", label: "Tickets", short: "Ti" },
   { href: "/analyse", label: "Analyse", short: "An" },
@@ -24,6 +25,9 @@ const LINKS = [
 ];
 
 function linkActive(pathname: string, href: string): boolean {
+  if (href === "/") {
+    return pathname === "/";
+  }
   if (href === "/analyse") {
     return pathname === "/analyse" || pathname.startsWith("/analyse/");
   }
@@ -147,7 +151,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <BurgerIcon open={open} />
         </button>
         <Link
-          href="/semaine"
+          href="/"
           className="font-[family-name:var(--font-display)] text-lg tracking-tight text-[var(--ink)]"
         >
           KPI<span className="text-[var(--accent)]">·</span>IT
@@ -179,7 +183,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           }`}
         >
           <Link
-            href="/semaine"
+            href="/"
             onClick={() => setOpen(false)}
             className={`flex items-baseline gap-2 py-4 ${
               collapsed ? "lg:px-0 lg:py-1" : "px-4"

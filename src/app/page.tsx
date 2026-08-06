@@ -1,19 +1,8 @@
-import { redirect } from "next/navigation";
+import { HomeDashboard } from "@/components/HomeDashboard";
 
 export const dynamic = "force-dynamic";
 
-/** Ancienne racine — redirige vers Semaine (avec ?week= conservé). */
-export default async function HomePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ week?: string; forbidden?: string }>;
-}) {
-  const params = await searchParams;
-  const qs = new URLSearchParams();
-  if (params.week && /^\d{4}-S\d{2}$/.test(params.week)) {
-    qs.set("week", params.week);
-  }
-  if (params.forbidden) qs.set("forbidden", params.forbidden);
-  const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  redirect(`/semaine${suffix}`);
+/** Accueil — état actuel actionnable (stock live + SLA + encodage rapide). */
+export default function HomePage() {
+  return <HomeDashboard />;
 }

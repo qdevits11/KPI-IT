@@ -10,9 +10,9 @@ export function LoginPanel({
 }) {
   const searchParams = useSearchParams();
   const next = useMemo(() => {
-    const raw = searchParams.get("next") || "/semaine";
+    const raw = searchParams.get("next") || "/";
     if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/login")) {
-      return "/semaine";
+      return "/";
     }
     return raw;
   }, [searchParams]);
