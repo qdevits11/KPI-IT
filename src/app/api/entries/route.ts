@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import {
   updateWeeklyRow,
   ensureWeek,
@@ -7,6 +6,7 @@ import {
   addPhishingEvent,
   deleteLogEvent,
   getDatabase,
+  getResponsibles,
 } from "@/lib/store";
 import { buildWeekDashboard } from "@/lib/formulas";
 import { weekId } from "@/lib/types";
@@ -14,16 +14,61 @@ import type { WeeklyRow } from "@/lib/types";
 import { isoWeekPartsFromDate, weekIdFromDate } from "@/lib/dates";
 import { canonicalResponsible } from "@/lib/responsibles";
 import { canEditWeekRetour } from "@/lib/roles";
-import { resolveCurrentUser } from "@/lib/user-session";
+import {
+  apiError,
+  apiOk,
+  parseJsonBody,
+  requireEncodingApi,
+  requireKpiRetourApi,
+  requireSessionApi,
+} from "@/lib/api";
+import { z } from "zod";
+
+const entriesPutSchema = z.object({
+  weekId: z.string().optional(),
+  week: z.record(z.string(), z.unknown()).optional(),
+  action: z
+    .enum([
+      "updateWeek",
+      "addMetier",
+      "addOdoo",
+      "addPhishing",
+      "addMaintenance",
+      "deleteEvent",
+    ])
+    .optional(),
+  event: z
+    .object({
+      date: z.string().min(1),
+      year: z.number().optional(),
+      month: z.number().optional(),
+      week: z.number().optional(),
+      explanation: z.string().optional(),
+      responsible: z.string().optional(),
+      failures: z.number().optional(),
+    })
+    .optional(),
+  collection: z
+    .enum([
+      "automationsMetier",
+      "automationsOdoo",
+      "maintenances",
+      "phishing",
+    ])
+    .optional(),
+  eventId: z.string().optional(),
+});
 
 export async function GET(request: Request) {
+  const gate = await requireSessionApi();
+  if ("response" in gate) return gate.response;
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("week") ?? currentWeekId();
   await ensureWeek(id);
   const db = await getDatabase();
   const week = db.weeks.find((w) => weekId(w) === id)!;
-  const user = await resolveCurrentUser();
-  return NextResponse.json({
+  return apiOk({
     week,
     automationsMetier: db.automationsMetier,
     automationsOdoo: db.automationsOdoo,
@@ -31,42 +76,22 @@ export async function GET(request: Request) {
     maintenances: db.maintenances,
     responsibles: db.settings.responsibles,
     permissions: {
-      weekRetour: canEditWeekRetour(user),
+      weekRetour: canEditWeekRetour(gate.user),
     },
   });
 }
 
 export async function PUT(request: Request) {
-  const body = (await request.json()) as {
-    weekId?: string;
-    week?: Partial<WeeklyRow>;
-    action?:
-      | "updateWeek"
-      | "addMetier"
-      | "addOdoo"
-      | "addPhishing"
-      | "addMaintenance"
-      | "deleteEvent";
-    event?: {
-      date: string;
-      year?: number;
-      month?: number;
-      week?: number;
-      explanation?: string;
-      responsible?: string;
-      failures?: number;
-    };
-    collection?:
-      | "automationsMetier"
-      | "automationsOdoo"
-      | "maintenances"
-      | "phishing";
-    eventId?: string;
-  };
+  const raw = await request.json().catch(() => null);
+  const parsed = parseJsonBody(entriesPutSchema, raw);
+  if ("response" in parsed) return parsed.response;
+  const body = parsed.data;
 
   let id = body.weekId ?? currentWeekId();
 
   if (body.action === "deleteEvent" && body.collection && body.eventId) {
+    const gate = await requireEncodingApi();
+    if ("response" in gate) return gate.response;
     await deleteLogEvent(body.collection, body.eventId);
   } else if (
     (body.action === "addMetier" ||
@@ -76,17 +101,19 @@ export async function PUT(request: Request) {
     body.event.explanation &&
     body.event.responsible
   ) {
-    const dbCheck = await getDatabase();
+    const gate = await requireEncodingApi();
+    if ("response" in gate) return gate.response;
+
+    const responsibles = await getResponsibles();
     const canonical = canonicalResponsible(
       body.event.responsible,
-      dbCheck.settings.responsibles,
+      responsibles,
     );
     if (!canonical) {
-      return NextResponse.json(
-        {
-          error: `Responsable non autorisé. Choisissez parmi : ${dbCheck.settings.responsibles.join(", ")}`,
-        },
-        { status: 400 },
+      return apiError(
+        `Responsable non autorisé. Choisissez parmi : ${responsibles.join(", ")}`,
+        400,
+        "validation",
       );
     }
     const parts = isoWeekPartsFromDate(body.event.date);
@@ -107,9 +134,11 @@ export async function PUT(request: Request) {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erreur";
-      return NextResponse.json({ error: message }, { status: 400 });
+      return apiError(message, 400, "validation");
     }
   } else if (body.action === "addPhishing" && body.event?.date) {
+    const gate = await requireEncodingApi();
+    if ("response" in gate) return gate.response;
     const parts = isoWeekPartsFromDate(body.event.date);
     id = weekIdFromDate(body.event.date);
     await ensureWeek(id);
@@ -119,34 +148,29 @@ export async function PUT(request: Request) {
       ...parts,
     });
   } else if (body.action === "updateWeek" && body.week) {
+    const weekPatch = body.week as Partial<WeeklyRow>;
     const touchesRetour =
-      body.week.informations !== undefined ||
-      body.week.reaction !== undefined;
+      weekPatch.informations !== undefined ||
+      weekPatch.reaction !== undefined;
     if (touchesRetour) {
-      const user = await resolveCurrentUser();
-      if (!canEditWeekRetour(user)) {
-        return NextResponse.json(
-          {
-            error:
-              "Seul le responsable KPI peut enregistrer le retour sur la semaine.",
-          },
-          { status: 403 },
-        );
-      }
+      const gate = await requireKpiRetourApi();
+      if ("response" in gate) return gate.response;
+    } else {
+      const gate = await requireSessionApi();
+      if ("response" in gate) return gate.response;
     }
-    await updateWeeklyRow(id, body.week);
+    await updateWeeklyRow(id, weekPatch);
   } else if (body.week && !body.action) {
-    // Compat : sync Jira / anciens clients
-    await updateWeeklyRow(id, body.week);
+    // Compat sync interne : réservé session (plus d’écriture anonyme)
+    const gate = await requireSessionApi();
+    if ("response" in gate) return gate.response;
+    await updateWeeklyRow(id, body.week as Partial<WeeklyRow>);
   } else {
-    return NextResponse.json(
-      { error: "Requête invalide — champs manquants" },
-      { status: 400 },
-    );
+    return apiError("Requête invalide — champs manquants", 400, "validation");
   }
 
   const db = await getDatabase();
   const week = db.weeks.find((w) => weekId(w) === id) ?? (await ensureWeek(id));
   const dashboard = buildWeekDashboard(db, week);
-  return NextResponse.json(dashboard);
+  return apiOk({ ...dashboard });
 }

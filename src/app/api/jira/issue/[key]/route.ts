@@ -7,12 +7,16 @@ import {
 } from "@/lib/jira-actions";
 import { resolveTicketWriteConnection } from "@/lib/jira-oauth";
 import { sanitizeConnection } from "@/lib/jira-auth";
+import { requireSessionApi } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ key: string }> };
 
 export async function GET(_request: Request, { params }: Params) {
+  const gate = await requireSessionApi();
+  if ("response" in gate) return gate.response;
+
   const { key } = await params;
   const conn = await resolveTicketWriteConnection();
   if (!conn) {
@@ -46,6 +50,9 @@ export async function GET(_request: Request, { params }: Params) {
 }
 
 export async function POST(request: Request, { params }: Params) {
+  const gate = await requireSessionApi();
+  if ("response" in gate) return gate.response;
+
   const { key } = await params;
   const conn = await resolveTicketWriteConnection();
   if (!conn) {

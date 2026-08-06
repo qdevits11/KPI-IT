@@ -13,19 +13,7 @@ import {
   getWeek,
 } from "@/lib/store";
 import { weekId } from "@/lib/types";
-
-function authorize(request: Request): boolean {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) {
-    // Sans secret : autoriser seulement en dev local
-    return process.env.NODE_ENV !== "production";
-  }
-  const auth = request.headers.get("authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  // Vercel Cron envoie aussi x-vercel-cron
-  const vercelCron = request.headers.get("x-vercel-cron");
-  return token === secret || Boolean(vercelCron && secret);
-}
+import { authorizeCron } from "@/lib/api";
 
 /**
  * Figement du stock « non résolus » — dimanche 23:59 Europe/Brussels.
@@ -37,7 +25,7 @@ function authorize(request: Request): boolean {
  * Query: ?force=1 pour forcer hors fenêtre (manuel / test).
  */
 export async function GET(request: Request) {
-  if (!authorize(request)) {
+  if (!authorizeCron(request)) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 

@@ -9,6 +9,7 @@ import {
   buildAppUser,
   type AppUser,
 } from "./roles";
+import { resolveAppSecret } from "./secrets";
 
 export const USER_SESSION_COOKIE = "kpi_app_user";
 
@@ -27,10 +28,7 @@ export interface UserSessionPayload {
 }
 
 function secretKey(): Buffer {
-  const raw =
-    process.env.JIRA_COOKIE_SECRET ||
-    process.env.NEXTAUTH_SECRET ||
-    "kpi-it-dev-secret-change-me";
+  const raw = resolveAppSecret("user-session");
   return createHash("sha256").update(`user-session:${raw}`).digest();
 }
 

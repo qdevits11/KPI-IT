@@ -10,8 +10,12 @@ import { weekId, parseWeekId } from "@/lib/types";
 import { isIsoWeekCompleted, describeBrusselsNow } from "@/lib/open-snapshot";
 import { isoWeekDateRange } from "@/lib/jira";
 import { formatWeekRangeLabel } from "@/lib/dates";
+import { requireSessionApi } from "@/lib/api";
 
 export async function GET(request: Request) {
+  const gate = await requireSessionApi();
+  if ("response" in gate) return gate.response;
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("week") ?? currentWeekId();
 

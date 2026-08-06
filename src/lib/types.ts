@@ -2,8 +2,8 @@
 
 export type DataSource = "jira" | "manuel" | "calcule";
 
-/** Version du document JSON AppDatabase (migrations soft). */
-export const APP_SCHEMA_VERSION = 2;
+/** Version du schéma applicatif (3 = tables relationnelles Supabase). */
+export const APP_SCHEMA_VERSION = 3;
 
 export interface WeekRef {
   year: number;

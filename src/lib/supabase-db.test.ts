@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppDatabase } from "./types";
 
 const { fromMock, createClientMock } = vi.hoisted(() => {
   const fromMock = vi.fn();
@@ -13,32 +12,11 @@ vi.mock("@supabase/supabase-js", () => ({
 }));
 
 import {
-  loadDbFromSupabase,
+  loadJiraCipherFromSupabase,
   resetSupabaseClientForTests,
-  saveDbToSupabase,
+  saveJiraCipherToSupabase,
   supabaseConfigured,
 } from "./supabase-db";
-
-function sampleDb(): AppDatabase {
-  return {
-    year: 2026,
-    weeks: [],
-    automationsMetier: [],
-    automationsOdoo: [],
-    maintenances: [],
-    phishing: [],
-    ticketsByType: {},
-    ticketsByAssignee: {},
-    ticketsByRequester: { "2026-S31": { Alice: 2 } },
-    schemaVersion: 2,
-    revision: 1,
-    settings: {
-      responsibles: ["A"],
-      accessUsers: [],
-      peopleDirectory: {},
-    },
-  };
-}
 
 describe("supabase-db", () => {
   const prevUrl = process.env.SUPABASE_URL;
@@ -67,50 +45,29 @@ describe("supabase-db", () => {
     expect(supabaseConfigured()).toBe(false);
   });
 
-  it("charge le document", async () => {
-    const db = sampleDb();
-    fromMock.mockReturnValue({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({ data: { data: db }, error: null }),
-        }),
-      }),
-    });
-    const loaded = await loadDbFromSupabase();
-    expect(loaded?.ticketsByRequester["2026-S31"]).toEqual({ Alice: 2 });
-  });
-
-  it("upsert le document", async () => {
-    const upsert = vi.fn(async () => ({ error: null }));
-    fromMock.mockReturnValue({ upsert });
-    const ok = await saveDbToSupabase(sampleDb());
-    expect(ok).toBe(true);
-    expect(upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "default" }),
-      { onConflict: "id" },
-    );
-  });
-
-  it("rapporte le statut Supabase ok", async () => {
-    const { getStorageStatus } = await import("./supabase-db");
+  it("charge le cipher Jira", async () => {
     fromMock.mockReturnValue({
       select: () => ({
         eq: () => ({
           maybeSingle: async () => ({
-            data: {
-              data: sampleDb(),
-              updated_at: "2026-08-05T12:00:00.000Z",
-            },
+            data: { cipher: "abc.cipher" },
             error: null,
           }),
         }),
       }),
     });
-    const status = await getStorageStatus();
-    expect(status).toMatchObject({
-      backend: "supabase",
-      ok: true,
-      requesterWeeks: 1,
-    });
+    const cipher = await loadJiraCipherFromSupabase();
+    expect(cipher).toBe("abc.cipher");
+  });
+
+  it("upsert le cipher Jira", async () => {
+    const upsert = vi.fn(async () => ({ error: null }));
+    fromMock.mockReturnValue({ upsert });
+    const ok = await saveJiraCipherToSupabase("cipher-value");
+    expect(ok).toBe(true);
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "default", cipher: "cipher-value" }),
+      { onConflict: "id" },
+    );
   });
 });

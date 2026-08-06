@@ -27,12 +27,22 @@ Anciennes URLs (`/`, `/vue`, `/statistiques`, `/configuration`, `/jira`, `/formu
 
 ## Modèle de données
 
-Granularité **hebdomadaire**. Document JSON unique (`AppDatabase`) avec :
+Granularité **hebdomadaire**. En production (Supabase), schéma **relationnel** :
 
-- `schemaVersion` / `revision`
-- lignes semaine (KPI Jira + retour)
-- journaux d’encodage (métier, Odoo, phishing, maintenances)
-- ventilations tickets (type / assigné / demandeur)
+| Table | Contenu |
+|-------|---------|
+| `kpi_meta` | version / révision / année |
+| `kpi_weeks` | KPI hebdo + retour semaine |
+| `kpi_log_events` | encodage métier / Odoo / maintenances |
+| `kpi_phishing_events` | échecs phishing |
+| `kpi_ticket_breakdowns` | ventilations type / assigné / demandeur |
+| `kpi_access_users` | droits applicatifs |
+| `kpi_people` | annuaire avatars Jira |
+| `kpi_settings` | responsables d’encodage |
+| `kpi_jira_connection` | credentials Jira chiffrés |
+| `kpi_app_state` | archive JSON legacy (plus source de vérité) |
+
+En local / tests sans Supabase : document JSON fichier (`data/db.json`).
 
 | Indicateur | Source |
 |------------|--------|

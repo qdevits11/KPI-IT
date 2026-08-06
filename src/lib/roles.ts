@@ -132,7 +132,7 @@ export function normalizeAccessUsers(
     });
   }
 
-  let list = [...byEmail.values()];
+  const list = [...byEmail.values()];
   if (!list.some((u) => u.isAdmin)) {
     for (const d of defaultAccessUsers()) {
       const existing = list.find((u) => u.email === d.email);

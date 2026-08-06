@@ -6,6 +6,7 @@ import {
   saveJiraCipherToSupabase,
   supabaseConfigured,
 } from "./supabase-db";
+import { resolveAppSecret } from "./secrets";
 
 export const JIRA_COOKIE = "kpi_jira_session";
 
@@ -80,11 +81,7 @@ export const DEFAULT_JIRA_SETTINGS = {
 };
 
 function secretKey(): Buffer {
-  const raw =
-    process.env.JIRA_COOKIE_SECRET ||
-    process.env.NEXTAUTH_SECRET ||
-    process.env.JIRA_API_TOKEN ||
-    "kpi-it-dev-secret-change-me";
+  const raw = resolveAppSecret("jira-connection");
   return createHash("sha256").update(raw).digest();
 }
 

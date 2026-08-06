@@ -1,3 +1,9 @@
+/**
+ * Façade de persistance KPI·IT.
+ * - Supabase configuré → tables relationnelles (src/lib/db/relational.ts)
+ * - Sinon → document JSON local (disque / Blob) pour dev & tests
+ */
+
 import { promises as fs } from "fs";
 import path from "path";
 import type {
@@ -43,11 +49,8 @@ import {
   saveDbToBlob,
   saveDbToBlobIfAbsent,
 } from "./db-persist";
-import {
-  loadDbFromSupabase,
-  saveDbToSupabase,
-  supabaseConfigured,
-} from "./supabase-db";
+import { supabaseConfigured } from "./db/client";
+import * as rel from "./db/relational";
 
 /** Sur Vercel le FS du projet est en lecture seule → /tmp ; en local → data/ */
 function dbPath(): string {
@@ -58,17 +61,15 @@ function dbPath(): string {
   return path.join(process.cwd(), "data", "db.json");
 }
 
-/** Clé de cache : isole les tests KPI_DB_DIR et le mode Supabase. */
 function cacheKey(): string {
-  if (supabaseConfigured()) return `supabase:${dbPath()}`;
+  if (supabaseConfigured()) return `supabase-rel:${dbPath()}`;
   return `file:${dbPath()}`;
 }
 
-/** Cache processus : survit aux requêtes sur une instance chaude. */
+/** Cache processus — document local uniquement (évite les courses en mode relationnel). */
 let memoryDb: AppDatabase | null = null;
 let memoryDbPath: string | null = null;
 
-/** Vitest / isolation des répertoires KPI_DB_DIR. */
 export function resetDbCacheForTests(): void {
   memoryDb = null;
   memoryDbPath = null;
@@ -78,6 +79,10 @@ function setMemory(db: AppDatabase): AppDatabase {
   memoryDb = db;
   memoryDbPath = cacheKey();
   return db;
+}
+
+function relationalEnabled(): boolean {
+  return supabaseConfigured();
 }
 
 async function writeDiskQuiet(db: AppDatabase): Promise<void> {
@@ -97,7 +102,7 @@ async function migrateAndMaybePersist(db: AppDatabase): Promise<AppDatabase> {
   if (migrateTicketRequester(db)) dirty = true;
   setMemory(db);
   if (dirty) {
-    await writeDb(db);
+    await writeDocumentDb(db);
   }
   return db;
 }
@@ -113,41 +118,11 @@ async function readDbFromDisk(): Promise<AppDatabase | null> {
 }
 
 /**
- * Ordre de lecture :
- * 1. mémoire
- * 2. Supabase (si configuré) — source de vérité
- * 3. disque / Blob (migration ou fallback local)
- * 4. base vide (Jira + encodage peuplent les données)
+ * Mode document (dev / tests sans Supabase).
  */
-async function ensureDb(): Promise<AppDatabase> {
+async function ensureDocumentDb(): Promise<AppDatabase> {
   if (memoryDb && memoryDbPath === cacheKey()) {
     return memoryDb;
-  }
-
-  if (supabaseConfigured()) {
-    const fromSb = await loadDbFromSupabase();
-    if (fromSb) {
-      await writeDiskQuiet(fromSb);
-      return migrateAndMaybePersist(fromSb);
-    }
-
-    // Première connexion : migrer disque/Blob puis base vide
-    const fromDisk = await readDbFromDisk();
-    if (fromDisk) {
-      await saveDbToSupabase(fromDisk);
-      return migrateAndMaybePersist(fromDisk);
-    }
-    const fromBlob = await loadDbFromBlob();
-    if (fromBlob) {
-      await saveDbToSupabase(fromBlob);
-      await writeDiskQuiet(fromBlob);
-      return migrateAndMaybePersist(fromBlob);
-    }
-
-    const empty = createEmptyDatabase();
-    await saveDbToSupabase(empty);
-    await writeDiskQuiet(empty);
-    return setMemory(empty);
   }
 
   const fromDisk = await readDbFromDisk();
@@ -175,23 +150,21 @@ async function ensureDb(): Promise<AppDatabase> {
   return empty;
 }
 
-async function writeDb(db: AppDatabase): Promise<void> {
+async function writeDocumentDb(db: AppDatabase): Promise<void> {
   db.revision = (Number(db.revision) || 0) + 1;
   db.schemaVersion = APP_SCHEMA_VERSION;
   setMemory(db);
-  if (supabaseConfigured()) {
-    const ok = await saveDbToSupabase(db);
-    if (!ok) {
-      console.warn(
-        "KPI: échec d’écriture Supabase — fallback disque/Blob uniquement.",
-      );
-    }
-  }
   await writeDiskQuiet(db);
-  // Blob en secours optionnel (transition / sans Supabase)
   if (!supabaseConfigured()) {
     await saveDbToBlob(db);
   }
+}
+
+async function ensureDb(): Promise<AppDatabase> {
+  if (relationalEnabled()) {
+    return rel.loadAppDatabaseFromTables();
+  }
+  return ensureDocumentDb();
 }
 
 export async function getDatabase(): Promise<AppDatabase> {
@@ -211,21 +184,22 @@ export function isoWeekParts(date = new Date()): {
 }
 
 export async function listWeeks(): Promise<WeeklyRow[]> {
-  const db = await ensureDb();
+  if (relationalEnabled()) return rel.listWeeksRel();
+  const db = await ensureDocumentDb();
   return [...db.weeks].sort((a, b) =>
     a.year === b.year ? b.week - a.week : b.year - a.year,
   );
 }
 
 export async function getWeek(id: string): Promise<WeeklyRow | null> {
-  const db = await ensureDb();
-  return (
-    db.weeks.find((w) => weekId(w) === id) ?? null
-  );
+  if (relationalEnabled()) return rel.getWeekRel(id);
+  const db = await ensureDocumentDb();
+  return db.weeks.find((w) => weekId(w) === id) ?? null;
 }
 
 export async function ensureWeek(id: string): Promise<WeeklyRow> {
-  const db = await ensureDb();
+  if (relationalEnabled()) return rel.ensureWeekRel(id);
+  const db = await ensureDocumentDb();
   const existing = db.weeks.find((w) => weekId(w) === id);
   if (existing) return existing;
 
@@ -234,7 +208,7 @@ export async function ensureWeek(id: string): Promise<WeeklyRow> {
   const month = Math.min(12, Math.ceil(week / 4.345));
   const row = createEmptyWeek(year, month, week);
   db.weeks.push(row);
-  await writeDb(db);
+  await writeDocumentDb(db);
   return row;
 }
 
@@ -242,8 +216,9 @@ export async function updateWeeklyRow(
   id: string,
   patch: Partial<WeeklyRow>,
 ): Promise<WeeklyRow> {
+  if (relationalEnabled()) return rel.updateWeeklyRowRel(id, patch);
   await ensureWeek(id);
-  const db = await ensureDb();
+  const db = await ensureDocumentDb();
   const idx = db.weeks.findIndex((w) => weekId(w) === id);
   db.weeks[idx] = {
     ...db.weeks[idx],
@@ -252,7 +227,7 @@ export async function updateWeeklyRow(
     week: db.weeks[idx].week,
     updatedAt: new Date().toISOString(),
   };
-  await writeDb(db);
+  await writeDocumentDb(db);
   return db.weeks[idx];
 }
 
@@ -274,7 +249,6 @@ function withDerivedWeek<T extends { date: string }>(
   return { ...event, ...parts };
 }
 
-/** Complète les journaux issus d'anciennes bases sans champ date. */
 function migrateLogDates(db: AppDatabase): boolean {
   let changed = false;
   const fill = <T extends { year: number; week: number; date?: string }>(
@@ -354,7 +328,6 @@ function migrateSettings(db: AppDatabase): boolean {
   return changed;
 }
 
-/** Relie les anciens noms d’encodage aux comptes (par displayName). */
 function migrateEncodingFlagsFromResponsibles(db: AppDatabase): boolean {
   const names = db.settings.responsibles ?? [];
   if (!names.length) return false;
@@ -377,7 +350,6 @@ function migrateEncodingFlagsFromResponsibles(db: AppDatabase): boolean {
   return changed;
 }
 
-/** Aligne settings.responsibles sur les comptes cochés « encodage ». */
 function syncResponsiblesFromAccessUsers(db: AppDatabase): boolean {
   const fromUsers = sortResponsibles(
     db.settings.accessUsers
@@ -401,7 +373,8 @@ function migrateTicketRequester(db: AppDatabase): boolean {
 }
 
 export async function getResponsibles(): Promise<string[]> {
-  const db = await ensureDb();
+  if (relationalEnabled()) return rel.getResponsiblesRel();
+  const db = await ensureDocumentDb();
   const fromUsers = sortResponsibles(
     db.settings.accessUsers
       .filter((u) => u.isEncodingResponsible)
@@ -412,7 +385,8 @@ export async function getResponsibles(): Promise<string[]> {
 }
 
 export async function addResponsible(name: string): Promise<string[]> {
-  const db = await ensureDb();
+  if (relationalEnabled()) return rel.addResponsibleRel(name);
+  const db = await ensureDocumentDb();
   const clean = normalizeResponsibleName(name);
   if (!clean) {
     throw new Error("Nom vide");
@@ -423,13 +397,14 @@ export async function addResponsible(name: string): Promise<string[]> {
   if (!exists) {
     db.settings.responsibles.push(clean);
     db.settings.responsibles = sortResponsibles(db.settings.responsibles);
-    await writeDb(db);
+    await writeDocumentDb(db);
   }
   return sortResponsibles(db.settings.responsibles);
 }
 
 export async function removeResponsible(name: string): Promise<string[]> {
-  const db = await ensureDb();
+  if (relationalEnabled()) return rel.removeResponsibleRel(name);
+  const db = await ensureDocumentDb();
   const before = db.settings.responsibles.length;
   db.settings.responsibles = db.settings.responsibles.filter(
     (a) => a.localeCompare(name.trim(), "fr", { sensitivity: "base" }) !== 0,
@@ -440,12 +415,13 @@ export async function removeResponsible(name: string): Promise<string[]> {
   if (db.settings.responsibles.length === 0) {
     throw new Error("Il faut au moins un responsable");
   }
-  await writeDb(db);
+  await writeDocumentDb(db);
   return sortResponsibles(db.settings.responsibles);
 }
 
 export async function getAccessUsers(): Promise<AppAccessUser[]> {
-  const db = await ensureDb();
+  if (relationalEnabled()) return rel.getAccessUsersRel();
+  const db = await ensureDocumentDb();
   return normalizeAccessUsers(db.settings.accessUsers);
 }
 
@@ -454,21 +430,22 @@ export async function getAccessRightsForEmail(email: string): Promise<{
   isKpiResponsible: boolean;
   isEncodingResponsible: boolean;
 }> {
+  if (relationalEnabled()) return rel.getAccessRightsForEmailRel(email);
   const users = await getAccessUsers();
   return rightsFromAccessEntry(findAccessUser(users, email));
 }
 
-/** Enregistre / met à jour un utilisateur qui vient de se connecter. */
 export async function recordUserLogin(input: {
   email: string;
   displayName?: string;
   avatarUrl?: string;
 }): Promise<AppAccessUser> {
+  if (relationalEnabled()) return rel.recordUserLoginRel(input);
   const email = normalizeEmail(input.email);
   if (!email || !email.includes("@")) {
     throw new Error("Email invalide");
   }
-  const db = await ensureDb();
+  const db = await ensureDocumentDb();
   const users = normalizeAccessUsers(db.settings.accessUsers);
   const now = new Date().toISOString();
   const idx = users.findIndex((u) => u.email === email);
@@ -491,7 +468,7 @@ export async function recordUserLogin(input: {
   db.settings.accessUsers = draft.sort((a, b) =>
     a.email.localeCompare(b.email, "fr"),
   );
-  await writeDb(db);
+  await writeDocumentDb(db);
   return next;
 }
 
@@ -503,12 +480,13 @@ export async function upsertAccessUser(input: {
   isKpiResponsible: boolean;
   isEncodingResponsible: boolean;
 }): Promise<AppAccessUser[]> {
+  if (relationalEnabled()) return rel.upsertAccessUserRel(input);
   const email = normalizeEmail(input.email);
   if (!email || !email.includes("@")) {
     throw new Error("Email invalide");
   }
 
-  const db = await ensureDb();
+  const db = await ensureDocumentDb();
   const users = normalizeAccessUsers(db.settings.accessUsers);
   const idx = users.findIndex((u) => u.email === email);
   const prev = idx >= 0 ? users[idx] : undefined;
@@ -537,13 +515,14 @@ export async function upsertAccessUser(input: {
     a.email.localeCompare(b.email, "fr"),
   );
   syncResponsiblesFromAccessUsers(db);
-  await writeDb(db);
+  await writeDocumentDb(db);
   return db.settings.accessUsers;
 }
 
 export async function removeAccessUser(email: string): Promise<AppAccessUser[]> {
+  if (relationalEnabled()) return rel.removeAccessUserRel(email);
   const e = normalizeEmail(email);
-  const db = await ensureDb();
+  const db = await ensureDocumentDb();
   const users = normalizeAccessUsers(db.settings.accessUsers);
   const target = findAccessUser(users, e);
   if (!target) {
@@ -555,27 +534,29 @@ export async function removeAccessUser(email: string): Promise<AppAccessUser[]> 
   }
   db.settings.accessUsers = draft;
   syncResponsiblesFromAccessUsers(db);
-  await writeDb(db);
+  await writeDocumentDb(db);
   return db.settings.accessUsers;
 }
 
 export async function getPeopleDirectory(): Promise<PeopleDirectory> {
-  const db = await ensureDb();
+  if (relationalEnabled()) return rel.getPeopleDirectoryRel();
+  const db = await ensureDocumentDb();
   return db.settings.peopleDirectory ?? {};
 }
 
 export async function mergePeopleFromJira(
   people: PersonDirectoryEntry[],
 ): Promise<PeopleDirectory> {
+  if (relationalEnabled()) return rel.mergePeopleFromJiraRel(people);
   if (!people.length) {
     return getPeopleDirectory();
   }
-  const db = await ensureDb();
+  const db = await ensureDocumentDb();
   db.settings.peopleDirectory = mergePeopleDirectory(
     db.settings.peopleDirectory,
     people,
   );
-  await writeDb(db);
+  await writeDocumentDb(db);
   return db.settings.peopleDirectory;
 }
 
@@ -584,7 +565,8 @@ export async function addLogEvent(
   event: Omit<LogEvent, "id" | "year" | "month" | "week"> &
     Partial<Pick<LogEvent, "year" | "month" | "week">>,
 ): Promise<LogEvent> {
-  const db = await ensureDb();
+  if (relationalEnabled()) return rel.addLogEventRel(collection, event);
+  const db = await ensureDocumentDb();
   const canonical = canonicalResponsible(
     event.responsible,
     db.settings.responsibles,
@@ -605,7 +587,7 @@ export async function addLogEvent(
     id: `${collection}-${Date.now()}`,
   };
   db[collection].push(full);
-  await writeDb(db);
+  await writeDocumentDb(db);
   return full;
 }
 
@@ -613,7 +595,8 @@ export async function addPhishingEvent(
   event: Omit<PhishingEvent, "id" | "year" | "month" | "week"> &
     Partial<Pick<PhishingEvent, "year" | "month" | "week">>,
 ): Promise<PhishingEvent> {
-  const db = await ensureDb();
+  if (relationalEnabled()) return rel.addPhishingEventRel(event);
+  const db = await ensureDocumentDb();
   const derived = withDerivedWeek(event);
   const full: PhishingEvent = {
     date: derived.date,
@@ -626,7 +609,7 @@ export async function addPhishingEvent(
     id: `phish-${Date.now()}`,
   };
   db.phishing.push(full);
-  await writeDb(db);
+  await writeDocumentDb(db);
   return full;
 }
 
@@ -634,13 +617,14 @@ export async function deleteLogEvent(
   collection: LogCollection | "phishing",
   eventId: string,
 ): Promise<void> {
-  const db = await ensureDb();
+  if (relationalEnabled()) return rel.deleteLogEventRel(collection, eventId);
+  const db = await ensureDocumentDb();
   if (collection === "phishing") {
     db.phishing = db.phishing.filter((e) => e.id !== eventId);
   } else {
     db[collection] = db[collection].filter((e) => e.id !== eventId);
   }
-  await writeDb(db);
+  await writeDocumentDb(db);
 }
 
 export async function setTicketsBreakdown(
@@ -649,17 +633,19 @@ export async function setTicketsBreakdown(
   byAssignee: Record<string, number>,
   byRequester?: Record<string, number>,
 ): Promise<void> {
-  const db = await ensureDb();
+  if (relationalEnabled()) {
+    return rel.setTicketsBreakdownRel(weekKey, byType, byAssignee, byRequester);
+  }
+  const db = await ensureDocumentDb();
   if (!db.ticketsByRequester) db.ticketsByRequester = {};
   db.ticketsByType[weekKey] = byType;
   db.ticketsByAssignee[weekKey] = byAssignee;
   if (byRequester !== undefined) {
     db.ticketsByRequester[weekKey] = byRequester;
   }
-  await writeDb(db);
+  await writeDocumentDb(db);
 }
 
-/** Met à jour sélectivement type / assigné / demandeur pour une semaine. */
 export async function patchTicketsBreakdown(
   weekKey: string,
   patch: {
@@ -668,7 +654,8 @@ export async function patchTicketsBreakdown(
     byRequester?: Record<string, number>;
   },
 ): Promise<void> {
-  const db = await ensureDb();
+  if (relationalEnabled()) return rel.patchTicketsBreakdownRel(weekKey, patch);
+  const db = await ensureDocumentDb();
   if (!db.ticketsByRequester) db.ticketsByRequester = {};
   if (patch.byType !== undefined) db.ticketsByType[weekKey] = patch.byType;
   if (patch.byAssignee !== undefined) {
@@ -677,10 +664,9 @@ export async function patchTicketsBreakdown(
   if (patch.byRequester !== undefined) {
     db.ticketsByRequester[weekKey] = patch.byRequester;
   }
-  await writeDb(db);
+  await writeDocumentDb(db);
 }
 
-/** Met à jour uniquement la ventilation par demandeur (reporter). */
 export async function setTicketsByRequester(
   weekKey: string,
   byRequester: Record<string, number>,
@@ -710,7 +696,6 @@ function filterWeekKeys(
       options?.weekFrom == null && options?.weekTo == null
         ? true
         : w >= lo && w <= hi;
-    // If only year given (no week range), clear whole year
     const weekOk =
       options?.weekFrom != null || options?.weekTo != null ? inRange : true;
     if (inYear && weekOk) remove.add(key);
@@ -718,16 +703,14 @@ function filterWeekKeys(
   return remove;
 }
 
-/**
- * Efface des ventilations (type / assigné / demandeur).
- */
 export async function clearTicketsBreakdown(options?: {
   year?: number;
   weekFrom?: number;
   weekTo?: number;
   parts?: BreakdownPart[];
 }): Promise<{ removed: number; remaining: number }> {
-  const db = await ensureDb();
+  if (relationalEnabled()) return rel.clearTicketsBreakdownRel(options);
+  const db = await ensureDocumentDb();
   if (!db.ticketsByRequester) db.ticketsByRequester = {};
   const parts: BreakdownPart[] =
     options?.parts && options.parts.length > 0
@@ -769,13 +752,12 @@ export async function clearTicketsBreakdown(options?: {
     }
   }
 
-  // N’écrire que les parties demandées — ne jamais réassigner les autres
   if (parts.includes("type")) db.ticketsByType = collections.type;
   if (parts.includes("assignee")) db.ticketsByAssignee = collections.assignee;
   if (parts.includes("requester")) {
     db.ticketsByRequester = collections.requester;
   }
-  await writeDb(db);
+  await writeDocumentDb(db);
 
   if (parts.length === 1) {
     remaining = Object.keys(collections[parts[0]]).length;

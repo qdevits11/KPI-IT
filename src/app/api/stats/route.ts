@@ -6,6 +6,7 @@ import {
   STAT_DIMENSIONS,
 } from "@/lib/stats";
 import type { TicketStatDimension } from "@/lib/types";
+import { requireSessionApi } from "@/lib/api";
 
 const DIMENSIONS = new Set<TicketStatDimension>([
   "assignee",
@@ -14,6 +15,9 @@ const DIMENSIONS = new Set<TicketStatDimension>([
 ]);
 
 export async function GET(request: Request) {
+  const gate = await requireSessionApi();
+  if ("response" in gate) return gate.response;
+
   const { searchParams } = new URL(request.url);
   const db = await getDatabase();
   const yearParam = searchParams.get("year");

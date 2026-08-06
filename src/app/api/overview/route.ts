@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { getDatabase } from "@/lib/store";
 import { buildYearOverview } from "@/lib/formulas";
+import { requireSessionApi } from "@/lib/api";
 
 export async function GET(request: Request) {
+  const gate = await requireSessionApi();
+  if ("response" in gate) return gate.response;
+
   const { searchParams } = new URL(request.url);
   const db = await getDatabase();
   const year = Number(searchParams.get("year") ?? db.year);

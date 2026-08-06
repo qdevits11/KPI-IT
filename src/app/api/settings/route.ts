@@ -7,6 +7,9 @@ import {
 import { requireAdminApi } from "@/lib/access-api";
 
 export async function GET() {
+  const gate = await requireAdminApi();
+  if ("response" in gate) return gate.response;
+
   const responsibles = await getResponsibles();
   return NextResponse.json({ responsibles });
 }
