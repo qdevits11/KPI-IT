@@ -6,8 +6,8 @@
 import type { JiraConnection } from "./jira-auth";
 import { resolveJiraConnection } from "./jira-auth";
 import {
+  bestCategoryFromIssue,
   buildWeekJql,
-  categoryOf,
   customFieldValue,
   isoWeekDateRange,
   personName,
@@ -99,41 +99,15 @@ export function buildOpenJql(conn: JiraConnection): string {
   return `${conn.jqlBase.trim()} AND ${conn.openStatusJql} ORDER BY created ASC`;
 }
 
-/** Champs Jira à demander pour les listes tickets (catégorie IT incluse). */
+/** Champs Jira à demander pour les listes tickets (tous les customfields). */
 export function ticketSearchFields(
-  conn: Pick<
+  _conn: Pick<
     JiraConnection,
     "categoryField" | "categoryCustomFieldId" | "datePriseEnChargeFieldId"
   >,
-  scope: TicketSearchScope,
+  _scope: TicketSearchScope,
 ): string {
-  const needsDiscovery =
-    !conn.categoryCustomFieldId &&
-    (conn.categoryField === "auto" ||
-      conn.categoryField === "requestType" ||
-      conn.categoryField === "component");
-
-  if (needsDiscovery) return "*all";
-
-  const fields = new Set([
-    "summary",
-    "created",
-    "status",
-    "assignee",
-    "reporter",
-    "creator",
-    "labels",
-    "components",
-    "issuetype",
-    "resolutiondate",
-  ]);
-  if (conn.categoryCustomFieldId) {
-    fields.add(conn.categoryCustomFieldId);
-  }
-  if (scope === "sla_pec") {
-    fields.add(conn.datePriseEnChargeFieldId);
-  }
-  return [...fields].join(",");
+  return "*all";
 }
 
 function escapeJqlString(s: string): string {
@@ -172,7 +146,7 @@ function mapIssue(
     assigneeAvatarUrl: pickAvatarUrl(assignee?.avatarUrls),
     requester: personName(requester, "Inconnu"),
     requesterAvatarUrl: pickAvatarUrl(requester?.avatarUrls),
-    type: categoryOf(issue as never, categorySource),
+    type: bestCategoryFromIssue(issue as JiraIssue, categorySource),
     browseUrl: jiraBrowseUrl(conn.baseUrl, issue.key),
   };
 }

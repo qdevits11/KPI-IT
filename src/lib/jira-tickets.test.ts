@@ -123,23 +123,9 @@ describe("jira-tickets helpers", () => {
     ).toBe("hors SLA clôture · semaine 2026-S32");
   });
 
-  it("demande le champ catégorie IT dans les recherches tickets", () => {
-    expect(ticketSearchFields(conn, "open")).toContain(
-      conn.categoryCustomFieldId,
-    );
-    expect(ticketSearchFields(conn, "created")).toContain(
-      conn.categoryCustomFieldId,
-    );
-    expect(ticketSearchFields(conn, "sla_pec")).toContain(
-      conn.categoryCustomFieldId,
-    );
-    expect(ticketSearchFields(conn, "sla_pec")).toContain(
-      conn.datePriseEnChargeFieldId,
-    );
-    expect(ticketSearchFields(conn, "sla_cloture")).toContain(
-      conn.categoryCustomFieldId,
-    );
-    expect(ticketSearchFields(conn, "sla_cloture")).toContain("resolutiondate");
+  it("demande tous les champs Jira pour les listes tickets", () => {
+    expect(ticketSearchFields(conn, "open")).toBe("*all");
+    expect(ticketSearchFields(conn, "sla_cloture")).toBe("*all");
   });
 
   it("décrit les filtres", () => {

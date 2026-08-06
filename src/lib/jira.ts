@@ -9,6 +9,10 @@ import {
 } from "./jira-auth";
 import { countOverBusinessSla } from "./business-hours";
 import {
+  isChannelLikeCategory,
+  matchesKnownItCategory,
+} from "./jira-category-detect";
+import {
   personEntryFromJiraUser,
   type PersonDirectoryEntry,
 } from "./avatars";
@@ -609,6 +613,18 @@ function customFieldCategoryValue(
   if (typeof obj.value === "string" && obj.value.trim()) return obj.value.trim();
   if (typeof obj.name === "string" && obj.name.trim()) return obj.name.trim();
   if (typeof obj.label === "string" && obj.label.trim()) return obj.label.trim();
+  if (typeof obj.displayName === "string" && obj.displayName.trim()) {
+    return obj.displayName.trim();
+  }
+  const option = asRecord(obj.option);
+  if (option) {
+    if (typeof option.value === "string" && option.value.trim()) {
+      return option.value.trim();
+    }
+    if (typeof option.name === "string" && option.name.trim()) {
+      return option.name.trim();
+    }
+  }
   const child = asRecord(obj.child);
   if (child && typeof child.value === "string" && child.value.trim()) {
     return child.value.trim();
@@ -687,6 +703,43 @@ export function categoryOf(
   );
 }
 
+function categoryFieldHitCount(issues: JiraIssue[], fieldId: string): number {
+  if (!fieldId) return 0;
+  let hits = 0;
+  for (const issue of issues) {
+    if (customFieldCategoryValue(issue, fieldId)) hits += 1;
+  }
+  return hits;
+}
+
+/**
+ * Lit la catégorie IT avec replis si le champ configuré est vide sur le ticket.
+ * Utilisé pour les listes tickets (modal) où le hint customfield_… peut différer
+ * du champ réellement rempli (ex. customfield_10250 « Catégorie »).
+ */
+export function bestCategoryFromIssue(
+  issue: JiraIssue,
+  connection: Pick<JiraConnection, "categoryField" | "categoryCustomFieldId">,
+): string {
+  const primary = categoryOf(issue, connection);
+  if (primary !== "Non catégorisé") return primary;
+
+  for (const key of Object.keys(issue.fields)) {
+    if (!key.startsWith("customfield_")) continue;
+    const val = customFieldCategoryValue(issue, key);
+    if (!val || isChannelLikeCategory(val)) continue;
+    if (matchesKnownItCategory(val)) return val;
+  }
+
+  const requestType = findRequestTypeName(issue);
+  if (requestType && !isChannelLikeCategory(requestType)) return requestType;
+
+  const component = normalizeComponentNames(issue.fields.components)[0];
+  if (component) return component;
+
+  return "Non catégorisé";
+}
+
 async function fetchJiraFieldNames(
   conn: JiraConnection,
 ): Promise<Record<string, string>> {
@@ -738,6 +791,28 @@ export async function resolveCategorySource(
     };
   }
 
+  let categoryField = resolved.categoryField;
+  let categoryCustomFieldId = resolved.categoryCustomFieldId;
+
+  if (issues.length > 0 && categoryCustomFieldId && discovered) {
+    const configuredHits = categoryFieldHitCount(issues, categoryCustomFieldId);
+    const discoveredHits = categoryFieldHitCount(issues, discovered.fieldId);
+    const shouldSwitch =
+      (configuredHits === 0 && discovered.hitCount > 0) ||
+      (discoveredHits > configuredHits &&
+        discoveredHits >= Math.max(2, Math.ceil(issues.length * 0.25)));
+
+    if (shouldSwitch) {
+      warnings.push(
+        `Champ configuré ${categoryCustomFieldId} peu ou pas rempli (${configuredHits}/${issues.length}) — catégories via ${discovered.fieldId}` +
+          (discovered.fieldName ? ` « ${discovered.fieldName} »` : "") +
+          ` (${discoveredHits}/${issues.length}).`,
+      );
+      categoryField = "custom";
+      categoryCustomFieldId = discovered.fieldId;
+    }
+  }
+
   // requestType seul mais valeurs = canal mail → prévenir + lister candidats
   if (
     connection.categoryField === "requestType" ||
@@ -771,8 +846,8 @@ export async function resolveCategorySource(
   }
 
   return {
-    categoryField: resolved.categoryField,
-    categoryCustomFieldId: resolved.categoryCustomFieldId,
+    categoryField,
+    categoryCustomFieldId,
   };
 }
 

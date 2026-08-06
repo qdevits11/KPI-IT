@@ -169,7 +169,8 @@ describe("categoryOf", () => {
   });
 
   it("lit le Customer Request Type JSM (même si composants vides)", async () => {
-    const { categoryOf, findRequestTypeName } = await import("./jira");
+    const { categoryOf, findRequestTypeName, bestCategoryFromIssue } =
+      await import("./jira");
     const issue = {
       key: "CSD-3131",
       fields: {
@@ -197,6 +198,27 @@ describe("categoryOf", () => {
         categoryField: "component",
         categoryCustomFieldId: "",
       }),
+    ).toBe("Odoo");
+    // Champ configuré vide mais catégorie IT sur un autre customfield
+    expect(
+      bestCategoryFromIssue(
+        {
+          key: "CSD-9",
+          fields: {
+            created: "2026-08-01T10:00:00.000Z",
+            resolutiondate: null,
+            components: [],
+            labels: [],
+            issuetype: { name: "Task" },
+            customfield_10152: null,
+            customfield_10250: { value: "Odoo" },
+          },
+        },
+        {
+          categoryField: "custom",
+          categoryCustomFieldId: "customfield_10152",
+        },
+      ),
     ).toBe("Odoo");
   });
 });
