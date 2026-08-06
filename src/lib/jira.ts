@@ -49,7 +49,7 @@ export interface JiraUser {
   };
 }
 
-interface JiraIssue {
+export interface JiraIssue {
   key: string;
   fields: {
     created: string;
@@ -823,7 +823,7 @@ function matchesKnownItCategoryInline(name: string): boolean {
   ].some((k) => n.includes(k));
 }
 
-function customFieldValue(
+export function customFieldValue(
   issue: JiraIssue,
   fieldId: string,
 ): string | null {

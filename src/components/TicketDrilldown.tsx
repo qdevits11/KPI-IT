@@ -13,9 +13,15 @@ import { usePeopleAvatars } from "./PeopleProvider";
 export type DrilldownQuery = TicketSearchFilter;
 
 function describeFilters(filter: TicketSearchFilter): string {
-  const bits: string[] = [
-    filter.scope === "open" ? "ouverts (live)" : "créés",
-  ];
+  const scopeLabel =
+    filter.scope === "open"
+      ? "ouverts (live)"
+      : filter.scope === "sla_pec"
+        ? "hors SLA prise en charge"
+        : filter.scope === "sla_cloture"
+          ? "hors SLA clôture"
+          : "créés";
+  const bits: string[] = [scopeLabel];
   if (filter.weekId) bits.push(`semaine ${filter.weekId}`);
   else if (filter.year) bits.push(`année ${filter.year}`);
   if (filter.assignee) bits.push(`assigné : ${filter.assignee}`);

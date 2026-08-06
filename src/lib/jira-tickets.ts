@@ -8,13 +8,16 @@ import { resolveJiraConnection } from "./jira-auth";
 import {
   buildWeekJql,
   categoryOf,
+  customFieldValue,
   isoWeekDateRange,
   personName,
   pickAvatarUrl,
   resolveCategorySource,
   searchAll,
+  type JiraIssue,
   type JiraUser,
 } from "./jira";
+import { filterOverBusinessSla } from "./business-hours";
 import { parseWeekId } from "./types";
 import {
   mergePeopleDirectory,
@@ -56,7 +59,11 @@ export interface OpenTicketsSnapshot {
   warnings: string[];
 }
 
-export type TicketSearchScope = "open" | "created";
+export type TicketSearchScope =
+  | "open"
+  | "created"
+  | "sla_pec"
+  | "sla_cloture";
 
 export interface TicketSearchFilter {
   scope: TicketSearchScope;
@@ -225,11 +232,30 @@ export function filterTicketList(
   });
 }
 
+function weekJqlForScope(
+  conn: JiraConnection,
+  scope: TicketSearchScope,
+  weekId: string,
+): string {
+  const { year, week } = parseWeekId(weekId);
+  const bundle = buildWeekJql(conn, year, week);
+  if (scope === "sla_pec") return bundle.priseEnCharge;
+  if (scope === "sla_cloture") return bundle.resolved;
+  return bundle.created;
+}
+
 /** Construit le JQL de base (sans filtre catégorie — appliqué ensuite). */
 export function buildTicketSearchJql(
   conn: JiraConnection,
   filter: TicketSearchFilter,
 ): string {
+  if (
+    (filter.scope === "sla_pec" || filter.scope === "sla_cloture") &&
+    filter.weekId
+  ) {
+    return weekJqlForScope(conn, filter.scope, filter.weekId);
+  }
+
   const parts: string[] = [conn.jqlBase.trim()];
 
   if (filter.scope === "open") {
@@ -268,6 +294,35 @@ async function issuesToTickets(
 ): Promise<TicketListItem[]> {
   const categorySource = await resolveCategorySource(conn, issues, warnings);
   return issues.map((issue) => mapIssue(issue, conn, categorySource, now));
+}
+
+function slaEventDate(
+  issue: JiraIssue,
+  scope: "sla_pec" | "sla_cloture",
+  pecFieldId: string,
+): string | null {
+  if (scope === "sla_pec") return customFieldValue(issue, pecFieldId);
+  return issue.fields.resolutiondate ?? null;
+}
+
+function filterIssuesOverSla(
+  issues: JiraIssue[],
+  scope: "sla_pec" | "sla_cloture",
+  conn: JiraConnection,
+): JiraIssue[] {
+  const thresholdHours =
+    scope === "sla_pec"
+      ? conn.slaPriseEnChargeHours
+      : conn.slaClotureHours;
+  const pecFieldId = conn.datePriseEnChargeFieldId;
+  return filterOverBusinessSla(
+    issues.map((issue) => ({
+      issue,
+      created: issue.fields.created,
+      eventDate: slaEventDate(issue, scope, pecFieldId),
+    })),
+    thresholdHours,
+  ).map((row) => row.issue);
 }
 
 export async function fetchOpenTicketsSnapshot(
@@ -337,6 +392,15 @@ export async function searchTickets(
   }
 
   const warnings: string[] = [];
+  if (
+    (filter.scope === "sla_pec" || filter.scope === "sla_cloture") &&
+    !filter.weekId
+  ) {
+    throw new Error(
+      "Pour les listes hors SLA, indiquez la semaine (week, ex. 2026-S32).",
+    );
+  }
+
   // Pour le type (catégorie custom), on élargit le JQL puis on filtre client.
   const jqlFilter: TicketSearchFilter = {
     ...filter,
@@ -344,8 +408,15 @@ export async function searchTickets(
   };
   // Si assignee échoue en JQL (displayName), on retentera sans assignee.
   let jql = buildTicketSearchJql(connection, jqlFilter);
+  const pecField = connection.datePriseEnChargeFieldId;
+  const searchFields =
+    filter.scope === "sla_pec"
+      ? `summary,created,status,assignee,reporter,creator,labels,components,issuetype,${pecField}`
+      : filter.scope === "sla_cloture"
+        ? "summary,created,status,assignee,reporter,creator,labels,components,issuetype,resolutiondate"
+        : "*all";
 
-  let issues = await searchAll(connection, jql, "*all").catch((err: Error) => {
+  let issues = await searchAll(connection, jql, searchFields).catch((err: Error) => {
     warnings.push(`Search: ${err.message.slice(0, 160)}`);
     return [];
   });
@@ -363,13 +434,13 @@ export async function searchTickets(
       `JQL assignee = « ${filter.assignee} » sans résultat — retentative sans filtre assignee, filtrage local.`,
     );
     jql = withoutAssignee;
-    issues = await searchAll(connection, jql, "*all").catch((err: Error) => {
+    issues = await searchAll(connection, jql, searchFields).catch((err: Error) => {
       warnings.push(`Search (retry): ${err.message.slice(0, 160)}`);
       return [];
     });
   }
 
-  if (issues.length === 0) {
+  if (issues.length === 0 && searchFields === "*all") {
     issues = await searchAll(
       connection,
       jql,
@@ -378,6 +449,16 @@ export async function searchTickets(
           ? `,${connection.categoryCustomFieldId}`
           : ""),
     ).catch(() => []);
+  }
+
+  if (filter.scope === "sla_pec" || filter.scope === "sla_cloture") {
+    const before = issues.length;
+    issues = filterIssuesOverSla(issues, filter.scope, connection);
+    if (before > 0 && issues.length === 0) {
+      warnings.push(
+        `${before} candidat(s) Jira cette semaine, aucun hors SLA après filtrage horaires ouvrés.`,
+      );
+    }
   }
 
   const mapped = await issuesToTickets(connection, issues, warnings);
@@ -396,9 +477,15 @@ export async function searchTickets(
 
 /** Aide tests / UI : libellé lisible des filtres actifs. */
 export function describeTicketFilters(filter: TicketSearchFilter): string {
-  const bits: string[] = [
-    filter.scope === "open" ? "ouverts (live)" : "créés",
-  ];
+  const scopeLabel =
+    filter.scope === "open"
+      ? "ouverts (live)"
+      : filter.scope === "sla_pec"
+        ? "hors SLA prise en charge"
+        : filter.scope === "sla_cloture"
+          ? "hors SLA clôture"
+          : "créés";
+  const bits: string[] = [scopeLabel];
   if (filter.weekId) bits.push(`semaine ${filter.weekId}`);
   else if (filter.year) bits.push(`année ${filter.year}`);
   if (filter.assignee) bits.push(`assigné : ${filter.assignee}`);

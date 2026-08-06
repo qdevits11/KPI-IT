@@ -78,7 +78,7 @@ describe("jira-tickets helpers", () => {
     ]);
   });
 
-  it("construit un JQL open / created", () => {
+  it("construit un JQL open / created / SLA", () => {
     expect(buildTicketSearchJql(conn, { scope: "open" })).toContain(
       "status NOT IN",
     );
@@ -92,6 +92,34 @@ describe("jira-tickets helpers", () => {
     });
     expect(weekJql).toContain('created >= "2026-08-03');
     expect(weekJql).toContain('assignee = "Marie Dupont"');
+
+    const slaPecJql = buildTicketSearchJql(conn, {
+      scope: "sla_pec",
+      weekId: "2026-S32",
+    });
+    expect(slaPecJql).toContain(conn.datePriseEnChargeJql);
+    expect(slaPecJql).toContain('>= "2026-08-03 00:00"');
+
+    const slaCloseJql = buildTicketSearchJql(conn, {
+      scope: "sla_cloture",
+      weekId: "2026-S32",
+    });
+    expect(slaCloseJql).toContain("resolutiondate >=");
+  });
+
+  it("décrit les filtres SLA", () => {
+    expect(
+      describeTicketFilters({
+        scope: "sla_pec",
+        weekId: "2026-S32",
+      }),
+    ).toBe("hors SLA prise en charge · semaine 2026-S32");
+    expect(
+      describeTicketFilters({
+        scope: "sla_cloture",
+        weekId: "2026-S32",
+      }),
+    ).toBe("hors SLA clôture · semaine 2026-S32");
   });
 
   it("décrit les filtres", () => {

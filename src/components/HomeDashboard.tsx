@@ -305,8 +305,13 @@ export function HomeDashboard() {
             label="Créés cette semaine"
             value={created}
             hint="Demandes IT ouvertes dans la semaine ISO"
-            cta="Voir la semaine"
-            href="/semaine"
+            cta="Voir la liste"
+            onClick={() =>
+              setDrill({
+                scope: "created",
+                weekId: kpis?.meta.currentWeekId,
+              })
+            }
           />
         </div>
       </section>
@@ -321,16 +326,26 @@ export function HomeDashboard() {
             value={slaPec}
             hint="> 24 h ouvrées avant prise en charge"
             tone={(slaPec ?? 0) > 0 ? "crit" : "default"}
-            cta="Ouvrir la semaine"
-            href="/semaine"
+            cta="Voir la liste"
+            onClick={() =>
+              setDrill({
+                scope: "sla_pec",
+                weekId: kpis?.meta.currentWeekId,
+              })
+            }
           />
           <ActionTile
             label="Hors SLA clôture"
             value={slaClose}
             hint="> 48 h ouvrées avant clôture"
             tone={(slaClose ?? 0) > 0 ? "crit" : "default"}
-            cta="Ouvrir la semaine"
-            href="/semaine"
+            cta="Voir la liste"
+            onClick={() =>
+              setDrill({
+                scope: "sla_cloture",
+                weekId: kpis?.meta.currentWeekId,
+              })
+            }
           />
         </div>
       </section>

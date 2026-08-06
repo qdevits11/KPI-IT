@@ -195,6 +195,18 @@ export function parseJiraDate(raw: string): Date | null {
   return Number.isNaN(dt.getTime()) ? null : dt;
 }
 
+function isOverBusinessSla(
+  item: { created: string; eventDate: string | null | undefined },
+  thresholdHours: number,
+  holidays = BE_HOLIDAYS,
+): boolean {
+  if (!item.eventDate) return false;
+  const created = parseJiraDate(item.created);
+  const event = parseJiraDate(item.eventDate);
+  if (!created || !event) return false;
+  return getBusinessHours(created, event, holidays) > thresholdHours;
+}
+
 export function countOverBusinessSla(
   items: Array<{ created: string; eventDate: string | null | undefined }>,
   thresholdHours: number,
@@ -202,13 +214,17 @@ export function countOverBusinessSla(
 ): number {
   let count = 0;
   for (const item of items) {
-    if (!item.eventDate) continue;
-    const created = parseJiraDate(item.created);
-    const event = parseJiraDate(item.eventDate);
-    if (!created || !event) continue;
-    if (getBusinessHours(created, event, holidays) > thresholdHours) {
-      count += 1;
-    }
+    if (isOverBusinessSla(item, thresholdHours, holidays)) count += 1;
   }
   return count;
+}
+
+export function filterOverBusinessSla<T extends { created: string; eventDate: string | null | undefined }>(
+  items: T[],
+  thresholdHours: number,
+  holidays = BE_HOLIDAYS,
+): T[] {
+  return items.filter((item) =>
+    isOverBusinessSla(item, thresholdHours, holidays),
+  );
 }
