@@ -172,7 +172,11 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
       ? `/api/jira/open?week=${encodeURIComponent(weekId)}`
       : "/api/jira/open";
 
-    const openRes = await fetch(openUrl);
+    const [openRes, closedRes] = await Promise.all([
+      fetch(openUrl),
+      fetch(`/api/jira/closed?week=${encodeURIComponent(weekId)}`),
+    ]);
+
     if (openRes.ok) {
       setOpenSnap((await openRes.json()) as OpenTicketsSnapshot);
       setOpenError(null);
@@ -187,24 +191,17 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
       setOpenSnap(null);
     }
 
-    if (pastWeek) {
-      const closedRes = await fetch(
-        `/api/jira/closed?week=${encodeURIComponent(weekId)}`,
-      );
-      if (closedRes.ok) {
-        setClosedSnap((await closedRes.json()) as OpenTicketsSnapshot);
-        setClosedError(null);
-      } else {
-        const body = (await closedRes.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        setClosedError(
-          body?.error ??
-            "Tickets clôturés indisponibles — vérifiez la connexion Jira.",
-        );
-        setClosedSnap(null);
-      }
+    if (closedRes.ok) {
+      setClosedSnap((await closedRes.json()) as OpenTicketsSnapshot);
+      setClosedError(null);
     } else {
+      const body = (await closedRes.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      setClosedError(
+        body?.error ??
+          "Tickets clôturés indisponibles — vérifiez la connexion Jira.",
+      );
       setClosedSnap(null);
     }
   }, []);
@@ -311,13 +308,7 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
 
       {kpis && (
         <>
-          <section
-            className={`grid gap-2 sm:gap-3 ${
-              isCurrentWeek
-                ? "grid-cols-2 sm:grid-cols-4"
-                : "grid-cols-5"
-            }`}
-          >
+          <section className="grid grid-cols-5 gap-2 sm:gap-3">
             <ActionTile
               label="Créés cette semaine"
               value={created}
@@ -355,15 +346,12 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
                           : { scope: "open", weekId: selectedWeekId },
                         tickets: openSnap.tickets,
                       })
-                  : !isCurrentWeek
-                    ? () =>
-                        setDrill({
-                          query: {
-                            scope: "open",
-                            weekId: selectedWeekId,
-                          },
-                        })
-                    : undefined
+                  : () =>
+                      setDrill({
+                        query: isCurrentWeek
+                          ? { scope: "open" }
+                          : { scope: "open", weekId: selectedWeekId },
+                      })
               }
             />
             <ActionTile
@@ -394,80 +382,71 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
                 })
               }
             />
-            {!isCurrentWeek && (
-              <ActionTile
-                label="Tickets clôturés"
-                value={closedSnap?.total ?? null}
-                hint="Résolus pendant la semaine"
-                onClick={
-                  closedSnap
-                    ? () =>
-                        setDrill({
-                          query: {
-                            scope: "closed",
-                            weekId: selectedWeekId,
-                          },
-                          tickets: closedSnap.tickets,
-                        })
-                    : () =>
-                        setDrill({
-                          query: {
-                            scope: "closed",
-                            weekId: selectedWeekId,
-                          },
-                        })
-                }
-              />
-            )}
+            <ActionTile
+              label="Tickets clôturés"
+              value={closedSnap?.total ?? null}
+              hint="Résolus pendant la semaine"
+              onClick={
+                closedSnap
+                  ? () =>
+                      setDrill({
+                        query: {
+                          scope: "closed",
+                          weekId: selectedWeekId,
+                        },
+                        tickets: closedSnap.tickets,
+                      })
+                  : () =>
+                      setDrill({
+                        query: {
+                          scope: "closed",
+                          weekId: selectedWeekId,
+                        },
+                      })
+              }
+            />
           </section>
 
-          {isCurrentWeek && openSnap && (
-            <OpenTicketsByPerson
-              data={openSnap}
-              mode="live"
-              onDrill={(query, tickets) => setDrill({ query, tickets })}
-            />
+          {(openSnap ||
+            closedSnap ||
+            (!isCurrentWeek &&
+              kpis.openByAssignee &&
+              Object.keys(kpis.openByAssignee).length > 0)) && (
+            <div className="grid gap-6 md:grid-cols-2 md:items-start">
+              {openSnap ? (
+                <OpenTicketsByPerson
+                  data={openSnap}
+                  mode={isCurrentWeek ? "live" : "historical"}
+                  weekId={isCurrentWeek ? undefined : selectedWeekId}
+                  frozenAt={meta?.openFrozenAt}
+                  onDrill={(query, tickets) => setDrill({ query, tickets })}
+                />
+              ) : !isCurrentWeek &&
+                kpis.openByAssignee &&
+                Object.keys(kpis.openByAssignee).length > 0 ? (
+                <OpenTicketsByPerson
+                  data={openSnapshotFromAssigneeCounts(kpis.openByAssignee, {
+                    fetchedAt: meta?.openFrozenAt ?? new Date().toISOString(),
+                    warnings: [],
+                  })}
+                  mode="frozen"
+                  weekId={selectedWeekId}
+                  frozenAt={meta?.openFrozenAt}
+                  onDrill={(query, tickets) => setDrill({ query, tickets })}
+                />
+              ) : null}
+
+              {closedSnap && (
+                <OpenTicketsByPerson
+                  data={closedSnap}
+                  mode="closed"
+                  kind="closed"
+                  weekId={selectedWeekId}
+                  onDrill={(query, tickets) => setDrill({ query, tickets })}
+                />
+              )}
+            </div>
           )}
-
-          {!isCurrentWeek &&
-            (openSnap ||
-              closedSnap ||
-              (kpis.openByAssignee &&
-                Object.keys(kpis.openByAssignee).length > 0)) && (
-              <div className="grid gap-6 md:grid-cols-2 md:items-start">
-                {openSnap ? (
-                  <OpenTicketsByPerson
-                    data={openSnap}
-                    mode="historical"
-                    weekId={selectedWeekId}
-                    frozenAt={meta?.openFrozenAt}
-                    onDrill={(query, tickets) => setDrill({ query, tickets })}
-                  />
-                ) : kpis.openByAssignee &&
-                  Object.keys(kpis.openByAssignee).length > 0 ? (
-                  <OpenTicketsByPerson
-                    data={openSnapshotFromAssigneeCounts(kpis.openByAssignee, {
-                      fetchedAt: meta?.openFrozenAt ?? new Date().toISOString(),
-                      warnings: [],
-                    })}
-                    mode="frozen"
-                    weekId={selectedWeekId}
-                    frozenAt={meta?.openFrozenAt}
-                    onDrill={(query, tickets) => setDrill({ query, tickets })}
-                  />
-                ) : null}
-
-                {closedSnap && (
-                  <OpenTicketsByPerson
-                    data={closedSnap}
-                    mode="closed"
-                    kind="closed"
-                    weekId={selectedWeekId}
-                    onDrill={(query, tickets) => setDrill({ query, tickets })}
-                  />
-                )}
-              </div>
-            )}
 
           <section className="space-y-2">
             <h2 className="font-[family-name:var(--font-display)] text-base text-[var(--ink)]">
