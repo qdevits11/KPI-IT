@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { KpiValue, LogEvent, PhishingEvent, WeeklyRow } from "@/lib/types";
 import { parseWeekId } from "@/lib/types";
@@ -344,17 +343,9 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
           )}
 
           <section className="space-y-2">
-            <div className="flex flex-wrap items-end justify-between gap-2">
-              <h2 className="font-[family-name:var(--font-display)] text-base text-[var(--ink)]">
-                Encodage
-              </h2>
-              <Link
-                href="/saisie"
-                className="text-xs font-medium text-[var(--accent-deep)] hover:underline"
-              >
-                Formulaire complet
-              </Link>
-            </div>
+            <h2 className="font-[family-name:var(--font-display)] text-base text-[var(--ink)]">
+              Encodage
+            </h2>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
               <ActionTile
                 label="Automatisations métier"
@@ -394,8 +385,10 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
           </section>
 
           <WeekNotesSection
+            weekId={selectedWeekId}
             informations={kpis.week.informations}
             reaction={kpis.week.reaction}
+            onSaved={() => void load(selectedWeekId)}
           />
 
           <WeekEventsAndBreakdowns
