@@ -5,6 +5,8 @@ import {
   addLogEvent,
   addPhishingEvent,
   deleteLogEvent,
+  updateLogEvent,
+  updatePhishingEvent,
   getDatabase,
   getResponsibles,
 } from "@/lib/store";
@@ -35,6 +37,7 @@ const entriesPutSchema = z.object({
       "addPhishing",
       "addMaintenance",
       "deleteEvent",
+      "updateEvent",
     ])
     .optional(),
   event: z
@@ -93,6 +96,53 @@ export async function PUT(request: Request) {
     const gate = await requireEncodingApi();
     if ("response" in gate) return gate.response;
     await deleteLogEvent(body.collection, body.eventId);
+  } else if (
+    body.action === "updateEvent" &&
+    body.collection &&
+    body.eventId &&
+    body.event?.date
+  ) {
+    const gate = await requireEncodingApi();
+    if ("response" in gate) return gate.response;
+    const parts = isoWeekPartsFromDate(body.event.date);
+    id = weekIdFromDate(body.event.date);
+    await ensureWeek(id);
+    try {
+      if (body.collection === "phishing") {
+        await updatePhishingEvent(body.eventId, {
+          date: body.event.date,
+          failures: body.event.failures ?? 0,
+        });
+      } else {
+        if (!body.event.explanation?.trim() || !body.event.responsible?.trim()) {
+          return apiError(
+            "Explication et responsable obligatoires.",
+            400,
+            "validation",
+          );
+        }
+        const responsibles = await getResponsibles();
+        const canonical = canonicalResponsible(
+          body.event.responsible,
+          responsibles,
+        );
+        if (!canonical) {
+          return apiError(
+            `Responsable non autorisé. Choisissez parmi : ${responsibles.join(", ")}`,
+            400,
+            "validation",
+          );
+        }
+        await updateLogEvent(body.collection, body.eventId, {
+          date: body.event.date,
+          explanation: body.event.explanation.trim(),
+          responsible: canonical,
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur";
+      return apiError(message, 400, "validation");
+    }
   } else if (
     (body.action === "addMetier" ||
       body.action === "addOdoo" ||

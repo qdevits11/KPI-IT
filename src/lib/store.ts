@@ -627,6 +627,73 @@ export async function deleteLogEvent(
   await writeDocumentDb(db);
 }
 
+export async function updateLogEvent(
+  collection: LogCollection,
+  eventId: string,
+  patch: { date: string; explanation: string; responsible: string },
+): Promise<LogEvent> {
+  if (relationalEnabled()) {
+    return rel.updateLogEventRel(collection, eventId, patch);
+  }
+  const db = await ensureDocumentDb();
+  const canonical = canonicalResponsible(
+    patch.responsible,
+    db.settings.responsibles,
+  );
+  if (!canonical) {
+    throw new Error(
+      `Responsable non autorisé. Choisissez parmi : ${db.settings.responsibles.join(", ")}`,
+    );
+  }
+  const list = db[collection];
+  const idx = list.findIndex((e) => e.id === eventId);
+  if (idx < 0) throw new Error("Événement introuvable");
+  const derived = withDerivedWeek({
+    date: patch.date,
+    explanation: patch.explanation,
+    responsible: canonical,
+  });
+  list[idx] = {
+    id: eventId,
+    date: derived.date,
+    explanation: derived.explanation,
+    responsible: canonical,
+    year: derived.year,
+    month: derived.month,
+    week: derived.week,
+  };
+  await writeDocumentDb(db);
+  return list[idx];
+}
+
+export async function updatePhishingEvent(
+  eventId: string,
+  patch: { date: string; failures: number },
+): Promise<PhishingEvent> {
+  if (relationalEnabled()) {
+    return rel.updatePhishingEventRel(eventId, patch);
+  }
+  const db = await ensureDocumentDb();
+  const idx = db.phishing.findIndex((e) => e.id === eventId);
+  if (idx < 0) throw new Error("Événement introuvable");
+  const derived = withDerivedWeek({
+    date: patch.date,
+    failures: patch.failures,
+  });
+  db.phishing[idx] = {
+    id: eventId,
+    date: derived.date,
+    year: derived.year,
+    month: derived.month,
+    week: derived.week,
+    failures: derived.failures ?? 0,
+    explanation: db.phishing[idx].explanation ?? "",
+    responsible: db.phishing[idx].responsible ?? "",
+  };
+  await writeDocumentDb(db);
+  return db.phishing[idx];
+}
+
 export async function setTicketsBreakdown(
   weekKey: string,
   byType: Record<string, number>,

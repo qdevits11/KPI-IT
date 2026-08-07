@@ -351,37 +351,25 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
                 label="Automatisations métier"
                 value={metier}
                 tone={(metier ?? 0) > 0 ? "accent" : "default"}
-                onClick={
-                  isCurrentWeek ? () => setEncodeKind("metier") : undefined
-                }
-                disabled={!isCurrentWeek}
+                onClick={() => setEncodeKind("metier")}
               />
               <ActionTile
                 label="Améliorations Odoo"
                 value={odoo}
                 tone={(odoo ?? 0) > 0 ? "accent" : "default"}
-                onClick={
-                  isCurrentWeek ? () => setEncodeKind("odoo") : undefined
-                }
-                disabled={!isCurrentWeek}
+                onClick={() => setEncodeKind("odoo")}
               />
               <ActionTile
                 label="Maintenances prod"
                 value={maintenance}
                 tone={(maintenance ?? 0) > 0 ? "accent" : "default"}
-                onClick={
-                  isCurrentWeek ? () => setEncodeKind("maintenance") : undefined
-                }
-                disabled={!isCurrentWeek}
+                onClick={() => setEncodeKind("maintenance")}
               />
               <ActionTile
                 label="Phishing ratés"
                 value={phishing}
                 tone={(phishing ?? 0) > 0 ? "crit" : "default"}
-                onClick={
-                  isCurrentWeek ? () => setEncodeKind("phishing") : undefined
-                }
-                disabled={!isCurrentWeek}
+                onClick={() => setEncodeKind("phishing")}
               />
             </div>
           </section>
@@ -415,9 +403,10 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
       {encodeKind && (
         <QuickEncodeModal
           kind={encodeKind}
+          weekId={selectedWeekId}
           onClose={() => setEncodeKind(null)}
           onSaved={() => {
-            setMessage("Encodage enregistré.");
+            setMessage("Encodage mis à jour.");
             void load(selectedWeekId);
           }}
         />

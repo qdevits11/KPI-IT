@@ -753,6 +753,82 @@ export async function deleteLogEventRel(
   await bumpRevision(sb);
 }
 
+export async function updateLogEventRel(
+  collection: LogCollection,
+  eventId: string,
+  patch: {
+    date: string;
+    explanation: string;
+    responsible: string;
+  },
+): Promise<LogEvent> {
+  const responsibles = await getResponsiblesRel();
+  const canonical = canonicalResponsible(patch.responsible, responsibles);
+  if (!canonical) {
+    throw new Error(
+      `Responsable non autorisé. Choisissez parmi : ${responsibles.join(", ")}`,
+    );
+  }
+  const parts = isoWeekPartsFromDate(patch.date);
+  const full: LogEvent = {
+    id: eventId,
+    date: patch.date,
+    explanation: patch.explanation,
+    responsible: canonical,
+    year: parts.year,
+    month: parts.month,
+    week: parts.week,
+  };
+  const kind = COLLECTION_TO_LOG_KIND[collection];
+  const sb = requireClient();
+  const { error } = await sb
+    .from(TABLES.logEvents)
+    .update({
+      kind,
+      event_date: full.date,
+      year: full.year,
+      month: full.month,
+      week: full.week,
+      explanation: full.explanation,
+      responsible: full.responsible,
+    })
+    .eq("id", eventId);
+  if (error) throw new Error(error.message);
+  await bumpRevision(sb);
+  return full;
+}
+
+export async function updatePhishingEventRel(
+  eventId: string,
+  patch: { date: string; failures: number },
+): Promise<PhishingEvent> {
+  const parts = isoWeekPartsFromDate(patch.date);
+  const full: PhishingEvent = {
+    id: eventId,
+    date: patch.date,
+    year: parts.year,
+    month: parts.month,
+    week: parts.week,
+    failures: patch.failures ?? 0,
+    explanation: "",
+    responsible: "",
+  };
+  const sb = requireClient();
+  const { error } = await sb
+    .from(TABLES.phishing)
+    .update({
+      event_date: full.date,
+      year: full.year,
+      month: full.month,
+      week: full.week,
+      failures: full.failures,
+    })
+    .eq("id", eventId);
+  if (error) throw new Error(error.message);
+  await bumpRevision(sb);
+  return full;
+}
+
 async function replaceBreakdownDimension(
   weekKey: string,
   dimension: BreakdownDimension,
