@@ -11,7 +11,7 @@ import {
   patchTicketsBreakdown,
   type BreakdownPart,
 } from "@/lib/store";
-import { requireAdminApi } from "@/lib/access-api";
+import { requireAdminApi } from "@/lib/api";
 
 const ALL_PARTS: BreakdownPart[] = ["type", "assignee", "requester"];
 

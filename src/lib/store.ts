@@ -28,7 +28,6 @@ import {
 import {
   canonicalResponsible,
   DEFAULT_RESPONSIBLES,
-  normalizeResponsibleName,
   sortResponsibles,
 } from "./responsibles";
 import {
@@ -73,6 +72,7 @@ let memoryDbPath: string | null = null;
 export function resetDbCacheForTests(): void {
   memoryDb = null;
   memoryDbPath = null;
+  rel.invalidateRelationalDbCache();
 }
 
 function setMemory(db: AppDatabase): AppDatabase {
@@ -174,14 +174,6 @@ export async function getDatabase(): Promise<AppDatabase> {
 
 export function currentWeekId(date = new Date()): string {
   return weekIdFromDate(todayIsoDate(date));
-}
-
-export function isoWeekParts(date = new Date()): {
-  year: number;
-  week: number;
-  month: number;
-} {
-  return isoWeekPartsFromDate(todayIsoDate(date));
 }
 
 export async function listWeeks(): Promise<WeeklyRow[]> {
@@ -390,41 +382,6 @@ export async function getResponsibles(): Promise<string[]> {
       .map((u) => encodingLabel(u)),
   );
   if (fromUsers.length > 0) return fromUsers;
-  return sortResponsibles(db.settings.responsibles);
-}
-
-export async function addResponsible(name: string): Promise<string[]> {
-  if (relationalEnabled()) return rel.addResponsibleRel(name);
-  const db = await ensureDocumentDb();
-  const clean = normalizeResponsibleName(name);
-  if (!clean) {
-    throw new Error("Nom vide");
-  }
-  const exists = db.settings.responsibles.some(
-    (a) => a.localeCompare(clean, "fr", { sensitivity: "base" }) === 0,
-  );
-  if (!exists) {
-    db.settings.responsibles.push(clean);
-    db.settings.responsibles = sortResponsibles(db.settings.responsibles);
-    await writeDocumentDb(db);
-  }
-  return sortResponsibles(db.settings.responsibles);
-}
-
-export async function removeResponsible(name: string): Promise<string[]> {
-  if (relationalEnabled()) return rel.removeResponsibleRel(name);
-  const db = await ensureDocumentDb();
-  const before = db.settings.responsibles.length;
-  db.settings.responsibles = db.settings.responsibles.filter(
-    (a) => a.localeCompare(name.trim(), "fr", { sensitivity: "base" }) !== 0,
-  );
-  if (db.settings.responsibles.length === before) {
-    throw new Error("Personne introuvable");
-  }
-  if (db.settings.responsibles.length === 0) {
-    throw new Error("Il faut au moins un responsable");
-  }
-  await writeDocumentDb(db);
   return sortResponsibles(db.settings.responsibles);
 }
 
@@ -743,13 +700,6 @@ export async function patchTicketsBreakdown(
   await writeDocumentDb(db);
 }
 
-export async function setTicketsByRequester(
-  weekKey: string,
-  byRequester: Record<string, number>,
-): Promise<void> {
-  await patchTicketsBreakdown(weekKey, { byRequester });
-}
-
 /** Figement stock ouvert par assigné (fin de semaine). */
 export async function setOpenByAssignee(
   weekKey: string,
@@ -869,16 +819,4 @@ export async function clearTicketsBreakdown(options?: {
   }
 
   return { removed, remaining };
-}
-
-/**
- * Efface les ventilations demandeurs.
- * @deprecated préférer clearTicketsBreakdown({ parts: ["requester"], ... })
- */
-export async function clearTicketsByRequester(options?: {
-  year?: number;
-  weekFrom?: number;
-  weekTo?: number;
-}): Promise<{ removed: number; remaining: number }> {
-  return clearTicketsBreakdown({ ...options, parts: ["requester"] });
 }

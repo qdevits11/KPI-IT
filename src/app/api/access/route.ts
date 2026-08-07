@@ -4,7 +4,7 @@ import {
   removeAccessUser,
   upsertAccessUser,
 } from "@/lib/store";
-import { requireAdminApi } from "@/lib/access-api";
+import { requireAdminApi } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 

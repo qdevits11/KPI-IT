@@ -611,12 +611,3 @@ export function describeTicketFilters(filter: TicketSearchFilter): string {
   if (filter.type) bits.push(`type : ${filter.type}`);
   return bits.join(" · ");
 }
-
-/** Utilitaire pour tests unitaires sans Jira. */
-export function buildWeekCreatedJqlForTest(
-  conn: Pick<JiraConnection, "jqlBase">,
-  year: number,
-  week: number,
-): string {
-  return buildWeekJql(conn as JiraConnection, year, week).created;
-}

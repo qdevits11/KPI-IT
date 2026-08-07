@@ -2,10 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import type { KpiValue, LogEvent, PhishingEvent } from "@/lib/types";
-import { CATEGORY_LABELS } from "@/lib/formulas";
-import type { TicketStatDimension } from "@/lib/types";
-import { KpiCard } from "./KpiCard";
+import type { LogEvent, PhishingEvent, TicketStatDimension } from "@/lib/types";
 import {
   ClickableCount,
   TicketDrilldown,
@@ -13,15 +10,6 @@ import {
 } from "./TicketDrilldown";
 import { PersonLabel } from "./PersonAvatar";
 import { usePeopleAvatars } from "./PeopleProvider";
-
-const CATEGORY_ORDER = [
-  "sla",
-  "metier",
-  "odoo",
-  "phishing",
-  "production",
-  "ticketing",
-] as const;
 
 export function WeekStatusBadge({
   isLive,
@@ -160,33 +148,6 @@ function EventList({ title, items }: { title: string; items: LogEvent[] }) {
         ))}
       </ul>
     </div>
-  );
-}
-
-export function WeekKpiGrid({ kpis }: { kpis: KpiValue[] }) {
-  const grouped = CATEGORY_ORDER.map((cat) => ({
-    cat,
-    label: CATEGORY_LABELS[cat],
-    items: kpis.filter((k) => k.category === cat),
-  })).filter((g) => g.items.length > 0);
-
-  if (grouped.length === 0) return null;
-
-  return (
-    <>
-      {grouped.map((group) => (
-        <section key={group.cat} className="space-y-4">
-          <h2 className="border-b border-[var(--line)] pb-2 font-[family-name:var(--font-display)] text-xl text-[var(--ink)]">
-            {group.label}
-          </h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {group.items.map((kpi) => (
-              <KpiCard key={kpi.id} kpi={kpi} />
-            ))}
-          </div>
-        </section>
-      ))}
-    </>
   );
 }
 

@@ -1410,6 +1410,3 @@ export function mockCreatedBreakdown(
   };
 }
 
-export async function getJiraConfig(): Promise<JiraConnection | null> {
-  return resolveJiraConnection();
-}

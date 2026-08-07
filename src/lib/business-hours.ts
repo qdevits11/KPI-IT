@@ -132,11 +132,6 @@ export function toBrusselsDateStr(date: Date): string {
   return dateStrFromParts(zonedParts(date));
 }
 
-export function isBusinessDay(date: Date, holidays = BE_HOLIDAYS): boolean {
-  const p = zonedParts(date);
-  return p.weekday !== 0 && p.weekday !== 6 && !holidays.has(dateStrFromParts(p));
-}
-
 /**
  * Copie fidèle de getBusinessHours() n8n, en Europe/Brussels.
  * Compte toutes les heures des jours ouvrés (pas seulement 9h–17h).

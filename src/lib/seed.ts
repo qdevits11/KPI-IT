@@ -51,11 +51,6 @@ export function createEmptyDatabase(
   };
 }
 
-/** @deprecated utiliser createEmptyDatabase */
-export function seedDatabase(): AppDatabase {
-  return createEmptyDatabase();
-}
-
 export function createEmptyWeek(
   year: number,
   month: number,

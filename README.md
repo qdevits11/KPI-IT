@@ -38,7 +38,7 @@ Granularité **hebdomadaire**. En production (Supabase), schéma **relationnel**
 | `kpi_people` | annuaire avatars Jira |
 | `kpi_settings` | responsables d’encodage |
 | `kpi_jira_connection` | credentials Jira chiffrés |
-| `kpi_app_state` | archive JSON legacy (plus source de vérité) |
+| `kpi_user_jira_tokens` | tokens OAuth personnels (actions tickets) |
 
 En local / tests sans Supabase : document JSON fichier (`data/db.json`).
 

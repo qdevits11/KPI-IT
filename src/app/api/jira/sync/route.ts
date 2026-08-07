@@ -16,6 +16,7 @@ import {
   currentWeekId,
   ensureWeek,
   getDatabase,
+  getWeek,
   patchTicketsBreakdown,
   clearTicketsBreakdown,
   mergePeopleFromJira,
@@ -34,7 +35,7 @@ import {
   resolveBreakdownFlags,
   type SaveFields,
 } from "@/lib/save-fields";
-import { requireAdminApi } from "@/lib/access-api";
+import { requireAdminApi } from "@/lib/api";
 import type { PersonDirectoryEntry } from "@/lib/avatars";
 
 async function persistBreakdowns(
@@ -336,8 +337,7 @@ export async function POST(request: Request) {
     // Appliquer les valeurs du dernier test (sans re-fetch Jira)
     if (!dryRun && body.applyValues && !body.useMock) {
       await ensureWeek(id);
-      const existing =
-        (await getDatabase()).weeks.find((w) => weekId(w) === id) ?? null;
+      const existing = await getWeek(id);
 
       let patch: Partial<WeeklyRow> = {
         ...body.applyValues,
@@ -392,8 +392,7 @@ export async function POST(request: Request) {
 
     if (body.useMock) {
       const result = mockJiraWeekStats(year, week);
-      const existing =
-        (await getDatabase()).weeks.find((w) => weekId(w) === id) ?? null;
+      const existing = (await getWeek(id)) ?? null;
       const policy = applyOpenSnapshotPolicy(
         year,
         week,
@@ -465,8 +464,7 @@ export async function POST(request: Request) {
 
     const result = await fetchJiraWeekStats(year, week, conn);
     await ensureWeek(id);
-    const existing =
-      (await getDatabase()).weeks.find((w) => weekId(w) === id) ?? null;
+    const existing = await getWeek(id);
     const policy = applyOpenSnapshotPolicy(
       year,
       week,

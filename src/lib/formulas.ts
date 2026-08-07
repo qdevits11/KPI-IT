@@ -512,6 +512,3 @@ export function buildYearOverview(
     });
 }
 
-export function getFormula(id: string): FormulaDefinition | undefined {
-  return FORMULAS.find((f) => f.id === id);
-}

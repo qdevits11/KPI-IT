@@ -459,16 +459,6 @@ export async function persistSharedOAuthTokens(opts: {
   return conn;
 }
 
-/** Alias login (identité + tokens user, pas de sync partagée). */
-export async function persistOAuthConnection(opts: {
-  accessToken: string;
-  refreshToken?: string;
-  expiresIn: number;
-  preferredBaseUrl?: string;
-}): Promise<{ email: string; displayName?: string }> {
-  return persistOAuthUserLogin(opts);
-}
-
 /** Rafraîchit le Bearer du compte partagé (sync) sans toucher à la session user. */
 export async function ensureFreshOAuthConnection(
   conn: JiraConnection,

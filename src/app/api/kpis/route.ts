@@ -3,7 +3,6 @@ import {
   getDatabase,
   ensureWeek,
   currentWeekId,
-  listWeeks,
 } from "@/lib/store";
 import { buildWeekDashboard } from "@/lib/formulas";
 import { weekId, parseWeekId } from "@/lib/types";
@@ -41,8 +40,11 @@ export async function GET(request: Request) {
   const isLive = isCurrentWeek && !week.openFrozenAt && !completed;
   const range = isoWeekDateRange(year, weekNum);
 
-  const weeks = (await listWeeks())
+  const weeks = [...db.weeks]
     .filter((w) => weekId(w) <= currentId)
+    .sort((a, b) =>
+      a.year === b.year ? b.week - a.week : b.year - a.year,
+    )
     .map((w) => {
       const wid = weekId(w);
       return {

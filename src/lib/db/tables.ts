@@ -15,8 +15,6 @@ export const TABLES = {
   jiraConnection: "kpi_jira_connection",
   /** Tokens OAuth personnels (actions tickets). */
   userJiraTokens: "kpi_user_jira_tokens",
-  /** Archive JSON legacy — plus source de vérité. */
-  appStateArchive: "kpi_app_state",
 } as const;
 
 export type LogEventKind = "metier" | "odoo" | "maintenance";
@@ -26,12 +24,6 @@ export type BreakdownDimension =
   | "requester"
   /** Stock ouvert figé fin de semaine, par assigné. */
   | "open_assignee";
-
-export const LOG_KIND_TO_COLLECTION = {
-  metier: "automationsMetier",
-  odoo: "automationsOdoo",
-  maintenance: "maintenances",
-} as const;
 
 export const COLLECTION_TO_LOG_KIND = {
   automationsMetier: "metier",

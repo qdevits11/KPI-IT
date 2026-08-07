@@ -13,7 +13,7 @@ import { supabaseConfigured } from "@/lib/supabase-db";
 import { atlassianOAuthConfigured } from "@/lib/jira-oauth";
 import { canAccessAdminPages, isAdmin } from "@/lib/roles";
 import { resolveAppUser, resolveCurrentUser } from "@/lib/user-session";
-import { requireAdminApi } from "@/lib/access-api";
+import { requireAdminApi } from "@/lib/api";
 
 export async function GET() {
   const { connection, source } = await resolveJiraConnectionSource();

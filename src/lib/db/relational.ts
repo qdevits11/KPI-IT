@@ -17,7 +17,6 @@ import { isoWeekPartsFromDate } from "../dates";
 import {
   canonicalResponsible,
   DEFAULT_RESPONSIBLES,
-  normalizeResponsibleName,
   sortResponsibles,
 } from "../responsibles";
 import {
@@ -315,7 +314,17 @@ export async function ensureRelationalSeed(): Promise<void> {
   });
 }
 
+/** Cache court : coalesce les relectures complètes dans une même rafale de requêtes. */
+let dbCache: AppDatabase | null = null;
+let dbCacheInflight: Promise<AppDatabase> | null = null;
+
+export function invalidateRelationalDbCache(): void {
+  dbCache = null;
+  dbCacheInflight = null;
+}
+
 async function bumpRevision(sb = requireClient()): Promise<number> {
+  invalidateRelationalDbCache();
   const { data, error } = await sb
     .from(TABLES.meta)
     .select("revision")
@@ -339,7 +348,7 @@ async function bumpRevision(sb = requireClient()): Promise<number> {
   return next;
 }
 
-export async function loadAppDatabaseFromTables(): Promise<AppDatabase> {
+async function loadAppDatabaseFromTablesUncached(): Promise<AppDatabase> {
   const sb = requireClient();
   await ensureRelationalSeed();
 
@@ -414,6 +423,20 @@ export async function loadAppDatabaseFromTables(): Promise<AppDatabase> {
       peopleDirectory: peopleFromRows(people),
     },
   };
+}
+
+export async function loadAppDatabaseFromTables(): Promise<AppDatabase> {
+  if (dbCache) return dbCache;
+  if (dbCacheInflight) return dbCacheInflight;
+  dbCacheInflight = loadAppDatabaseFromTablesUncached()
+    .then((db) => {
+      dbCache = db;
+      return db;
+    })
+    .finally(() => {
+      dbCacheInflight = null;
+    });
+  return dbCacheInflight;
 }
 
 async function syncResponsiblesList(
@@ -494,67 +517,30 @@ export async function updateWeeklyRowRel(
   return next;
 }
 
+/** Lecture légère — évite de recharger toute la base pour la liste d’encodage. */
 export async function getResponsiblesRel(): Promise<string[]> {
-  const db = await loadAppDatabaseFromTables();
+  const sb = requireClient();
+  await ensureRelationalSeed();
+  const [access, settingsRes] = await Promise.all([
+    fetchAllRows<AccessRow>(() => sb.from(TABLES.accessUsers).select("*")),
+    sb
+      .from(TABLES.settings)
+      .select("responsibles")
+      .eq("id", KPI_SETTINGS_ID)
+      .maybeSingle(),
+  ]);
+  if (settingsRes.error) throw new Error(settingsRes.error.message);
   const fromUsers = sortResponsibles(
-    db.settings.accessUsers
+    normalizeAccessUsers(access.map(accessRowToUser))
       .filter((u) => u.isEncodingResponsible)
       .map((u) => encodingLabel(u)),
   );
   if (fromUsers.length > 0) return fromUsers;
-  return sortResponsibles(db.settings.responsibles);
-}
-
-export async function addResponsibleRel(name: string): Promise<string[]> {
-  const clean = normalizeResponsibleName(name);
-  if (!clean) throw new Error("Nom vide");
-  const sb = requireClient();
-  const { data, error } = await sb
-    .from(TABLES.settings)
-    .select("responsibles")
-    .eq("id", KPI_SETTINGS_ID)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  const current = sortResponsibles(
-    (data as SettingsRow | null)?.responsibles ?? [...DEFAULT_RESPONSIBLES],
-  );
-  const exists = current.some(
-    (a) => a.localeCompare(clean, "fr", { sensitivity: "base" }) === 0,
-  );
-  const next = exists ? current : sortResponsibles([...current, clean]);
-  const { error: up } = await sb.from(TABLES.settings).upsert({
-    id: KPI_SETTINGS_ID,
-    responsibles: next,
-    updated_at: new Date().toISOString(),
-  });
-  if (up) throw new Error(up.message);
-  await bumpRevision(sb);
-  return next;
-}
-
-export async function removeResponsibleRel(name: string): Promise<string[]> {
-  const sb = requireClient();
-  const { data, error } = await sb
-    .from(TABLES.settings)
-    .select("responsibles")
-    .eq("id", KPI_SETTINGS_ID)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  const current = (data as SettingsRow | null)?.responsibles ?? [];
-  const next = current.filter(
-    (a) => a.localeCompare(name.trim(), "fr", { sensitivity: "base" }) !== 0,
-  );
-  if (next.length === current.length) throw new Error("Personne introuvable");
-  if (next.length === 0) throw new Error("Il faut au moins un responsable");
-  const sorted = sortResponsibles(next);
-  const { error: up } = await sb.from(TABLES.settings).upsert({
-    id: KPI_SETTINGS_ID,
-    responsibles: sorted,
-    updated_at: new Date().toISOString(),
-  });
-  if (up) throw new Error(up.message);
-  await bumpRevision(sb);
-  return sorted;
+  const fallback =
+    (settingsRes.data as SettingsRow | null)?.responsibles ?? [
+      ...DEFAULT_RESPONSIBLES,
+    ];
+  return sortResponsibles(fallback);
 }
 
 export async function getAccessUsersRel(): Promise<AppAccessUser[]> {
