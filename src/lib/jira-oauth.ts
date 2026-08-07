@@ -5,13 +5,21 @@
 
 import {
   DEFAULT_JIRA_SETTINGS,
+  decryptConnection,
+  encryptConnection,
   normalizeConnection,
   normalizeCustomFieldId,
   resolveJiraConnection,
   writeJiraConnection,
   type JiraConnection,
 } from "./jira-auth";
-import { writeUserSession } from "./user-session";
+import {
+  clearUserJiraCipherFromSupabase,
+  loadUserJiraCipherFromSupabase,
+  saveUserJiraCipherToSupabase,
+  supabaseConfigured,
+} from "./supabase-db";
+import { readUserSession, writeUserSession } from "./user-session";
 
 export const JIRA_OAUTH_STATE_COOKIE = "kpi_jira_oauth_state";
 /** Destination après login OAuth (chemin relatif). */
@@ -246,9 +254,122 @@ async function buildOAuthConnection(opts: {
 }
 
 /**
- * Login utilisateur : identité seule dans le cookie de session.
- * Ne stocke pas les tokens OAuth (trop volumineux → cookie ignoré par le navigateur)
- * et n’exige pas de site Jira accessible — la sync garde son token partagé.
+ * Persiste les tokens OAuth personnels (actions tickets) côté serveur.
+ * Le cookie de session reste identité seule (trop volumineux sinon).
+ */
+export async function persistUserOAuthTokens(
+  email: string,
+  opts: {
+    accessToken: string;
+    refreshToken?: string;
+    expiresIn: number;
+    preferredBaseUrl?: string;
+  },
+): Promise<JiraConnection> {
+  const key = email.trim().toLowerCase();
+  if (!key) throw new Error("Email requis pour les tokens Jira user");
+
+  const conn = await buildOAuthConnection(opts);
+  // Force l’email session (pas celui du compte sync partagé).
+  const personal: JiraConnection = {
+    ...conn,
+    email: key,
+  };
+  const cipher = encryptConnection(personal);
+
+  if (supabaseConfigured()) {
+    const ok = await saveUserJiraCipherToSupabase(key, cipher);
+    if (!ok) {
+      throw new Error(
+        "Impossible d’enregistrer vos tokens Jira — réessayez la connexion.",
+      );
+    }
+  } else {
+    // Dev sans Supabase : tokens dans la session (taille limitée).
+    const session = await readUserSession();
+    if (session?.email?.toLowerCase() === key) {
+      await writeUserSession({
+        ...session,
+        authMode: "oauth",
+        accessToken: personal.accessToken,
+        refreshToken: personal.refreshToken,
+        cloudId: personal.cloudId,
+        tokenExpiresAt: personal.tokenExpiresAt,
+        baseUrl: personal.baseUrl,
+      });
+    }
+  }
+
+  return personal;
+}
+
+export async function loadUserOAuthConnection(
+  email: string,
+): Promise<JiraConnection | null> {
+  const key = email.trim().toLowerCase();
+  if (!key) return null;
+
+  if (supabaseConfigured()) {
+    const cipher = await loadUserJiraCipherFromSupabase(key);
+    if (cipher) return decryptConnection(cipher);
+  }
+
+  const session = await readUserSession();
+  if (
+    session?.email?.toLowerCase() === key &&
+    session.authMode === "oauth" &&
+    session.accessToken &&
+    session.cloudId
+  ) {
+    const shared = await resolveJiraConnection();
+    return normalizeConnection({
+      ...(shared ?? {}),
+      baseUrl: session.baseUrl || shared?.baseUrl || "",
+      email: key,
+      apiToken: "",
+      authMode: "oauth",
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      cloudId: session.cloudId,
+      tokenExpiresAt: session.tokenExpiresAt,
+      jqlBase: shared?.jqlBase || DEFAULT_JIRA_SETTINGS.jqlBase,
+      openStatusJql:
+        shared?.openStatusJql || DEFAULT_JIRA_SETTINGS.openStatusJql,
+      datePriseEnChargeJql:
+        shared?.datePriseEnChargeJql ||
+        DEFAULT_JIRA_SETTINGS.datePriseEnChargeJql,
+      datePriseEnChargeFieldId:
+        shared?.datePriseEnChargeFieldId ||
+        DEFAULT_JIRA_SETTINGS.datePriseEnChargeFieldId,
+      slaPriseEnChargeHours:
+        shared?.slaPriseEnChargeHours ??
+        DEFAULT_JIRA_SETTINGS.slaPriseEnChargeHours,
+      slaClotureHours:
+        shared?.slaClotureHours ?? DEFAULT_JIRA_SETTINGS.slaClotureHours,
+      categoryField:
+        shared?.categoryField || DEFAULT_JIRA_SETTINGS.categoryField,
+      categoryCustomFieldId: normalizeCustomFieldId(
+        shared?.categoryCustomFieldId ||
+          DEFAULT_JIRA_SETTINGS.categoryCustomFieldId,
+      ),
+      connectedAt: session.connectedAt,
+    });
+  }
+
+  return null;
+}
+
+export async function clearUserOAuthTokens(email: string): Promise<void> {
+  const key = email.trim().toLowerCase();
+  if (!key) return;
+  if (supabaseConfigured()) {
+    await clearUserJiraCipherFromSupabase(key);
+  }
+}
+
+/**
+ * Login utilisateur : identité cookie + tokens personnels (actions tickets).
+ * Ne touche pas au compte de sync partagé.
  */
 export async function persistOAuthUserLogin(opts: {
   accessToken: string;
@@ -256,16 +377,11 @@ export async function persistOAuthUserLogin(opts: {
   expiresIn: number;
   preferredBaseUrl?: string;
 }): Promise<{ email: string; displayName?: string }> {
-  void opts.refreshToken;
-  void opts.expiresIn;
-  void opts.preferredBaseUrl;
-
   const me = await fetchAtlassianMe(opts.accessToken);
   let email = (me.email || "").trim().toLowerCase();
   let displayName = me.name?.trim() || undefined;
   let avatarUrl = me.picture?.trim() || undefined;
 
-  // Fallback / complément : profil Jira (email + avatar)
   try {
     const resources = await fetchAccessibleResources(opts.accessToken);
     const site = pickResource(resources, opts.preferredBaseUrl);
@@ -313,6 +429,12 @@ export async function persistOAuthUserLogin(opts: {
   });
 
   try {
+    await persistUserOAuthTokens(email, opts);
+  } catch (err) {
+    console.warn("Persistance tokens Jira user échouée:", err);
+  }
+
+  try {
     const { recordUserLogin } = await import("./store");
     await recordUserLogin({ email, displayName, avatarUrl });
   } catch {
@@ -337,7 +459,7 @@ export async function persistSharedOAuthTokens(opts: {
   return conn;
 }
 
-/** Alias login-only (ne touche pas au token de sync). */
+/** Alias login (identité + tokens user, pas de sync partagée). */
 export async function persistOAuthConnection(opts: {
   accessToken: string;
   refreshToken?: string;
@@ -378,6 +500,37 @@ export async function ensureFreshOAuthConnection(
   });
 }
 
+async function ensureFreshUserOAuthConnection(
+  email: string,
+  conn: JiraConnection,
+): Promise<JiraConnection> {
+  if (conn.authMode !== "oauth" || !conn.accessToken) return conn;
+
+  const expiresAt = conn.tokenExpiresAt
+    ? Date.parse(conn.tokenExpiresAt)
+    : 0;
+  const stillValid =
+    Number.isFinite(expiresAt) && expiresAt > Date.now() + 60_000;
+  if (stillValid) return conn;
+
+  if (!conn.refreshToken) {
+    throw new Error(
+      "Session Jira expirée — reconnectez-vous (Microsoft / Atlassian).",
+    );
+  }
+  if (!atlassianOAuthConfigured()) {
+    throw new Error("OAuth Atlassian non configuré (CLIENT_ID / SECRET).");
+  }
+
+  const tokens = await refreshAccessToken(conn.refreshToken);
+  return persistUserOAuthTokens(email, {
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token || conn.refreshToken,
+    expiresIn: tokens.expires_in,
+    preferredBaseUrl: conn.baseUrl,
+  });
+}
+
 /**
  * Connexion partagée pour sync / lectures KPI (token actuel en base).
  * Refresh OAuth partagé si besoin — n’altère pas la session utilisateur.
@@ -397,11 +550,34 @@ export async function resolveFreshJiraConnection(): Promise<JiraConnection | nul
 }
 
 /**
- * Connexion pour actions tickets : compte partagé OAuth (sync).
- * La session login ne transporte plus de tokens (cookie identité uniquement).
+ * Connexion pour actions tickets : tokens OAuth de l’utilisateur connecté.
+ * Les écritures Jira se font sous son identité, pas le compte admin de sync.
  */
 export async function resolveTicketWriteConnection(): Promise<JiraConnection | null> {
-  const shared = await resolveFreshJiraConnection();
-  if (shared?.authMode === "oauth") return shared;
-  return null;
+  const session = await readUserSession();
+  if (!session?.email) return null;
+
+  const personal = await loadUserOAuthConnection(session.email);
+  if (!personal?.accessToken || personal.authMode !== "oauth") return null;
+
+  try {
+    const fresh = await ensureFreshUserOAuthConnection(session.email, personal);
+    // Recouvre les réglages champs / JQL depuis le compte sync partagé.
+    const shared = await resolveJiraConnection();
+    if (!shared) return fresh;
+    return {
+      ...fresh,
+      jqlBase: shared.jqlBase,
+      openStatusJql: shared.openStatusJql,
+      datePriseEnChargeJql: shared.datePriseEnChargeJql,
+      datePriseEnChargeFieldId: shared.datePriseEnChargeFieldId,
+      slaPriseEnChargeHours: shared.slaPriseEnChargeHours,
+      slaClotureHours: shared.slaClotureHours,
+      categoryField: shared.categoryField,
+      categoryCustomFieldId: shared.categoryCustomFieldId,
+    };
+  } catch (err) {
+    console.warn("Refresh OAuth Jira (user) échoué:", err);
+    return null;
+  }
 }

@@ -25,7 +25,7 @@ export async function GET(_request: Request, { params }: Params) {
         ok: false,
         needOAuth: true,
         error:
-          "Reconnectez-vous (Microsoft / Atlassian) pour modifier les tickets.",
+          "Reconnectez-vous via Microsoft / Atlassian pour modifier les tickets sous votre compte.",
       },
       { status: 401 },
     );
@@ -61,7 +61,7 @@ export async function POST(request: Request, { params }: Params) {
         ok: false,
         needOAuth: true,
         error:
-          "Reconnectez-vous (Microsoft / Atlassian) pour modifier les tickets.",
+          "Reconnectez-vous via Microsoft / Atlassian pour modifier les tickets sous votre compte.",
       },
       { status: 401 },
     );
@@ -72,7 +72,7 @@ export async function POST(request: Request, { params }: Params) {
       {
         ok: false,
         error:
-          "Les modifications de tickets nécessitent un compte de sync en OAuth (Sync Jira). Le login utilisateur ne suffit pas.",
+          "Les modifications de tickets nécessitent votre connexion OAuth (Microsoft / Atlassian).",
         needOAuth: true,
       },
       { status: 403 },

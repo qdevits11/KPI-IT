@@ -85,18 +85,18 @@ export function TicketActionsPanel({
   }
 
   if (needOAuth && !meta) {
+    const reconnectHref = `/api/jira/oauth/start?next=${encodeURIComponent("/")}`;
     return (
       <div className="rounded-md border border-[var(--warn)]/40 bg-[var(--warn)]/10 px-3 py-2 text-sm text-[var(--ink)]">
         <p>
-          Les modifications de tickets nécessitent un token de synchronisation
-          en OAuth (admin → Sync Jira). Votre login sert à l’identité KPI·IT ;
-          la sync garde son propre compte.
+          Pour modifier un ticket, reconnectez-vous avec Microsoft / Atlassian :
+          l’action sera effectuée avec votre compte Jira.
         </p>
         <Link
-          href="/admin/jira"
+          href={reconnectHref}
           className="mt-2 inline-block font-medium text-[var(--accent-deep)] hover:underline"
         >
-          Ouvrir Sync Jira →
+          Se reconnecter →
         </Link>
       </div>
     );
@@ -118,10 +118,10 @@ export function TicketActionsPanel({
           {error}{" "}
           {needOAuth && (
             <Link
-              href="/admin/jira"
+              href={`/api/jira/oauth/start?next=${encodeURIComponent("/")}`}
               className="underline text-[var(--accent-deep)]"
             >
-              Sync Jira
+              Se reconnecter
             </Link>
           )}
         </p>

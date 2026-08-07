@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { resolveCurrentUser } from "@/lib/user-session";
+import {
+  clearUserSession,
+  readUserSession,
+  resolveCurrentUser,
+} from "@/lib/user-session";
 import {
   canAccessAdminPages,
   canEditWeekRetour,
@@ -7,8 +11,10 @@ import {
   isEncodingResponsible,
   isKpiResponsible,
 } from "@/lib/roles";
-import { clearUserSession } from "@/lib/user-session";
-import { atlassianOAuthConfigured } from "@/lib/jira-oauth";
+import {
+  atlassianOAuthConfigured,
+  clearUserOAuthTokens,
+} from "@/lib/jira-oauth";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +34,14 @@ export async function GET() {
 }
 
 export async function DELETE() {
+  const session = await readUserSession();
+  if (session?.email) {
+    try {
+      await clearUserOAuthTokens(session.email);
+    } catch {
+      // ignore
+    }
+  }
   await clearUserSession();
   return NextResponse.json({ ok: true });
 }

@@ -2,7 +2,8 @@
  * Persistance KPI·IT sur Supabase.
  *
  * Domaine KPI → tables relationnelles (voir src/lib/db/relational.ts).
- * Connexion Jira → kpi_jira_connection (cipher AES-GCM).
+ * Connexion Jira sync → kpi_jira_connection (cipher AES-GCM).
+ * Tokens OAuth user (actions tickets) → kpi_user_jira_tokens.
  * Accès serveur uniquement via service_role.
  */
 
@@ -81,6 +82,85 @@ export async function clearJiraCipherFromSupabase(): Promise<boolean> {
     return true;
   } catch (err) {
     console.warn("Suppression Supabase Jira impossible:", err);
+    return false;
+  }
+}
+
+const USER_JIRA_TOKENS_TABLE = TABLES.userJiraTokens;
+
+/** Cipher AES-GCM des tokens OAuth personnels (actions tickets). */
+export async function loadUserJiraCipherFromSupabase(
+  email: string,
+): Promise<string | null> {
+  const sb = getServiceClient();
+  if (!sb) return null;
+  const key = email.trim().toLowerCase();
+  if (!key) return null;
+  try {
+    const { data, error } = await sb
+      .from(USER_JIRA_TOKENS_TABLE)
+      .select("cipher")
+      .eq("email", key)
+      .maybeSingle();
+    if (error) {
+      console.warn("Lecture tokens Jira user impossible:", error.message);
+      return null;
+    }
+    const cipher = data?.cipher;
+    return typeof cipher === "string" && cipher.length > 0 ? cipher : null;
+  } catch (err) {
+    console.warn("Lecture tokens Jira user impossible:", err);
+    return null;
+  }
+}
+
+export async function saveUserJiraCipherToSupabase(
+  email: string,
+  cipher: string,
+): Promise<boolean> {
+  const sb = getServiceClient();
+  if (!sb) return false;
+  const key = email.trim().toLowerCase();
+  if (!key || !cipher) return false;
+  try {
+    const { error } = await sb.from(USER_JIRA_TOKENS_TABLE).upsert(
+      {
+        email: key,
+        cipher,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "email" },
+    );
+    if (error) {
+      console.warn("Écriture tokens Jira user impossible:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("Écriture tokens Jira user impossible:", err);
+    return false;
+  }
+}
+
+export async function clearUserJiraCipherFromSupabase(
+  email: string,
+): Promise<boolean> {
+  const sb = getServiceClient();
+  if (!sb) return false;
+  const key = email.trim().toLowerCase();
+  if (!key) return false;
+  try {
+    const { error } = await sb
+      .from(USER_JIRA_TOKENS_TABLE)
+      .delete()
+      .eq("email", key);
+    if (error) {
+      console.warn("Suppression tokens Jira user impossible:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("Suppression tokens Jira user impossible:", err);
     return false;
   }
 }

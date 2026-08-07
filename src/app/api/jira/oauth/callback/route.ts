@@ -7,6 +7,7 @@ import {
   fetchAccessibleResources,
   JIRA_OAUTH_NEXT_COOKIE,
   JIRA_OAUTH_STATE_COOKIE,
+  persistUserOAuthTokens,
 } from "@/lib/jira-oauth";
 import {
   attachUserSessionCookie,
@@ -109,6 +110,17 @@ export async function GET(request: Request) {
       authMode: "oauth",
       connectedAt: new Date().toISOString(),
     };
+
+    try {
+      // Tokens personnels → actions tickets sous l’identité de l’utilisateur.
+      await persistUserOAuthTokens(identity.email, {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+      });
+    } catch (err) {
+      console.warn("Persistance tokens Jira user (callback) échouée:", err);
+    }
 
     try {
       const { mergePeopleFromJira, recordUserLogin } = await import(

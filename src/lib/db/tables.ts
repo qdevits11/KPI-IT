@@ -13,6 +13,8 @@ export const TABLES = {
   people: "kpi_people",
   settings: "kpi_settings",
   jiraConnection: "kpi_jira_connection",
+  /** Tokens OAuth personnels (actions tickets). */
+  userJiraTokens: "kpi_user_jira_tokens",
   /** Archive JSON legacy — plus source de vérité. */
   appStateArchive: "kpi_app_state",
 } as const;
