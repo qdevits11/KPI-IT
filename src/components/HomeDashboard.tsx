@@ -20,6 +20,7 @@ import {
   type EncodeKind,
 } from "./QuickEncodeModal";
 import { OpenTicketsByPerson } from "./OpenTicketsByPerson";
+import { deltaToneClass, formatDelta } from "@/lib/format";
 
 interface WeekOption {
   id: string;
@@ -51,10 +52,20 @@ type KpisPayload = {
   ticketsByAssignee: Record<string, number>;
   ticketsByRequester: Record<string, number>;
   openByAssignee: Record<string, number>;
+  closedDeltaVsPrev: number | null;
+  prevWeekId: string | null;
 };
 
 function kpiValue(kpis: KpiValue[], id: string): number | null {
   return kpis.find((k) => k.id === id)?.value ?? null;
+}
+
+function kpiDelta(kpis: KpiValue[], id: string): number | null {
+  return kpis.find((k) => k.id === id)?.deltaVsPrev ?? null;
+}
+
+function kpiHigherIsBetter(kpis: KpiValue[], id: string): boolean {
+  return kpis.find((k) => k.id === id)?.higherIsBetter ?? false;
 }
 
 function formatCount(value: number | null | undefined): string {
@@ -65,6 +76,10 @@ function formatCount(value: number | null | undefined): string {
 type ActionTileProps = {
   label: string;
   value: number | null | undefined;
+  /** Écart absolu vs semaine précédente (+5 / −3). */
+  delta?: number | null;
+  /** Sens « positif » pour colorer le delta. */
+  higherIsBetter?: boolean;
   hint?: string;
   tone?: "default" | "warn" | "crit" | "accent";
   onClick?: () => void;
@@ -74,6 +89,8 @@ type ActionTileProps = {
 function ActionTile({
   label,
   value,
+  delta,
+  higherIsBetter = false,
   hint,
   tone = "default",
   onClick,
@@ -97,16 +114,28 @@ function ActionTile({
           ? "text-[var(--accent-deep)]"
           : "text-[var(--ink)]";
 
+  const deltaLabel = formatDelta(delta);
+
   const inner = (
     <>
       <p className="text-[9px] uppercase leading-snug tracking-[0.12em] text-[var(--muted)] sm:text-[10px] sm:tracking-[0.14em]">
         {label}
       </p>
-      <p
-        className={`mt-1 font-[family-name:var(--font-display)] text-xl tabular-nums tracking-tight sm:text-3xl ${valueClass}`}
-      >
-        {formatCount(value)}
-      </p>
+      <div className="mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0">
+        <p
+          className={`font-[family-name:var(--font-display)] text-xl tabular-nums tracking-tight sm:text-3xl ${valueClass}`}
+        >
+          {formatCount(value)}
+        </p>
+        {deltaLabel && (
+          <span
+            className={`text-[11px] font-semibold tabular-nums sm:text-sm ${deltaToneClass(delta, higherIsBetter)}`}
+            title="Écart vs semaine précédente"
+          >
+            {deltaLabel}
+          </span>
+        )}
+      </div>
       {hint ? (
         <p className="mt-0.5 truncate text-[10px] text-[var(--muted)] sm:text-xs">
           {hint}
@@ -231,6 +260,26 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
   const phishing = kpiValue(list, "echecs_phishing");
   const maintenance = kpiValue(list, "maintenances_production");
 
+  const createdDelta = kpiDelta(list, "demandes_it_hebdo");
+  const openDelta = kpiDelta(list, "demandes_non_resolues_hebdo");
+  const slaPecDelta = kpiDelta(list, "hors_sla_prise_en_charge");
+  const slaCloseDelta = kpiDelta(list, "hors_sla_cloture");
+  const metierDelta = kpiDelta(list, "automations_metier");
+  const odooDelta = kpiDelta(list, "ameliorations_odoo");
+  const phishingDelta = kpiDelta(list, "echecs_phishing");
+  const maintenanceDelta = kpiDelta(list, "maintenances_production");
+
+  // Clôturés : aligner le delta sur la valeur affichée (snapshot live si dispo)
+  const closedDelta = (() => {
+    const stored = kpis?.closedDeltaVsPrev ?? null;
+    const weekClosed = week?.demandesClotureesHebdo ?? null;
+    if (closedSnap == null || stored == null || weekClosed == null) {
+      return stored;
+    }
+    const prevClosed = weekClosed - stored;
+    return closedSnap.total - prevClosed;
+  })();
+
   const weekParts = (() => {
     try {
       return week
@@ -312,6 +361,8 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
             <ActionTile
               label="Créés cette semaine"
               value={created}
+              delta={createdDelta}
+              higherIsBetter={kpiHigherIsBetter(list, "demandes_it_hebdo")}
               hint={weekLabel}
               onClick={() =>
                 setDrill({
@@ -331,6 +382,11 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
                   ? Object.values(kpis.openByAssignee).reduce((a, b) => a + b, 0)
                   : null)
               }
+              delta={openDelta}
+              higherIsBetter={kpiHigherIsBetter(
+                list,
+                "demandes_non_resolues_hebdo",
+              )}
               hint={
                 isLive
                   ? "Stock de la semaine en cours"
@@ -357,6 +413,11 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
             <ActionTile
               label="Hors SLA prise en charge"
               value={slaPec}
+              delta={slaPecDelta}
+              higherIsBetter={kpiHigherIsBetter(
+                list,
+                "hors_sla_prise_en_charge",
+              )}
               hint="> 24 h ouvrées"
               tone={(slaPec ?? 0) > 0 ? "crit" : "default"}
               onClick={() =>
@@ -371,6 +432,8 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
             <ActionTile
               label="Hors SLA clôture"
               value={slaClose}
+              delta={slaCloseDelta}
+              higherIsBetter={kpiHigherIsBetter(list, "hors_sla_cloture")}
               hint="> 48 h ouvrées"
               tone={(slaClose ?? 0) > 0 ? "crit" : "default"}
               onClick={() =>
@@ -384,7 +447,9 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
             />
             <ActionTile
               label="Tickets clôturés"
-              value={closedSnap?.total ?? null}
+              value={closedSnap?.total ?? week?.demandesClotureesHebdo ?? null}
+              delta={closedDelta}
+              higherIsBetter
               hint="Résolus pendant la semaine"
               onClick={
                 closedSnap
@@ -456,24 +521,32 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
               <ActionTile
                 label="Automatisations métier"
                 value={metier}
+                delta={metierDelta}
+                higherIsBetter
                 tone={(metier ?? 0) > 0 ? "accent" : "default"}
                 onClick={() => setEncodeKind("metier")}
               />
               <ActionTile
                 label="Améliorations Odoo"
                 value={odoo}
+                delta={odooDelta}
+                higherIsBetter
                 tone={(odoo ?? 0) > 0 ? "accent" : "default"}
                 onClick={() => setEncodeKind("odoo")}
               />
               <ActionTile
                 label="Maintenances prod"
                 value={maintenance}
+                delta={maintenanceDelta}
+                higherIsBetter
                 tone={(maintenance ?? 0) > 0 ? "accent" : "default"}
                 onClick={() => setEncodeKind("maintenance")}
               />
               <ActionTile
                 label="Phishing ratés"
                 value={phishing}
+                delta={phishingDelta}
+                higherIsBetter={false}
                 tone={(phishing ?? 0) > 0 ? "crit" : "default"}
                 onClick={() => setEncodeKind("phishing")}
               />

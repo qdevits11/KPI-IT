@@ -215,8 +215,35 @@ function statusFor(
 function kpi(partial: Omit<KpiValue, "status">): KpiValue {
   return {
     ...partial,
+    deltaVsPrev: partial.deltaVsPrev ?? null,
     status: statusFor(partial.value, partial.target, partial.higherIsBetter),
   };
+}
+
+function findPreviousWeek(
+  db: AppDatabase,
+  week: WeeklyRow,
+): WeeklyRow | null {
+  return (
+    db.weeks
+      .filter((w) => w.year === week.year && w.week < week.week)
+      .sort((a, b) => b.week - a.week)[0] ?? null
+  );
+}
+
+function absDelta(
+  current: number | null | undefined,
+  previous: number | null | undefined,
+): number | null {
+  if (
+    typeof current !== "number" ||
+    !Number.isFinite(current) ||
+    typeof previous !== "number" ||
+    !Number.isFinite(previous)
+  ) {
+    return null;
+  }
+  return current - previous;
 }
 
 function countForWeek(events: LogEvent[], year: number, week: number): number {
@@ -252,6 +279,7 @@ export function computeWeekKpis(
 ): KpiValue[] {
   const { year } = week;
   const w = week.week;
+  const prev = findPreviousWeek(db, week);
 
   const automations = countForWeek(db.automationsMetier, year, w);
   const odoo = countForWeek(db.automationsOdoo, year, w);
@@ -259,6 +287,25 @@ export function computeWeekKpis(
   const maint = countForWeek(db.maintenances, year, w);
   const ytdIt = ytdSum(db.weeks, year, w, "demandesItHebdo");
   const ytdOpen = ytdSum(db.weeks, year, w, "demandesNonResoluesHebdo");
+
+  const prevAutomations = prev
+    ? countForWeek(db.automationsMetier, prev.year, prev.week)
+    : null;
+  const prevOdoo = prev
+    ? countForWeek(db.automationsOdoo, prev.year, prev.week)
+    : null;
+  const prevPhishing = prev
+    ? sumPhishingFailures(db.phishing, prev.year, prev.week)
+    : null;
+  const prevMaint = prev
+    ? countForWeek(db.maintenances, prev.year, prev.week)
+    : null;
+  const prevYtdIt = prev
+    ? ytdSum(db.weeks, prev.year, prev.week, "demandesItHebdo")
+    : null;
+  const prevYtdOpen = prev
+    ? ytdSum(db.weeks, prev.year, prev.week, "demandesNonResoluesHebdo")
+    : null;
 
   return [
     kpi({
@@ -271,6 +318,10 @@ export function computeWeekKpis(
       higherIsBetter: false,
       source: "jira",
       formulaId: "hors_sla_cloture",
+      deltaVsPrev: absDelta(
+        week.ticketsHorsSlaCloture,
+        prev?.ticketsHorsSlaCloture,
+      ),
     }),
     kpi({
       id: "hors_sla_prise_en_charge",
@@ -282,6 +333,10 @@ export function computeWeekKpis(
       higherIsBetter: false,
       source: "jira",
       formulaId: "hors_sla_prise_en_charge",
+      deltaVsPrev: absDelta(
+        week.ticketsHorsSlaPriseEnCharge,
+        prev?.ticketsHorsSlaPriseEnCharge,
+      ),
     }),
     kpi({
       id: "automations_metier",
@@ -293,6 +348,7 @@ export function computeWeekKpis(
       higherIsBetter: true,
       source: "calcule",
       formulaId: "automations_metier",
+      deltaVsPrev: absDelta(automations, prevAutomations),
     }),
     kpi({
       id: "ameliorations_odoo",
@@ -304,6 +360,7 @@ export function computeWeekKpis(
       higherIsBetter: true,
       source: "calcule",
       formulaId: "ameliorations_odoo",
+      deltaVsPrev: absDelta(odoo, prevOdoo),
     }),
     kpi({
       id: "echecs_phishing",
@@ -315,6 +372,7 @@ export function computeWeekKpis(
       higherIsBetter: false,
       source: "calcule",
       formulaId: "echecs_phishing",
+      deltaVsPrev: absDelta(phishing, prevPhishing),
     }),
     kpi({
       id: "maintenances_production",
@@ -326,6 +384,7 @@ export function computeWeekKpis(
       higherIsBetter: true,
       source: "calcule",
       formulaId: "maintenances_production",
+      deltaVsPrev: absDelta(maint, prevMaint),
     }),
     kpi({
       id: "demandes_it_hebdo",
@@ -337,6 +396,7 @@ export function computeWeekKpis(
       higherIsBetter: false,
       source: "jira",
       formulaId: "demandes_it_hebdo",
+      deltaVsPrev: absDelta(week.demandesItHebdo, prev?.demandesItHebdo),
     }),
     kpi({
       id: "demandes_it_ytd",
@@ -348,6 +408,7 @@ export function computeWeekKpis(
       higherIsBetter: false,
       source: "calcule",
       formulaId: "demandes_it_ytd",
+      deltaVsPrev: absDelta(ytdIt, prevYtdIt),
     }),
     kpi({
       id: "demandes_non_resolues_hebdo",
@@ -359,6 +420,10 @@ export function computeWeekKpis(
       higherIsBetter: false,
       source: "jira",
       formulaId: "demandes_non_resolues_hebdo",
+      deltaVsPrev: absDelta(
+        week.demandesNonResoluesHebdo,
+        prev?.demandesNonResoluesHebdo,
+      ),
     }),
     kpi({
       id: "demandes_non_resolues_ytd",
@@ -370,6 +435,7 @@ export function computeWeekKpis(
       higherIsBetter: false,
       source: "calcule",
       formulaId: "demandes_non_resolues_ytd",
+      deltaVsPrev: absDelta(ytdOpen, prevYtdOpen),
     }),
   ];
 }
@@ -379,6 +445,7 @@ export function buildWeekDashboard(
   week: WeeklyRow,
 ): WeekDashboard {
   const id = weekId(week);
+  const prev = findPreviousWeek(db, week);
   return {
     week,
     kpis: computeWeekKpis(db, week),
@@ -400,6 +467,11 @@ export function buildWeekDashboard(
     ticketsByAssignee: db.ticketsByAssignee[id] ?? {},
     ticketsByRequester: db.ticketsByRequester?.[id] ?? {},
     openByAssignee: db.openByAssignee?.[id] ?? {},
+    closedDeltaVsPrev: absDelta(
+      week.demandesClotureesHebdo,
+      prev?.demandesClotureesHebdo,
+    ),
+    prevWeekId: prev ? weekId(prev) : null,
   };
 }
 

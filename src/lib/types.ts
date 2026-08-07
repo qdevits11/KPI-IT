@@ -153,6 +153,11 @@ export interface KpiValue {
   source: DataSource;
   formulaId: string;
   status: "ok" | "warning" | "critical" | "na";
+  /**
+   * Écart absolu vs la semaine précédente (valeur − prev).
+   * null si l’une des deux valeurs est absente.
+   */
+  deltaVsPrev: number | null;
 }
 
 export interface FormulaDefinition {
@@ -179,6 +184,13 @@ export interface WeekDashboard {
   ticketsByRequester: Record<string, number>;
   /** Stock ouvert figé par assigné (si disponible). */
   openByAssignee: Record<string, number>;
+  /**
+   * Écart des tickets clôturés vs semaine précédente
+   * (demandesClotureesHebdo − prev).
+   */
+  closedDeltaVsPrev: number | null;
+  /** Identifiant de la semaine précédente utilisée pour les deltas. */
+  prevWeekId: string | null;
 }
 
 /** Dimension d'analyse des tickets. */

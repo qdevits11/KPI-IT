@@ -45,6 +45,23 @@ describe("formules KPI", () => {
     expect(kpis.find((k) => k.id === "demandes_it_ytd")?.value).toBe(1090);
   });
 
+  it("deltaVsPrev demandes IT S31 = +5 vs S30", () => {
+    const week = db.weeks.find((w) => w.week === 31)!;
+    const kpis = computeWeekKpis(db, week);
+    expect(kpis.find((k) => k.id === "demandes_it_hebdo")?.deltaVsPrev).toBe(5);
+    expect(
+      kpis.find((k) => k.id === "demandes_non_resolues_hebdo")?.deltaVsPrev,
+    ).toBe(5);
+  });
+
+  it("deltaVsPrev null en S01 (pas de semaine précédente)", () => {
+    const week = db.weeks.find((w) => w.week === 1)!;
+    const kpis = computeWeekKpis(db, week);
+    expect(kpis.find((k) => k.id === "demandes_it_hebdo")?.deltaVsPrev).toBe(
+      null,
+    );
+  });
+
   it("chaque KPI a une formule documentée", () => {
     const week = db.weeks.find((w) => w.week === 31)!;
     for (const kpi of computeWeekKpis(db, week)) {
