@@ -9,6 +9,7 @@ import type {
 import { TicketActionsPanel } from "./TicketActionsPanel";
 import { PersonLabel } from "./PersonAvatar";
 import { usePeopleAvatars } from "./PeopleProvider";
+import { ModalPortal } from "./ModalPortal";
 
 export type DrilldownQuery = TicketSearchFilter;
 
@@ -165,13 +166,14 @@ export function TicketDrilldown({
   const title = describeFilters(query);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-[var(--ink)]/40 p-0 sm:items-center sm:p-6"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="drilldown-title"
-      onClick={onClose}
-    >
+    <ModalPortal>
+      <div
+        className="fixed inset-0 z-50 flex items-end justify-center bg-[var(--ink)]/40 p-0 sm:items-center sm:p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="drilldown-title"
+        onClick={onClose}
+      >
       <div
         className="flex max-h-[92vh] w-full max-w-5xl flex-col rounded-t-2xl border border-[var(--line)] bg-[var(--paper)] shadow-xl sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -368,7 +370,8 @@ export function TicketDrilldown({
           </footer>
         )}
       </div>
-    </div>
+      </div>
+    </ModalPortal>
   );
 }
 

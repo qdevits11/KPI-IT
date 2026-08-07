@@ -6,6 +6,7 @@ import {
   todayIsoDate,
   weekIdFromDate,
 } from "@/lib/dates";
+import { ModalPortal } from "./ModalPortal";
 
 export type EncodeKind = "metier" | "odoo" | "maintenance" | "phishing";
 
@@ -118,11 +119,12 @@ export function QuickEncodeModal({ kind, onClose, onSaved }: Props) {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[80] flex items-end justify-center bg-[var(--ink)]/45 p-4 backdrop-blur-[2px] sm:items-center"
-      role="presentation"
-      onClick={onClose}
-    >
+    <ModalPortal>
+      <div
+        className="fixed inset-0 z-[80] flex items-end justify-center bg-[var(--ink)]/45 p-4 backdrop-blur-[2px] sm:items-center"
+        role="presentation"
+        onClick={onClose}
+      >
       <div
         role="dialog"
         aria-modal="true"
@@ -222,6 +224,7 @@ export function QuickEncodeModal({ kind, onClose, onSaved }: Props) {
           </button>
         </form>
       </div>
-    </div>
+      </div>
+    </ModalPortal>
   );
 }
