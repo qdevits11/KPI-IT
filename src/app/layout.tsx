@@ -35,9 +35,6 @@ export default function RootLayout({
             <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
               {children}
             </main>
-            <footer className="border-t border-[var(--line)] py-4 text-center text-xs text-[var(--muted)]">
-              KPI·IT — Jira + encodage (automations, Odoo, phishing, maintenance)
-            </footer>
           </AppShell>
         </PeopleProvider>
       </body>
