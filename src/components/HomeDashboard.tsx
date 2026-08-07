@@ -361,11 +361,15 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
             />
             <ActionTile
               label="Tickets ouverts"
-              value={openSnap?.total ?? openStock}
-              hint={openSnap ? "Live Jira" : "Stock semaine"}
+              value={openStock ?? (isLive ? (openSnap?.total ?? null) : null)}
+              hint={
+                isLive
+                  ? "Stock de la semaine en cours"
+                  : "Stock figé de la semaine"
+              }
               tone="accent"
               onClick={
-                openSnap
+                isLive && openSnap
                   ? () =>
                       setDrill({
                         query: { scope: "open" },
