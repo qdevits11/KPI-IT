@@ -233,6 +233,7 @@ export function WeekEventsAndBreakdowns({
   ticketsByAssignee,
   ticketsByRequester,
   onDrill,
+  showBreakdowns = true,
 }: {
   weekId: string;
   events: {
@@ -245,6 +246,8 @@ export function WeekEventsAndBreakdowns({
   ticketsByAssignee: Record<string, number>;
   ticketsByRequester: Record<string, number>;
   onDrill: (q: DrilldownQuery) => void;
+  /** Ventilations tickets (type / assigné / demandeur) — plutôt côté Analyse. */
+  showBreakdowns?: boolean;
 }) {
   const hasEvents =
     events.automationsMetier.length > 0 ||
@@ -253,7 +256,9 @@ export function WeekEventsAndBreakdowns({
     events.phishing.length > 0;
 
   return (
-    <section className="grid gap-8 lg:grid-cols-2">
+    <section
+      className={`grid gap-8 ${showBreakdowns ? "lg:grid-cols-2" : ""}`}
+    >
       <div className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
         <EventList
           title="Automatisations métiers"
@@ -292,40 +297,42 @@ export function WeekEventsAndBreakdowns({
           </p>
         )}
       </div>
-      <div className="space-y-8 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">
-            Ventilation hebdo
-          </p>
-          <Link
-            href="/analyse/tickets"
-            className="text-xs font-medium text-[var(--accent-deep)] hover:text-[var(--accent)]"
-          >
-            Stats annuelles →
-          </Link>
+      {showBreakdowns && (
+        <div className="space-y-8 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">
+              Ventilation hebdo
+            </p>
+            <Link
+              href="/analyse/tickets"
+              className="text-xs font-medium text-[var(--accent-deep)] hover:text-[var(--accent)]"
+            >
+              Stats annuelles →
+            </Link>
+          </div>
+          <Breakdown
+            title="Tickets par type"
+            data={ticketsByType}
+            dimension="type"
+            weekId={weekId}
+            onDrill={onDrill}
+          />
+          <Breakdown
+            title="Tickets par assigné (Jira)"
+            data={ticketsByAssignee}
+            dimension="assignee"
+            weekId={weekId}
+            onDrill={onDrill}
+          />
+          <Breakdown
+            title="Tickets par demandeur"
+            data={ticketsByRequester ?? {}}
+            dimension="requester"
+            weekId={weekId}
+            onDrill={onDrill}
+          />
         </div>
-        <Breakdown
-          title="Tickets par type"
-          data={ticketsByType}
-          dimension="type"
-          weekId={weekId}
-          onDrill={onDrill}
-        />
-        <Breakdown
-          title="Tickets par assigné (Jira)"
-          data={ticketsByAssignee}
-          dimension="assignee"
-          weekId={weekId}
-          onDrill={onDrill}
-        />
-        <Breakdown
-          title="Tickets par demandeur"
-          data={ticketsByRequester ?? {}}
-          dimension="requester"
-          weekId={weekId}
-          onDrill={onDrill}
-        />
-      </div>
+      )}
     </section>
   );
 }

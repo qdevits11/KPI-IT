@@ -11,7 +11,6 @@ import { WeekSelector } from "./WeekSelector";
 import {
   TicketDrilldown,
   WeekEventsAndBreakdowns,
-  WeekKpiGrid,
   WeekNotesSection,
   WeekStatusBadge,
   type DrilldownQuery,
@@ -142,17 +141,6 @@ function ActionTile({
     </button>
   );
 }
-
-const WEEK_KPI_EXCLUDE = new Set([
-  "demandes_it_hebdo",
-  "demandes_non_resolues_hebdo",
-  "hors_sla_cloture",
-  "hors_sla_prise_en_charge",
-  "automations_metier",
-  "ameliorations_odoo",
-  "echecs_phishing",
-  "maintenances_production",
-]);
 
 const CURRENT_WEEK_SYNC_FIELDS = {
   demandesItHebdo: true,
@@ -498,10 +486,6 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
             </div>
           </section>
 
-          <WeekKpiGrid
-            kpis={list.filter((k) => !WEEK_KPI_EXCLUDE.has(k.id))}
-          />
-
           <WeekNotesSection
             informations={kpis.week.informations}
             reaction={kpis.week.reaction}
@@ -510,10 +494,11 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
           <WeekEventsAndBreakdowns
             weekId={selectedWeekId}
             events={kpis.events}
-            ticketsByType={kpis.ticketsByType}
-            ticketsByAssignee={kpis.ticketsByAssignee}
-            ticketsByRequester={kpis.ticketsByRequester}
+            ticketsByType={{}}
+            ticketsByAssignee={{}}
+            ticketsByRequester={{}}
             onDrill={(query) => setDrill({ query })}
+            showBreakdowns={false}
           />
         </>
       )}
