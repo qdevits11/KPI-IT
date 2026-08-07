@@ -116,7 +116,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (isLogin) {
     return (
-      <div className="flex min-h-full flex-col">
+      <div className="flex min-h-dvh flex-1 flex-col">
         <header className="border-b border-[var(--line)] bg-[var(--surface)]/80 backdrop-blur-md">
           <div className="mx-auto flex max-w-6xl items-center px-4 py-3 sm:px-6">
             <span className="font-[family-name:var(--font-display)] text-xl tracking-tight text-[var(--ink)]">
@@ -135,7 +135,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   });
 
   return (
-    <div className="flex min-h-full flex-col lg:flex-row">
+    <div className="flex min-h-dvh flex-1 flex-col lg:flex-row">
       {/* Barre mobile / tablette */}
       <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-[var(--line)] bg-[var(--surface)]/90 px-4 py-3 backdrop-blur-md lg:hidden">
         <button
@@ -171,7 +171,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Sidebar laptop + tiroir mobile */}
       <aside
         id={panelId}
-        className={`fixed inset-y-0 left-0 z-50 flex w-[min(18rem,86vw)] flex-col border-r border-[var(--line)] bg-[var(--surface)]/95 shadow-xl backdrop-blur-md transition-[transform,width] duration-300 ease-out lg:static lg:z-0 lg:shrink-0 lg:translate-x-0 lg:shadow-none lg:backdrop-blur-none ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-[min(18rem,86vw)] flex-col border-r border-[var(--line)] bg-[var(--surface)]/95 shadow-xl backdrop-blur-md transition-[transform,width] duration-300 ease-out lg:static lg:z-0 lg:min-h-dvh lg:shrink-0 lg:self-stretch lg:translate-x-0 lg:shadow-none lg:backdrop-blur-none ${
           open ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         } ${collapsed ? "lg:w-[4.25rem]" : "lg:w-60"}`}
       >

@@ -29,7 +29,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fr" className={`${display.variable} ${body.variable} h-full`}>
-      <body className="min-h-full font-[family-name:var(--font-body)] antialiased">
+      <body className="flex min-h-dvh flex-col font-[family-name:var(--font-body)] antialiased">
         <PeopleProvider>
           <AppShell>
             <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
