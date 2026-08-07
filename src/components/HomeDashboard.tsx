@@ -99,21 +99,23 @@ function ActionTile({
 
   const inner = (
     <>
-      <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+      <p className="text-[9px] uppercase leading-snug tracking-[0.12em] text-[var(--muted)] sm:text-[10px] sm:tracking-[0.14em]">
         {label}
       </p>
       <p
-        className={`mt-1 font-[family-name:var(--font-display)] text-2xl tabular-nums tracking-tight sm:text-3xl ${valueClass}`}
+        className={`mt-1 font-[family-name:var(--font-display)] text-xl tabular-nums tracking-tight sm:text-3xl ${valueClass}`}
       >
         {formatCount(value)}
       </p>
       {hint ? (
-        <p className="mt-0.5 truncate text-xs text-[var(--muted)]">{hint}</p>
+        <p className="mt-0.5 truncate text-[10px] text-[var(--muted)] sm:text-xs">
+          {hint}
+        </p>
       ) : null}
     </>
   );
 
-  const className = `rounded-lg border bg-[var(--surface)] px-3 py-2.5 text-left transition-[border-color,background-color] duration-200 ${
+  const className = `min-w-0 rounded-lg border bg-[var(--surface)] px-2 py-2 text-left transition-[border-color,background-color] duration-200 sm:px-3 sm:py-2.5 ${
     disabled ? "opacity-80" : "hover:bg-[var(--wash)]"
   } ${toneClass}`;
 
@@ -309,7 +311,13 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
 
       {kpis && (
         <>
-          <section className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+          <section
+            className={`grid gap-2 sm:gap-3 ${
+              isCurrentWeek
+                ? "grid-cols-2 sm:grid-cols-4"
+                : "grid-cols-5"
+            }`}
+          >
             <ActionTile
               label="Créés cette semaine"
               value={created}
@@ -421,41 +429,45 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
             />
           )}
 
-          {!isCurrentWeek && openSnap && (
-            <OpenTicketsByPerson
-              data={openSnap}
-              mode="historical"
-              weekId={selectedWeekId}
-              frozenAt={meta?.openFrozenAt}
-              onDrill={(query, tickets) => setDrill({ query, tickets })}
-            />
-          )}
-
           {!isCurrentWeek &&
-            !openSnap &&
-            kpis.openByAssignee &&
-            Object.keys(kpis.openByAssignee).length > 0 && (
-              <OpenTicketsByPerson
-                data={openSnapshotFromAssigneeCounts(kpis.openByAssignee, {
-                  fetchedAt: meta?.openFrozenAt ?? new Date().toISOString(),
-                  warnings: [],
-                })}
-                mode="frozen"
-                weekId={selectedWeekId}
-                frozenAt={meta?.openFrozenAt}
-                onDrill={(query, tickets) => setDrill({ query, tickets })}
-              />
-            )}
+            (openSnap ||
+              closedSnap ||
+              (kpis.openByAssignee &&
+                Object.keys(kpis.openByAssignee).length > 0)) && (
+              <div className="grid gap-6 md:grid-cols-2 md:items-start">
+                {openSnap ? (
+                  <OpenTicketsByPerson
+                    data={openSnap}
+                    mode="historical"
+                    weekId={selectedWeekId}
+                    frozenAt={meta?.openFrozenAt}
+                    onDrill={(query, tickets) => setDrill({ query, tickets })}
+                  />
+                ) : kpis.openByAssignee &&
+                  Object.keys(kpis.openByAssignee).length > 0 ? (
+                  <OpenTicketsByPerson
+                    data={openSnapshotFromAssigneeCounts(kpis.openByAssignee, {
+                      fetchedAt: meta?.openFrozenAt ?? new Date().toISOString(),
+                      warnings: [],
+                    })}
+                    mode="frozen"
+                    weekId={selectedWeekId}
+                    frozenAt={meta?.openFrozenAt}
+                    onDrill={(query, tickets) => setDrill({ query, tickets })}
+                  />
+                ) : null}
 
-          {!isCurrentWeek && closedSnap && (
-            <OpenTicketsByPerson
-              data={closedSnap}
-              mode="closed"
-              kind="closed"
-              weekId={selectedWeekId}
-              onDrill={(query, tickets) => setDrill({ query, tickets })}
-            />
-          )}
+                {closedSnap && (
+                  <OpenTicketsByPerson
+                    data={closedSnap}
+                    mode="closed"
+                    kind="closed"
+                    weekId={selectedWeekId}
+                    onDrill={(query, tickets) => setDrill({ query, tickets })}
+                  />
+                )}
+              </div>
+            )}
 
           <section className="space-y-2">
             <h2 className="font-[family-name:var(--font-display)] text-base text-[var(--ink)]">
