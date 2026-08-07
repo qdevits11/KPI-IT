@@ -345,7 +345,20 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
 
       {kpis && (
         <>
-          <section className="grid grid-cols-3 gap-2 sm:gap-3">
+          <section className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+            <ActionTile
+              label="Créés cette semaine"
+              value={created}
+              hint={weekLabel}
+              onClick={() =>
+                setDrill({
+                  query: {
+                    scope: "created",
+                    weekId: selectedWeekId,
+                  },
+                })
+              }
+            />
             <ActionTile
               label="Tickets ouverts"
               value={openSnap?.total ?? openStock}
@@ -362,30 +375,28 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
               }
             />
             <ActionTile
-              label="Non attribués"
-              value={openSnap?.unassigned ?? null}
-              hint="Sans assigné"
-              tone={(openSnap?.unassigned ?? 0) > 0 ? "warn" : "default"}
-              onClick={
-                openSnap
-                  ? () =>
-                      setDrill({
-                        query: { scope: "open", assignee: "Non assigné" },
-                        tickets: openSnap.tickets.filter(
-                          (t) => t.assignee === "Non assigné",
-                        ),
-                      })
-                  : undefined
-              }
-            />
-            <ActionTile
-              label="Créés"
-              value={created}
-              hint={weekLabel}
+              label="Hors SLA prise en charge"
+              value={slaPec}
+              hint="> 24 h ouvrées"
+              tone={(slaPec ?? 0) > 0 ? "crit" : "default"}
               onClick={() =>
                 setDrill({
                   query: {
-                    scope: "created",
+                    scope: "sla_pec",
+                    weekId: selectedWeekId,
+                  },
+                })
+              }
+            />
+            <ActionTile
+              label="Hors SLA clôture"
+              value={slaClose}
+              hint="> 48 h ouvrées"
+              tone={(slaClose ?? 0) > 0 ? "crit" : "default"}
+              onClick={() =>
+                setDrill({
+                  query: {
+                    scope: "sla_cloture",
                     weekId: selectedWeekId,
                   },
                 })
@@ -399,42 +410,6 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
               onDrill={(query, tickets) => setDrill({ query, tickets })}
             />
           )}
-
-          <section className="space-y-2">
-            <h2 className="font-[family-name:var(--font-display)] text-base text-[var(--ink)]">
-              SLA · {weekLabel}
-            </h2>
-            <div className="grid grid-cols-2 gap-2 sm:gap-3">
-              <ActionTile
-                label="Hors SLA prise en charge"
-                value={slaPec}
-                hint="> 24 h ouvrées"
-                tone={(slaPec ?? 0) > 0 ? "crit" : "default"}
-                onClick={() =>
-                  setDrill({
-                    query: {
-                      scope: "sla_pec",
-                      weekId: selectedWeekId,
-                    },
-                  })
-                }
-              />
-              <ActionTile
-                label="Hors SLA clôture"
-                value={slaClose}
-                hint="> 48 h ouvrées"
-                tone={(slaClose ?? 0) > 0 ? "crit" : "default"}
-                onClick={() =>
-                  setDrill({
-                    query: {
-                      scope: "sla_cloture",
-                      weekId: selectedWeekId,
-                    },
-                  })
-                }
-              />
-            </div>
-          </section>
 
           <section className="space-y-2">
             <div className="flex flex-wrap items-end justify-between gap-2">
