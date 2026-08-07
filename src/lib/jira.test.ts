@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildOpenAsOfJql,
+  buildOpenStatusAsOfJql,
   buildWeekJql,
   isoWeekDateRange,
   mockJiraWeekStats,
@@ -28,6 +30,23 @@ describe("isoWeekDateRange", () => {
     expect(start).toBe("2026-07-27");
     expect(endExclusive).toBe("2026-08-03");
     expect(endInclusive).toBe("2026-08-02");
+  });
+});
+
+describe("buildOpenStatusAsOfJql", () => {
+  it("convertit status NOT IN en WAS NOT IN ON date", () => {
+    expect(
+      buildOpenStatusAsOfJql(
+        "status NOT IN (Partenaire, Canceled, Done)",
+        "2026-08-02",
+      ),
+    ).toBe('status WAS NOT IN (Partenaire, Canceled, Done) ON "2026-08-02"');
+  });
+
+  it("construit le JQL ouvert historique avec le projet", () => {
+    const jql = buildOpenAsOfJql(conn, "2026-08-02");
+    expect(jql).toContain(conn.jqlBase.trim());
+    expect(jql).toContain('WAS NOT IN (Partenaire, Canceled, Done) ON "2026-08-02"');
   });
 });
 

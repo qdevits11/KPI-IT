@@ -386,6 +386,7 @@ export async function loadAppDatabaseFromTables(): Promise<AppDatabase> {
     ticketsByType: bagFromBreakdowns(breakdowns, "type"),
     ticketsByAssignee: bagFromBreakdowns(breakdowns, "assignee"),
     ticketsByRequester: bagFromBreakdowns(breakdowns, "requester"),
+    openByAssignee: bagFromBreakdowns(breakdowns, "open_assignee"),
     settings: {
       ...emptyAppSettings(),
       responsibles,
@@ -885,6 +886,33 @@ export async function patchTicketsBreakdownRel(
     await replaceBreakdownDimension(weekKey, "requester", patch.byRequester);
   }
   await bumpRevision();
+}
+
+export async function setOpenByAssigneeRel(
+  weekKey: string,
+  byAssignee: Record<string, number>,
+): Promise<void> {
+  await replaceBreakdownDimension(weekKey, "open_assignee", byAssignee);
+  await bumpRevision();
+}
+
+export async function getOpenByAssigneeRel(
+  weekKey: string,
+): Promise<Record<string, number>> {
+  const sb = requireClient();
+  const { data, error } = await sb
+    .from(TABLES.breakdowns)
+    .select("label, count")
+    .eq("week_id", weekKey)
+    .eq("dimension", "open_assignee");
+  if (error) throw new Error(error.message);
+  const bag: Record<string, number> = {};
+  for (const row of data ?? []) {
+    const label = String((row as { label: string }).label);
+    const count = Number((row as { count: number }).count) || 0;
+    if (label && count > 0) bag[label] = count;
+  }
+  return bag;
 }
 
 function filterWeekKeys(

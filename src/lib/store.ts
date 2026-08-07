@@ -100,6 +100,7 @@ async function migrateAndMaybePersist(db: AppDatabase): Promise<AppDatabase> {
   if (migrateSchema(db)) dirty = true;
   if (migrateSettings(db)) dirty = true;
   if (migrateTicketRequester(db)) dirty = true;
+  if (migrateOpenByAssignee(db)) dirty = true;
   setMemory(db);
   if (dirty) {
     await writeDocumentDb(db);
@@ -362,6 +363,14 @@ function syncResponsiblesFromAccessUsers(db: AppDatabase): boolean {
   if (prev === next) return false;
   db.settings.responsibles = fromUsers;
   return true;
+}
+
+function migrateOpenByAssignee(db: AppDatabase): boolean {
+  if (!db.openByAssignee) {
+    db.openByAssignee = {};
+    return true;
+  }
+  return false;
 }
 
 function migrateTicketRequester(db: AppDatabase): boolean {
@@ -741,7 +750,31 @@ export async function setTicketsByRequester(
   await patchTicketsBreakdown(weekKey, { byRequester });
 }
 
-export type BreakdownPart = "type" | "assignee" | "requester";
+/** Figement stock ouvert par assigné (fin de semaine). */
+export async function setOpenByAssignee(
+  weekKey: string,
+  byAssignee: Record<string, number>,
+): Promise<void> {
+  if (relationalEnabled()) {
+    return rel.setOpenByAssigneeRel(weekKey, byAssignee);
+  }
+  const db = await ensureDocumentDb();
+  if (!db.openByAssignee) db.openByAssignee = {};
+  db.openByAssignee[weekKey] = byAssignee;
+  await writeDocumentDb(db);
+}
+
+export async function getOpenByAssignee(
+  weekKey: string,
+): Promise<Record<string, number>> {
+  if (relationalEnabled()) {
+    return rel.getOpenByAssigneeRel(weekKey);
+  }
+  const db = await ensureDocumentDb();
+  return db.openByAssignee?.[weekKey] ?? {};
+}
+
+export type BreakdownPart = "type" | "assignee" | "requester" | "open_assignee";
 
 function filterWeekKeys(
   keys: string[],
@@ -784,6 +817,7 @@ export async function clearTicketsBreakdown(options?: {
       ? options.parts
       : ["requester"];
 
+  if (!db.openByAssignee) db.openByAssignee = {};
   const collections: Record<
     BreakdownPart,
     Record<string, Record<string, number>>
@@ -791,6 +825,7 @@ export async function clearTicketsBreakdown(options?: {
     type: db.ticketsByType,
     assignee: db.ticketsByAssignee,
     requester: db.ticketsByRequester,
+    open_assignee: db.openByAssignee,
   };
 
   let removed = 0;
@@ -823,6 +858,9 @@ export async function clearTicketsBreakdown(options?: {
   if (parts.includes("assignee")) db.ticketsByAssignee = collections.assignee;
   if (parts.includes("requester")) {
     db.ticketsByRequester = collections.requester;
+  }
+  if (parts.includes("open_assignee")) {
+    db.openByAssignee = collections.open_assignee;
   }
   await writeDocumentDb(db);
 

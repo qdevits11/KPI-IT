@@ -42,6 +42,7 @@ export function createEmptyDatabase(
     ticketsByType: {},
     ticketsByAssignee: {},
     ticketsByRequester: {},
+    openByAssignee: {},
     settings: {
       ...emptyAppSettings(),
       responsibles: [...DEFAULT_RESPONSIBLES],

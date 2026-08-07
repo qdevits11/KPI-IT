@@ -31,6 +31,7 @@ function sampleDb(requesters: Record<string, Record<string, number>>): AppDataba
     ticketsByType: {},
     ticketsByAssignee: {},
     ticketsByRequester: requesters,
+    openByAssignee: {},
     schemaVersion: 2,
     revision: 1,
     settings: {
