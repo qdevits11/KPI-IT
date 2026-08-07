@@ -1,6 +1,7 @@
 "use client";
 
-import { initialsFromName } from "@/lib/avatars";
+import { useState } from "react";
+import { hiResAvatarUrl, initialsFromName } from "@/lib/avatars";
 
 const SIZE_CLASS = {
   xs: "size-5 text-[9px]",
@@ -30,31 +31,62 @@ export function PersonAvatar({
   className?: string;
 }) {
   const dim = SIZE_CLASS[size];
+  const px = SIZE_PX[size];
   const initials = initialsFromName(name || "?");
+  const original = avatarUrl?.trim() || "";
 
-  if (avatarUrl) {
+  if (!original) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={avatarUrl}
-        alt=""
+      <span
         title={name}
-        width={SIZE_PX[size]}
-        height={SIZE_PX[size]}
-        className={`shrink-0 rounded-full object-cover ring-1 ring-[var(--line)] ${dim} ${className}`}
-        referrerPolicy="no-referrer"
-      />
+        aria-hidden
+        className={`inline-flex shrink-0 items-center justify-center rounded-full bg-[var(--wash)] font-medium text-[var(--ink-soft)] ring-1 ring-[var(--line)] ${dim} ${className}`}
+      >
+        {initials}
+      </span>
     );
   }
 
   return (
-    <span
+    <AvatarImage
+      key={`${original}:${px}`}
+      name={name}
+      original={original}
+      px={px}
+      className={`shrink-0 rounded-full object-cover ring-1 ring-[var(--line)] ${dim} ${className}`}
+    />
+  );
+}
+
+function AvatarImage({
+  name,
+  original,
+  px,
+  className,
+}: {
+  name: string;
+  original: string;
+  px: number;
+  className: string;
+}) {
+  const preferred = hiResAvatarUrl(original, px) || original;
+  const [src, setSrc] = useState(preferred);
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
       title={name}
-      aria-hidden
-      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-[var(--wash)] font-medium text-[var(--ink-soft)] ring-1 ring-[var(--line)] ${dim} ${className}`}
-    >
-      {initials}
-    </span>
+      width={px}
+      height={px}
+      className={className}
+      referrerPolicy="no-referrer"
+      decoding="async"
+      onError={() => {
+        if (src !== original) setSrc(original);
+      }}
+    />
   );
 }
 

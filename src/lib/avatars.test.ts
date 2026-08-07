@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  hiResAvatarUrl,
   initialsFromName,
   mergePeopleDirectory,
   personEntryFromJiraUser,
@@ -45,5 +46,25 @@ describe("avatars", () => {
   it("initialsFromName", () => {
     expect(initialsFromName("Gary Schreurs")).toBe("GS");
     expect(initialsFromName("Quentin")).toBe("QU");
+  });
+
+  it("hiResAvatarUrl monte size/s pour Retina", () => {
+    const src =
+      "https://avatar-management--avatars.example.atl-paas.net/photo.png?size=48&s=48";
+    const out = hiResAvatarUrl(src, 56);
+    expect(out).toContain("size=128");
+    expect(out).toContain("s=128");
+  });
+
+  it("hiResAvatarUrl met à jour le segment de chemin", () => {
+    const src =
+      "https://avatar-management--avatars.example.atl-paas.net/users/abc/48";
+    expect(hiResAvatarUrl(src, 56)).toMatch(/\/128$/);
+  });
+
+  it("hiResAvatarUrl laisse intact une URL sans taille", () => {
+    expect(hiResAvatarUrl("https://cdn.example/photo.jpg", 56)).toBe(
+      "https://cdn.example/photo.jpg",
+    );
   });
 });

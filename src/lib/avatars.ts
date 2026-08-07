@@ -52,6 +52,77 @@ export function pickAvatarUrl(
   return undefined;
 }
 
+/** Tailles CDN Atlassian courantes (au-delà de 48 pour écrans Retina). */
+const AVATAR_TARGET_SIZES = [48, 64, 96, 128, 192, 256] as const;
+
+/**
+ * Demande une variante plus nette d’une URL avatar Atlassian/Jira.
+ * Les API ne renvoient que 48×48 max ; le CDN accepte souvent `size` / `s`
+ * plus élevés — utile pour les macarons xl (~56px CSS ≈ 112px physiques).
+ */
+export function hiResAvatarUrl(
+  url: string | null | undefined,
+  displayPx: number,
+): string | undefined {
+  const raw = url?.trim();
+  if (!raw) return undefined;
+
+  // 2× pour Retina, plafond CDN raisonnable
+  const want = Math.min(256, Math.max(48, Math.ceil(displayPx * 2)));
+  const target =
+    AVATAR_TARGET_SIZES.find((s) => s >= want) ??
+    AVATAR_TARGET_SIZES[AVATAR_TARGET_SIZES.length - 1];
+
+  try {
+    const parsed = new URL(raw);
+    let changed = false;
+
+    for (const key of ["size", "s"] as const) {
+      if (!parsed.searchParams.has(key)) continue;
+      const current = Number(parsed.searchParams.get(key));
+      if (Number.isFinite(current) && current < target) {
+        parsed.searchParams.set(key, String(target));
+        changed = true;
+      }
+    }
+
+    // Chemins …/48 ou …/48x48 (CDN / secure)
+    const pathUp = parsed.pathname.replace(
+      /\/(\d{2,3})x\1(?=\/|$)/,
+      `/${target}x${target}`,
+    );
+    if (pathUp !== parsed.pathname) {
+      parsed.pathname = pathUp;
+      changed = true;
+    } else {
+      const pathNum = parsed.pathname.replace(
+        /\/(16|24|32|48|64|96)(?=\/|$)/,
+        `/${target}`,
+      );
+      if (pathNum !== parsed.pathname) {
+        parsed.pathname = pathNum;
+        changed = true;
+      }
+    }
+
+    // Ancien format ?size=large|medium|… (secure/useravatar)
+    const named = parsed.searchParams.get("size");
+    if (
+      named &&
+      !/^\d+$/.test(named) &&
+      !/xlarge/i.test(named) &&
+      target >= 96
+    ) {
+      parsed.searchParams.set("size", "xlarge");
+      changed = true;
+    }
+
+    return changed ? parsed.toString() : raw;
+  } catch {
+    return raw;
+  }
+}
+
 export function personEntryFromJiraUser(
   user:
     | {
