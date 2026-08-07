@@ -278,7 +278,7 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
             Tableau de bord
           </p>
           <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl text-[var(--ink)] sm:text-4xl">
-            {isCurrentWeek ? "État actuel" : `Semaine ${weekLabel}`}
+            Semaine {weekLabel}
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">
             {isLive

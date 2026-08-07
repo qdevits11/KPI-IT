@@ -8,7 +8,7 @@ Tableau de bord des KPI du service IT (Jira + encodage manuel).
 
 | Menu | Route | Contenu |
 |------|-------|---------|
-| **Accueil** | `/` | État actuel actionnable (ouverts, non attribués, SLA, encodage rapide) |
+| **Accueil** | `/` | Tableau de bord de la semaine (ouverts, non attribués, SLA, encodage rapide) · macaron En cours · live |
 | **Semaine** | `/semaine` | KPI hebdo détaillé, sélecteur de semaine, sync, ventilations |
 | **Tickets** | `/tickets-ouverts` | Tickets ouverts live + actions Jira |
 | **Analyse** | `/analyse` | KPI année + stats tickets (assigné / demandeur / type) |
