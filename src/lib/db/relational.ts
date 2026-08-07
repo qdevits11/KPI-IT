@@ -44,6 +44,39 @@ import {
 
 type LogCollection = keyof typeof COLLECTION_TO_LOG_KIND;
 
+/**
+ * PostgREST / Supabase coupe les SELECT à 1000 lignes par défaut.
+ * Sans pagination, les ventilations des semaines récentes disparaissent
+ * silencieusement dans Analyse (ex. S30+ une fois >1000 rows).
+ */
+export const SUPABASE_PAGE_SIZE = 1000;
+
+type RangeQuery = {
+  range: (
+    from: number,
+    to: number,
+  ) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>;
+};
+
+/** Charge toutes les lignes d’une requête range-able (boucle .range). */
+export async function fetchAllRows<T>(
+  build: () => RangeQuery,
+  pageSize = SUPABASE_PAGE_SIZE,
+): Promise<T[]> {
+  const out: T[] = [];
+  let from = 0;
+  for (;;) {
+    const to = from + pageSize - 1;
+    const { data, error } = await build().range(from, to);
+    if (error) throw new Error(error.message);
+    const chunk = (data ?? []) as T[];
+    out.push(...chunk);
+    if (chunk.length < pageSize) break;
+    from += pageSize;
+  }
+  return out;
+}
+
 type MetaRow = {
   id: string;
   schema_version: number;
@@ -307,46 +340,30 @@ export async function loadAppDatabaseFromTables(): Promise<AppDatabase> {
   const sb = requireClient();
   await ensureRelationalSeed();
 
-  const [
-    metaRes,
-    weeksRes,
-    logsRes,
-    phishRes,
-    breakRes,
-    accessRes,
-    peopleRes,
-    settingsRes,
-  ] = await Promise.all([
-    sb.from(TABLES.meta).select("*").eq("id", KPI_META_ID).maybeSingle(),
-    sb.from(TABLES.weeks).select("*"),
-    sb.from(TABLES.logEvents).select("*"),
-    sb.from(TABLES.phishing).select("*"),
-    sb.from(TABLES.breakdowns).select("*"),
-    sb.from(TABLES.accessUsers).select("*"),
-    sb.from(TABLES.people).select("*"),
-    sb.from(TABLES.settings).select("*").eq("id", KPI_SETTINGS_ID).maybeSingle(),
-  ]);
+  const [metaRes, settingsRes, weeks, logs, phishing, breakdowns, access, people] =
+    await Promise.all([
+      sb.from(TABLES.meta).select("*").eq("id", KPI_META_ID).maybeSingle(),
+      sb
+        .from(TABLES.settings)
+        .select("*")
+        .eq("id", KPI_SETTINGS_ID)
+        .maybeSingle(),
+      fetchAllRows<WeekRow>(() => sb.from(TABLES.weeks).select("*")),
+      fetchAllRows<LogRow>(() => sb.from(TABLES.logEvents).select("*")),
+      fetchAllRows<PhishRow>(() => sb.from(TABLES.phishing).select("*")),
+      fetchAllRows<BreakdownRow>(() => sb.from(TABLES.breakdowns).select("*")),
+      fetchAllRows<AccessRow>(() => sb.from(TABLES.accessUsers).select("*")),
+      fetchAllRows<PeopleRow>(() => sb.from(TABLES.people).select("*")),
+    ]);
 
-  for (const res of [
-    metaRes,
-    weeksRes,
-    logsRes,
-    phishRes,
-    breakRes,
-    accessRes,
-    peopleRes,
-    settingsRes,
-  ]) {
-    if (res.error) throw new Error(`Lecture relationnelle: ${res.error.message}`);
+  if (metaRes.error) {
+    throw new Error(`Lecture relationnelle: ${metaRes.error.message}`);
+  }
+  if (settingsRes.error) {
+    throw new Error(`Lecture relationnelle: ${settingsRes.error.message}`);
   }
 
   const meta = metaRes.data as MetaRow | null;
-  const weeks = (weeksRes.data as WeekRow[] | null) ?? [];
-  const logs = (logsRes.data as LogRow[] | null) ?? [];
-  const phishing = (phishRes.data as PhishRow[] | null) ?? [];
-  const breakdowns = (breakRes.data as BreakdownRow[] | null) ?? [];
-  const access = (accessRes.data as AccessRow[] | null) ?? [];
-  const people = (peopleRes.data as PeopleRow[] | null) ?? [];
   const settings = settingsRes.data as SettingsRow | null;
 
   const automationsMetier = logs
@@ -415,9 +432,10 @@ async function syncResponsiblesList(
 
 export async function listWeeksRel(): Promise<WeeklyRow[]> {
   const sb = requireClient();
-  const { data, error } = await sb.from(TABLES.weeks).select("*");
-  if (error) throw new Error(error.message);
-  return ((data as WeekRow[]) ?? [])
+  const weeks = await fetchAllRows<WeekRow>(() =>
+    sb.from(TABLES.weeks).select("*"),
+  );
+  return weeks
     .map(weekRowToWeekly)
     .sort((a, b) =>
       a.year === b.year ? b.week - a.week : b.year - a.year,
@@ -537,11 +555,10 @@ export async function removeResponsibleRel(name: string): Promise<string[]> {
 
 export async function getAccessUsersRel(): Promise<AppAccessUser[]> {
   const sb = requireClient();
-  const { data, error } = await sb.from(TABLES.accessUsers).select("*");
-  if (error) throw new Error(error.message);
-  return normalizeAccessUsers(
-    ((data as AccessRow[]) ?? []).map(accessRowToUser),
+  const data = await fetchAllRows<AccessRow>(() =>
+    sb.from(TABLES.accessUsers).select("*"),
   );
+  return normalizeAccessUsers(data.map(accessRowToUser));
 }
 
 export async function getAccessRightsForEmailRel(email: string) {
@@ -639,9 +656,10 @@ export async function removeAccessUserRel(
 
 export async function getPeopleDirectoryRel(): Promise<PeopleDirectory> {
   const sb = requireClient();
-  const { data, error } = await sb.from(TABLES.people).select("*");
-  if (error) throw new Error(error.message);
-  return peopleFromRows((data as PeopleRow[]) ?? []);
+  const data = await fetchAllRows<PeopleRow>(() =>
+    sb.from(TABLES.people).select("*"),
+  );
+  return peopleFromRows(data);
 }
 
 export async function mergePeopleFromJiraRel(
@@ -925,11 +943,10 @@ export async function clearTicketsBreakdownRel(options?: {
       ? options.parts
       : ["requester"];
   const sb = requireClient();
-  const { data, error } = await sb
-    .from(TABLES.breakdowns)
-    .select("week_id, dimension");
-  if (error) throw new Error(error.message);
-  const rows = (data as { week_id: string; dimension: BreakdownDimension }[]) ?? [];
+  const rows = await fetchAllRows<{
+    week_id: string;
+    dimension: BreakdownDimension;
+  }>(() => sb.from(TABLES.breakdowns).select("week_id, dimension"));
 
   let removed = 0;
   for (const part of parts) {
@@ -951,12 +968,10 @@ export async function clearTicketsBreakdownRel(options?: {
     removed += count ?? toRemove.size;
   }
 
-  const { data: left, error: leftErr } = await sb
-    .from(TABLES.breakdowns)
-    .select("week_id, dimension");
-  if (leftErr) throw new Error(leftErr.message);
-  const remainingRows =
-    (left as { week_id: string; dimension: string }[]) ?? [];
+  const remainingRows = await fetchAllRows<{
+    week_id: string;
+    dimension: string;
+  }>(() => sb.from(TABLES.breakdowns).select("week_id, dimension"));
   let remaining = 0;
   if (parts.length === 1) {
     remaining = new Set(
@@ -980,12 +995,18 @@ export async function getRelationalStorageCounts(): Promise<{
   revision: number | null;
 }> {
   const sb = requireClient();
-  const [meta, weeks, breaks] = await Promise.all([
-    sb.from(TABLES.meta).select("updated_at, revision").eq("id", KPI_META_ID).maybeSingle(),
+  const [meta, weeks, rows] = await Promise.all([
+    sb
+      .from(TABLES.meta)
+      .select("updated_at, revision")
+      .eq("id", KPI_META_ID)
+      .maybeSingle(),
     sb.from(TABLES.weeks).select("week_id", { count: "exact", head: true }),
-    sb.from(TABLES.breakdowns).select("week_id, dimension"),
+    fetchAllRows<Pick<BreakdownRow, "week_id" | "dimension">>(() =>
+      sb.from(TABLES.breakdowns).select("week_id, dimension"),
+    ),
   ]);
-  const rows = (breaks.data as BreakdownRow[] | null) ?? [];
+  if (meta.error) throw new Error(meta.error.message);
   const assigneeWeeks = new Set(
     rows.filter((r) => r.dimension === "assignee").map((r) => r.week_id),
   ).size;
