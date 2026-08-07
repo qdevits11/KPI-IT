@@ -18,6 +18,7 @@ import {
 import {
   ensureWeek,
   getOpenByAssignee,
+  getWeek,
   setOpenByAssignee,
   updateWeeklyRow,
 } from "./store";
@@ -234,6 +235,69 @@ export async function backfillOpenAssigneeHistory(
       }
     }
 
+    const result = await freezeOpenAssigneeForWeek(
+      target.year,
+      target.week,
+      conn,
+      { mode: "historical", frozenAt: now },
+    );
+    processed.push(result);
+  }
+
+  return { processed, skipped };
+}
+
+/** Une semaine terminée doit être figée si le marqueur ou la ventilation manque. */
+export async function weekNeedsOpenFreeze(
+  year: number,
+  week: number,
+): Promise<boolean> {
+  const id = weekId({ year, month: 1, week });
+  const row = await getWeek(id);
+  if (!row?.openFrozenAt) return true;
+  const bag = await getOpenByAssignee(id);
+  return Object.keys(bag).length === 0;
+}
+
+/**
+ * Rattrapage cron : fige (mode historique) les semaines ISO terminées récentes
+ * encore sans `openFrozenAt` / `open_assignee`.
+ * Couvre un dimanche raté ou un déploiement entre deux figements.
+ */
+export async function healUnfrozenCompletedWeeks(
+  conn: JiraConnection,
+  options?: {
+    /** Nombre max de semaines terminées à inspecter (défaut 6). */
+    lookback?: number;
+    now?: Date;
+    /** Semaine déjà figée en live dans le même run — à ignorer. */
+    exclude?: { year: number; week: number };
+  },
+): Promise<{
+  processed: OpenAssigneeFreezeResult[];
+  skipped: string[];
+}> {
+  const lookback = Math.max(0, Math.min(26, options?.lookback ?? 6));
+  const now = options?.now ?? new Date();
+  const exclude = options?.exclude;
+  const targets = listCompletedWeeksToBackfill(lookback, now);
+  const processed: OpenAssigneeFreezeResult[] = [];
+  const skipped: string[] = [];
+
+  for (const target of targets) {
+    if (
+      exclude &&
+      exclude.year === target.year &&
+      exclude.week === target.week
+    ) {
+      skipped.push(weekId({ year: target.year, month: 1, week: target.week }));
+      continue;
+    }
+    const id = weekId({ year: target.year, month: 1, week: target.week });
+    if (!(await weekNeedsOpenFreeze(target.year, target.week))) {
+      skipped.push(id);
+      continue;
+    }
     const result = await freezeOpenAssigneeForWeek(
       target.year,
       target.week,

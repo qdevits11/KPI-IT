@@ -5,6 +5,7 @@ import {
   backfillOpenAssigneeHistory,
   describeBrusselsNow,
   freezeOpenAssigneeForWeek,
+  healUnfrozenCompletedWeeks,
   isOpenSnapshotWindow,
   weekToFreezeOpenSnapshot,
 } from "@/lib/open-snapshot";
@@ -17,17 +18,41 @@ import {
 import { weekId } from "@/lib/types";
 import { authorizeCron } from "@/lib/api";
 
+function summarizeHeal(
+  healed: Awaited<ReturnType<typeof healUnfrozenCompletedWeeks>>,
+) {
+  return {
+    healedCount: healed.processed.length,
+    healed: healed.processed.map((r) => ({
+      weekId: r.weekId,
+      openCount: r.openCount,
+      assignees: Object.keys(r.byAssignee).length,
+      asOfDate: r.asOfDate,
+      mode: r.mode,
+    })),
+    healSkipped: healed.skipped,
+  };
+}
+
 /**
  * Figement du stock « non résolus » (+ ventilation par assigné) — dimanche 23:59 Europe/Brussels.
+ *
+ * Données figées :
+ * - `demandesNonResoluesHebdo` + `openFrozenAt`
+ * - ventilation `open_assignee` (stock ouvert par responsable)
+ * - par défaut (`full` ≠ 0) : sync KPI hebdo + ventilations créés (type/assigné/demandeur)
  *
  * Vercel cron (UTC) : 21:55 et 22:55 le dimanche
  * → un des deux tombe dans 23:50–23:59 Bruxelles selon l’heure d’été/hiver.
  * Rattrapage lundi 00:00–00:14 aussi accepté.
+ * Hors fenêtre : le 2ᵉ créneau DST tente quand même le rattrapage des semaines manquantes.
  *
  * Query:
  * - ?force=1 — figer hors fenêtre (semaine ISO précédente, snapshot live)
  * - ?backfill=1&weeks=40 — reconstituer les N semaines passées (JQL historique)
  * - ?skipExisting=1 — (avec backfill) ne pas écraser les semaines déjà figées
+ * - ?heal=0 — désactiver le rattrapage des semaines non figées
+ * - ?full=0 — ne figer que le stock ouvert (pas la sync KPI complète)
  */
 export async function GET(request: Request) {
   if (!authorizeCron(request)) {
@@ -37,6 +62,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const force = searchParams.get("force") === "1";
   const backfill = searchParams.get("backfill") === "1";
+  const heal = searchParams.get("heal") !== "0";
   const now = new Date();
   const brussels = describeBrusselsNow(now);
 
@@ -96,13 +122,27 @@ export async function GET(request: Request) {
   }
 
   if (!target) {
+    // Hors fenêtre live : le créneau DST « mort » sert de filet (semaines manquantes).
+    let healSummary: ReturnType<typeof summarizeHeal> | null = null;
+    if (heal) {
+      try {
+        healSummary = summarizeHeal(
+          await healUnfrozenCompletedWeeks(conn, { lookback: 6, now }),
+        );
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Rattrapage semaines échoué";
+        return NextResponse.json({ ok: false, error: message }, { status: 502 });
+      }
+    }
     return NextResponse.json({
       ok: true,
       skipped: true,
       brussels,
       inWindow: isOpenSnapshotWindow(now),
       message:
-        "Hors fenêtre dimanche 23:50–23:59 (ou lundi 00:00–00:14) Europe/Brussels. Relancer avec ?force=1 pour un test, ou ?backfill=1 pour l’historique.",
+        "Hors fenêtre dimanche 23:50–23:59 (ou lundi 00:00–00:14) Europe/Brussels. Rattrapage des semaines non figées éventuel. Relancer avec ?force=1 pour un test, ou ?backfill=1 pour l’historique.",
+      ...(healSummary ?? {}),
     });
   }
 
@@ -138,6 +178,17 @@ export async function GET(request: Request) {
       frozenAt: now,
     });
 
+    let healSummary: ReturnType<typeof summarizeHeal> | null = null;
+    if (heal) {
+      healSummary = summarizeHeal(
+        await healUnfrozenCompletedWeeks(conn, {
+          lookback: 6,
+          now,
+          exclude: { year, week },
+        }),
+      );
+    }
+
     const row = await getWeek(id);
 
     return NextResponse.json({
@@ -151,6 +202,7 @@ export async function GET(request: Request) {
       openFrozenAt: row?.openFrozenAt ?? frozen.openFrozenAt,
       jqlOpen: jql.open,
       ...extras,
+      ...(healSummary ?? {}),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Snapshot échoué";
