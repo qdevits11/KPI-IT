@@ -10,8 +10,8 @@ import {
   previousIsoWeek,
   weekKey,
 } from "./jira";
+import { countsByAssignee } from "./open-assignee";
 import {
-  countsByAssignee,
   fetchOpenTicketsAsOf,
   fetchOpenTicketsSnapshot,
 } from "./jira-tickets";
