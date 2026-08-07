@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState, Fragment } from "react";
-import Link from "next/link";
 import type {
   AssigneeOpenGroup,
   OpenTicketsSnapshot,
@@ -23,21 +22,6 @@ function formatAge(days: number): string {
   const weeks = Math.floor(days / 7);
   const rem = days % 7;
   return rem ? `${weeks} sem. ${rem} j` : `${weeks} sem.`;
-}
-
-function formatFetchedAt(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("fr-BE", {
-      timeZone: "Europe/Brussels",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
 }
 
 function PersonPanel({
@@ -184,146 +168,85 @@ function PersonPanel({
   );
 }
 
-export function OpenTicketsView({
-  initialData,
-  initialError,
+type DrillState = {
+  query: DrilldownQuery;
+  tickets?: TicketListItem[];
+};
+
+/**
+ * Liste « Par personne » des tickets ouverts (identique à l’ancienne page Tickets).
+ * Gère son propre drilldown si `onDrill` n’est pas fourni.
+ */
+export function OpenTicketsByPerson({
+  data,
+  onDrill,
 }: {
-  initialData: OpenTicketsSnapshot | null;
-  initialError?: string | null;
+  data: OpenTicketsSnapshot;
+  /** Si fourni, le parent gère le drilldown (sinon modal interne). */
+  onDrill?: (query: DrilldownQuery, tickets?: TicketListItem[]) => void;
 }) {
-  const [data] = useState(initialData);
-  const [error] = useState(initialError ?? null);
-  const [drill, setDrill] = useState<{
-    query: DrilldownQuery;
-    tickets?: TicketListItem[];
-  } | null>(null);
   const [filterName, setFilterName] = useState("");
+  const [internalDrill, setInternalDrill] = useState<DrillState | null>(null);
 
   const groups = useMemo(() => {
-    if (!data) return [];
     const q = filterName.trim().toLowerCase();
     if (!q) return data.byAssignee;
     return data.byAssignee.filter((g) => g.name.toLowerCase().includes(q));
   }, [data, filterName]);
 
   function openDrill(query: DrilldownQuery, tickets?: TicketListItem[]) {
-    setDrill({ query, tickets });
+    if (onDrill) {
+      onDrill(query, tickets);
+      return;
+    }
+    setInternalDrill({ query, tickets });
   }
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-[var(--accent)]">
-            Instant T · Jira live
-          </p>
-          <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl text-[var(--ink)] sm:text-4xl">
-            Tickets ouverts
-          </h1>
-          <p className="mt-2 max-w-xl text-sm text-[var(--muted)]">
-            Stock actuel des tickets non résolus : non attribués, charge par
-            personne, types et ancienneté. Mis à jour à chaque ouverture de la
-            page — cliquez un nombre pour affiner.
-          </p>
-        </div>
-        {data?.fetchedAt && (
-          <p className="text-xs text-[var(--muted)]">
-            Au {formatFetchedAt(data.fetchedAt)}
-          </p>
-        )}
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)] sm:text-xl">
+          Par personne
+        </h2>
+        <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
+          Filtrer
+          <input
+            type="search"
+            value={filterName}
+            onChange={(e) => setFilterName(e.target.value)}
+            placeholder="Nom…"
+            className="w-40 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 text-[var(--ink)]"
+          />
+        </label>
       </div>
 
-      {error && (
-        <div className="space-y-2 rounded-md border border-[var(--crit)]/30 bg-[var(--crit)]/10 px-3 py-3 text-sm text-[var(--crit)]">
-          <p>{error}</p>
-          <Link
-            href="/admin/jira"
-            className="inline-block text-[var(--accent-deep)] underline-offset-2 hover:underline"
-          >
-            Ouvrir Sync Jira →
-          </Link>
-        </div>
+      {groups.length === 0 ? (
+        <p className="text-sm text-[var(--muted)]">
+          Aucun ticket ouvert pour ces filtres.
+        </p>
+      ) : (
+        <ul className="space-y-3">
+          {groups.map((g) => (
+            <PersonPanel key={g.name} group={g} onDrill={openDrill} />
+          ))}
+        </ul>
       )}
 
-      {data && (
-        <>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
-              <p className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">
-                Ouverts au total
-              </p>
-              <p className="mt-2 font-[family-name:var(--font-display)] text-4xl tabular-nums text-[var(--ink)]">
-                <ClickableCount
-                  value={data.total}
-                  className="text-4xl"
-                  onClick={() => openDrill({ scope: "open" }, data.tickets)}
-                />
-              </p>
-            </div>
-            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
-              <p className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">
-                Non attribués
-              </p>
-              <p className="mt-2 font-[family-name:var(--font-display)] text-4xl tabular-nums text-[var(--ink)]">
-                <ClickableCount
-                  value={data.unassigned}
-                  className="text-4xl"
-                  onClick={() =>
-                    openDrill(
-                      { scope: "open", assignee: "Non assigné" },
-                      data.tickets.filter((t) => t.assignee === "Non assigné"),
-                    )
-                  }
-                />
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-[family-name:var(--font-display)] text-xl text-[var(--ink)]">
-              Par personne
-            </h2>
-            <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
-              Filtrer
-              <input
-                type="search"
-                value={filterName}
-                onChange={(e) => setFilterName(e.target.value)}
-                placeholder="Nom…"
-                className="w-40 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 text-[var(--ink)]"
-              />
-            </label>
-          </div>
-
-          {groups.length === 0 ? (
-            <p className="text-sm text-[var(--muted)]">
-              Aucun ticket ouvert pour ces filtres.
-            </p>
-          ) : (
-            <ul className="space-y-3">
-              {groups.map((g) => (
-                <PersonPanel key={g.name} group={g} onDrill={openDrill} />
-              ))}
-            </ul>
-          )}
-
-          {data.warnings.length > 0 && (
-            <ul className="space-y-1 text-xs text-[var(--muted)]">
-              {data.warnings.slice(0, 5).map((w) => (
-                <li key={w}>{w}</li>
-              ))}
-            </ul>
-          )}
-        </>
+      {data.warnings.length > 0 && (
+        <ul className="space-y-1 text-xs text-[var(--muted)]">
+          {data.warnings.slice(0, 5).map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
       )}
 
-      {drill && (
+      {!onDrill && internalDrill && (
         <TicketDrilldown
-          query={drill.query}
-          presetTickets={drill.tickets}
-          onClose={() => setDrill(null)}
+          query={internalDrill.query}
+          presetTickets={internalDrill.tickets}
+          onClose={() => setInternalDrill(null)}
         />
       )}
-    </div>
+    </section>
   );
 }

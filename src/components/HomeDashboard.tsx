@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { KpiValue, LogEvent, PhishingEvent, WeeklyRow } from "@/lib/types";
-import type { OpenTicketsSnapshot } from "@/lib/jira-tickets";
+import type { OpenTicketsSnapshot, TicketListItem } from "@/lib/jira-tickets";
 import { clampWeekIdToCurrent } from "@/lib/dates";
 import { WeekSelector } from "./WeekSelector";
 import {
@@ -19,6 +19,7 @@ import {
   QuickEncodeModal,
   type EncodeKind,
 } from "./QuickEncodeModal";
+import { OpenTicketsByPerson } from "./OpenTicketsByPerson";
 
 interface WeekOption {
   id: string;
@@ -171,7 +172,10 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
   const [pending, startTransition] = useTransition();
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [drill, setDrill] = useState<DrilldownQuery | null>(null);
+  const [drill, setDrill] = useState<{
+    query: DrilldownQuery;
+    tickets?: TicketListItem[];
+  } | null>(null);
   const [encodeKind, setEncodeKind] = useState<EncodeKind | null>(null);
 
   const load = useCallback(async (weekId: string) => {
@@ -188,15 +192,11 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
     const payload = (await kpisRes.json()) as KpisPayload;
     setKpis(payload);
 
-    if (!payload.meta.isLive) {
-      setOpenSnap(null);
-      setOpenError(null);
-      return;
-    }
-
+    // Stock live toujours chargé (section Par personne + tuiles live).
     const openRes = await fetch("/api/jira/open");
     if (openRes.ok) {
       setOpenSnap((await openRes.json()) as OpenTicketsSnapshot);
+      setOpenError(null);
     } else {
       const body = (await openRes.json().catch(() => null)) as {
         error?: string;
@@ -331,7 +331,7 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
           {error}
         </p>
       )}
-      {openError && isLive && (
+      {openError && (
         <p className="rounded-md border border-[var(--warn)]/30 bg-[var(--warn)]/10 px-3 py-2 text-sm text-[var(--warn)]">
           {openError}
         </p>
@@ -359,7 +359,13 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
                 tone="accent"
                 cta={isLive ? "Voir la liste" : undefined}
                 onClick={
-                  isLive ? () => setDrill({ scope: "open" }) : undefined
+                  isLive
+                    ? () =>
+                        setDrill({
+                          query: { scope: "open" },
+                          tickets: openSnap?.tickets,
+                        })
+                    : undefined
                 }
                 disabled={!isLive}
               />
@@ -371,7 +377,12 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
                   tone={(openSnap?.unassigned ?? 0) > 0 ? "warn" : "default"}
                   cta="Traiter"
                   onClick={() =>
-                    setDrill({ scope: "open", assignee: "Non assigné" })
+                    setDrill({
+                      query: { scope: "open", assignee: "Non assigné" },
+                      tickets: openSnap?.tickets.filter(
+                        (t) => t.assignee === "Non assigné",
+                      ),
+                    })
                   }
                 />
               )}
@@ -382,13 +393,22 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
                 cta="Voir la liste"
                 onClick={() =>
                   setDrill({
-                    scope: "created",
-                    weekId: selectedWeekId,
+                    query: {
+                      scope: "created",
+                      weekId: selectedWeekId,
+                    },
                   })
                 }
               />
             </div>
           </section>
+
+          {openSnap && (
+            <OpenTicketsByPerson
+              data={openSnap}
+              onDrill={(query, tickets) => setDrill({ query, tickets })}
+            />
+          )}
 
           <section className="space-y-3">
             <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
@@ -403,8 +423,10 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
                 cta="Voir la liste"
                 onClick={() =>
                   setDrill({
-                    scope: "sla_pec",
-                    weekId: selectedWeekId,
+                    query: {
+                      scope: "sla_pec",
+                      weekId: selectedWeekId,
+                    },
                   })
                 }
               />
@@ -416,8 +438,10 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
                 cta="Voir la liste"
                 onClick={() =>
                   setDrill({
-                    scope: "sla_cloture",
-                    weekId: selectedWeekId,
+                    query: {
+                      scope: "sla_cloture",
+                      weekId: selectedWeekId,
+                    },
                   })
                 }
               />
@@ -511,13 +535,17 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
             ticketsByType={kpis.ticketsByType}
             ticketsByAssignee={kpis.ticketsByAssignee}
             ticketsByRequester={kpis.ticketsByRequester}
-            onDrill={setDrill}
+            onDrill={(query) => setDrill({ query })}
           />
         </>
       )}
 
       {drill && (
-        <TicketDrilldown query={drill} onClose={() => setDrill(null)} />
+        <TicketDrilldown
+          query={drill.query}
+          presetTickets={drill.tickets}
+          onClose={() => setDrill(null)}
+        />
       )}
       {encodeKind && (
         <QuickEncodeModal

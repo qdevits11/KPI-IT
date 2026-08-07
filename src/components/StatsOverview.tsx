@@ -77,14 +77,15 @@ export function StatsOverview({ initialYear = 2026 }: { initialYear?: number }) 
           </h1>
           <p className="mt-2 max-w-xl text-sm text-[var(--muted)]">
             Volumes par assigné Jira, demandeur et type de demande — filtrables
-            par année et plage de semaines. Pour le stock{" "}
+            par année et plage de semaines. Le stock{" "}
             <Link
-              href="/tickets-ouverts"
+              href="/"
               className="font-medium text-[var(--accent-deep)] hover:underline"
             >
               ouvert à l’instant T
-            </Link>
-            , cliquez les nombres pour lister les tickets.
+            </Link>{" "}
+            (par personne) est sur l’accueil — cliquez les nombres pour lister
+            les tickets.
           </p>
         </div>
         <AnalysePeriodFilter
