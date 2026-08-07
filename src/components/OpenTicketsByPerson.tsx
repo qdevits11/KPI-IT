@@ -1,17 +1,14 @@
 "use client";
 
-import { useMemo, useState, Fragment } from "react";
+import { useMemo, useState } from "react";
 import type {
-  AssigneeOpenGroup,
   OpenTicketsSnapshot,
   TicketListItem,
 } from "@/lib/jira-tickets";
 import {
-  ClickableCount,
   TicketDrilldown,
   type DrilldownQuery,
 } from "./TicketDrilldown";
-import { TicketActionsPanel } from "./TicketActionsPanel";
 import { PersonLabel } from "./PersonAvatar";
 import { usePeopleAvatars } from "./PeopleProvider";
 
@@ -24,158 +21,13 @@ function formatAge(days: number): string {
   return rem ? `${weeks} sem. ${rem} j` : `${weeks} sem.`;
 }
 
-function PersonPanel({
-  group,
-  onDrill,
-}: {
-  group: AssigneeOpenGroup;
-  onDrill: (query: DrilldownQuery, tickets?: TicketListItem[]) => void;
-}) {
-  const [open, setOpen] = useState(group.name === "Non assigné");
-  const [actionKey, setActionKey] = useState<string | null>(null);
-  const { avatarUrl } = usePeopleAvatars();
-  const typeEntries = Object.entries(group.byType).sort((a, b) => b[1] - a[1]);
-  const maxType = Math.max(...typeEntries.map(([, n]) => n), 1);
-  const photo = group.avatarUrl || avatarUrl(group.name);
-
-  return (
-    <li className="rounded-xl border border-[var(--line)] bg-[var(--surface)]">
-      <div className="flex w-full items-center justify-between gap-3 px-4 py-3">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="min-w-0 flex-1 text-left"
-        >
-          <PersonLabel
-            name={group.name}
-            avatarUrl={photo}
-            size="md"
-            className="font-medium text-[var(--ink)]"
-          />
-          <p className="mt-0.5 text-xs text-[var(--muted)]">
-            Âge moy. {formatAge(group.avgAgeDays)} · plus ancien{" "}
-            {formatAge(group.oldestAgeDays)}
-            <span className="ml-2 text-[var(--muted)]">{open ? "▾" : "▸"}</span>
-          </p>
-        </button>
-        <ClickableCount
-          value={group.count}
-          className="text-lg font-medium"
-          onClick={() =>
-            onDrill({ scope: "open", assignee: group.name }, group.tickets)
-          }
-        />
-      </div>
-
-      {open && (
-        <div className="space-y-4 border-t border-[var(--line)] px-4 py-4">
-          <div className="space-y-2">
-            <p className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">
-              Types de tickets
-            </p>
-            <ul className="space-y-1.5">
-              {typeEntries.map(([type, count]) => (
-                <li
-                  key={type}
-                  className="grid grid-cols-[1fr_auto] items-center gap-3 text-sm"
-                >
-                  <div>
-                    <div className="flex justify-between gap-2">
-                      <span className="text-[var(--ink-soft)]">{type}</span>
-                      <ClickableCount
-                        value={count}
-                        onClick={() =>
-                          onDrill(
-                            { scope: "open", assignee: group.name, type },
-                            group.tickets.filter((t) => t.type === type),
-                          )
-                        }
-                      />
-                    </div>
-                    <div className="mt-1 h-1.5 overflow-hidden rounded bg-[var(--wash)]">
-                      <div
-                        className="h-full rounded bg-[var(--accent)]"
-                        style={{ width: `${(count / maxType) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-[var(--line)] text-left text-xs uppercase tracking-[0.1em] text-[var(--muted)]">
-                  <th className="py-1.5 pr-3 font-medium">Ticket</th>
-                  <th className="py-1.5 pr-3 font-medium">Type</th>
-                  <th className="py-1.5 pr-3 font-medium">Ouvert depuis</th>
-                  <th className="py-1.5 font-medium">Statut</th>
-                </tr>
-              </thead>
-              <tbody>
-                {group.tickets.map((t) => (
-                  <Fragment key={t.key}>
-                    <tr className="border-b border-[var(--line)]/40 last:border-0">
-                      <td className="py-1.5 pr-3 align-top">
-                        <a
-                          href={t.browseUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="font-medium text-[var(--accent-deep)] hover:underline"
-                        >
-                          {t.key}
-                        </a>
-                        <p className="max-w-xs text-xs text-[var(--ink-soft)] line-clamp-1">
-                          {t.summary}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setActionKey((k) => (k === t.key ? null : t.key))
-                          }
-                          className="mt-1 text-xs font-medium text-[var(--accent-deep)] hover:underline"
-                        >
-                          {actionKey === t.key ? "Masquer" : "Gérer"}
-                        </button>
-                      </td>
-                      <td className="py-1.5 pr-3 align-top text-[var(--ink-soft)]">
-                        {t.type}
-                      </td>
-                      <td className="py-1.5 pr-3 align-top tabular-nums text-[var(--ink)]">
-                        {formatAge(t.ageDays)}
-                      </td>
-                      <td className="py-1.5 align-top text-[var(--muted)]">
-                        {t.status}
-                      </td>
-                    </tr>
-                    {actionKey === t.key && (
-                      <tr className="border-b border-[var(--line)]/40">
-                        <td colSpan={4} className="py-2">
-                          <TicketActionsPanel issueKey={t.key} />
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </li>
-  );
-}
-
 type DrillState = {
   query: DrilldownQuery;
   tickets?: TicketListItem[];
 };
 
 /**
- * Liste « Par personne » des tickets ouverts (identique à l’ancienne page Tickets).
- * Gère son propre drilldown si `onDrill` n’est pas fourni.
+ * Classement compact des tickets ouverts par personne (cliquable → drilldown).
  */
 export function OpenTicketsByPerson({
   data,
@@ -187,12 +39,17 @@ export function OpenTicketsByPerson({
 }) {
   const [filterName, setFilterName] = useState("");
   const [internalDrill, setInternalDrill] = useState<DrillState | null>(null);
+  const { avatarUrl } = usePeopleAvatars();
 
   const groups = useMemo(() => {
     const q = filterName.trim().toLowerCase();
-    if (!q) return data.byAssignee;
-    return data.byAssignee.filter((g) => g.name.toLowerCase().includes(q));
+    const list = q
+      ? data.byAssignee.filter((g) => g.name.toLowerCase().includes(q))
+      : data.byAssignee;
+    return [...list].sort((a, b) => b.count - a.count);
   }, [data, filterName]);
+
+  const maxCount = Math.max(...groups.map((g) => g.count), 1);
 
   function openDrill(query: DrilldownQuery, tickets?: TicketListItem[]) {
     if (onDrill) {
@@ -203,19 +60,19 @@ export function OpenTicketsByPerson({
   }
 
   return (
-    <section className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)] sm:text-xl">
-          Par personne
+    <section className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-[family-name:var(--font-display)] text-base text-[var(--ink)]">
+          Ouverts par personne
         </h2>
-        <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
+        <label className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
           Filtrer
           <input
             type="search"
             value={filterName}
             onChange={(e) => setFilterName(e.target.value)}
             placeholder="Nom…"
-            className="w-40 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 text-[var(--ink)]"
+            className="w-28 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--ink)] sm:w-36"
           />
         </label>
       </div>
@@ -225,16 +82,81 @@ export function OpenTicketsByPerson({
           Aucun ticket ouvert pour ces filtres.
         </p>
       ) : (
-        <ul className="space-y-3">
-          {groups.map((g) => (
-            <PersonPanel key={g.name} group={g} onDrill={openDrill} />
-          ))}
-        </ul>
+        <ol className="overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+          {groups.map((g, index) => {
+            const photo = g.avatarUrl || avatarUrl(g.name);
+            const isUnassigned = g.name === "Non assigné";
+            const pct = (g.count / maxCount) * 100;
+            return (
+              <li key={g.name} className="border-b border-[var(--line)]/50 last:border-0">
+                <button
+                  type="button"
+                  onClick={() =>
+                    openDrill(
+                      { scope: "open", assignee: g.name },
+                      g.tickets,
+                    )
+                  }
+                  className={`grid w-full grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[var(--wash)] ${
+                    isUnassigned ? "bg-[var(--warn)]/5" : ""
+                  }`}
+                >
+                  <span
+                    className={`text-xs tabular-nums ${
+                      index < 3
+                        ? "font-medium text-[var(--ink)]"
+                        : "text-[var(--muted)]"
+                    }`}
+                  >
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <PersonLabel
+                        name={g.name}
+                        avatarUrl={photo}
+                        size="xs"
+                        className={`min-w-0 truncate text-sm ${
+                          isUnassigned
+                            ? "font-medium text-[var(--ink)]"
+                            : "text-[var(--ink)]"
+                        }`}
+                      />
+                    </div>
+                    <div className="mt-1 h-1 overflow-hidden rounded bg-[var(--wash)]">
+                      <div
+                        className={`h-full rounded ${
+                          isUnassigned
+                            ? "bg-[var(--warn)]"
+                            : "bg-[var(--accent)]"
+                        }`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <p className="mt-0.5 text-[10px] text-[var(--muted)]">
+                      moy. {formatAge(g.avgAgeDays)} · max{" "}
+                      {formatAge(g.oldestAgeDays)}
+                    </p>
+                  </div>
+                  <span
+                    className={`tabular-nums text-sm font-medium ${
+                      isUnassigned
+                        ? "text-[var(--warn)]"
+                        : "text-[var(--accent-deep)]"
+                    }`}
+                  >
+                    {g.count}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
       )}
 
       {data.warnings.length > 0 && (
         <ul className="space-y-1 text-xs text-[var(--muted)]">
-          {data.warnings.slice(0, 5).map((w) => (
+          {data.warnings.slice(0, 3).map((w) => (
             <li key={w}>{w}</li>
           ))}
         </ul>
