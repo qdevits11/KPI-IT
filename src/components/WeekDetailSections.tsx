@@ -440,41 +440,38 @@ export function WeekEventsAndBreakdowns({
     <section
       className={`grid gap-8 ${showBreakdowns ? "lg:grid-cols-2" : ""}`}
     >
-      <div className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
-        <EventList
-          title="Automatisations métiers"
-          items={events.automationsMetier}
-        />
-        <EventList title="Améliorations Odoo" items={events.automationsOdoo} />
-        <EventList
-          title="Maintenances production"
-          items={events.maintenances}
-        />
-        {events.phishing.length > 0 && (
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium text-[var(--ink)]">
-              Tests phishing ratés
-            </h3>
-            <ul className="space-y-1 text-sm">
-              {events.phishing.map((e) => (
-                <li key={e.id} className="border-l-2 border-[var(--accent)] pl-3">
-                  {e.date && (
-                    <span className="mr-1 tabular-nums text-xs text-[var(--muted)]">
-                      {e.date.slice(8, 10)}/{e.date.slice(5, 7)}
-                    </span>
-                  )}
-                  {e.failures} échec{e.failures > 1 ? "s" : ""}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {!hasEvents && (
-          <p className="text-sm text-[var(--muted)]">
-            Aucun événement encodé pour cette semaine.
-          </p>
-        )}
-      </div>
+      {hasEvents && (
+        <div className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
+          <EventList
+            title="Automatisations métiers"
+            items={events.automationsMetier}
+          />
+          <EventList title="Améliorations Odoo" items={events.automationsOdoo} />
+          <EventList
+            title="Maintenances production"
+            items={events.maintenances}
+          />
+          {events.phishing.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium text-[var(--ink)]">
+                Tests phishing ratés
+              </h3>
+              <ul className="space-y-1 text-sm">
+                {events.phishing.map((e) => (
+                  <li key={e.id} className="border-l-2 border-[var(--accent)] pl-3">
+                    {e.date && (
+                      <span className="mr-1 tabular-nums text-xs text-[var(--muted)]">
+                        {e.date.slice(8, 10)}/{e.date.slice(5, 7)}
+                      </span>
+                    )}
+                    {e.failures} échec{e.failures > 1 ? "s" : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
       {showBreakdowns && (
         <div className="space-y-8 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
           <div className="flex items-center justify-between gap-2">
