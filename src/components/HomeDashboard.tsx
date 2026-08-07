@@ -80,10 +80,9 @@ function formatSyncedAt(iso: string | null): string {
 type ActionTileProps = {
   label: string;
   value: number | null | undefined;
-  hint: string;
+  hint?: string;
   tone?: "default" | "warn" | "crit" | "accent";
   onClick?: () => void;
-  cta?: string;
   disabled?: boolean;
 };
 
@@ -93,7 +92,6 @@ function ActionTile({
   hint,
   tone = "default",
   onClick,
-  cta,
   disabled,
 }: ActionTileProps) {
   const toneClass =
@@ -116,27 +114,22 @@ function ActionTile({
 
   const inner = (
     <>
-      <p className="text-xs uppercase tracking-[0.16em] text-[var(--muted)]">
+      <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
         {label}
       </p>
       <p
-        className={`mt-3 font-[family-name:var(--font-display)] text-4xl tabular-nums tracking-tight ${valueClass}`}
+        className={`mt-1 font-[family-name:var(--font-display)] text-2xl tabular-nums tracking-tight sm:text-3xl ${valueClass}`}
       >
         {formatCount(value)}
       </p>
-      <p className="mt-2 text-sm text-[var(--ink-soft)]">{hint}</p>
-      {cta && !disabled && (
-        <p className="mt-4 text-sm font-medium text-[var(--accent-deep)]">
-          {cta} <span aria-hidden>→</span>
-        </p>
-      )}
+      {hint ? (
+        <p className="mt-0.5 truncate text-xs text-[var(--muted)]">{hint}</p>
+      ) : null}
     </>
   );
 
-  const className = `group flex h-full flex-col rounded-xl border bg-[var(--surface)] p-5 text-left transition-[transform,border-color,box-shadow] duration-300 ${
-    disabled
-      ? "opacity-90"
-      : "hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-16px_rgba(19,32,51,0.35)]"
+  const className = `rounded-lg border bg-[var(--surface)] px-3 py-2.5 text-left transition-[border-color,background-color] duration-200 ${
+    disabled ? "opacity-80" : "hover:bg-[var(--wash)]"
   } ${toneClass}`;
 
   if (disabled || !onClick) {
@@ -149,6 +142,17 @@ function ActionTile({
     </button>
   );
 }
+
+const WEEK_KPI_EXCLUDE = new Set([
+  "demandes_it_hebdo",
+  "demandes_non_resolues_hebdo",
+  "hors_sla_cloture",
+  "hors_sla_prise_en_charge",
+  "automations_metier",
+  "ameliorations_odoo",
+  "echecs_phishing",
+  "maintenances_production",
+]);
 
 const CURRENT_WEEK_SYNC_FIELDS = {
   demandesItHebdo: true,
@@ -353,64 +357,52 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
 
       {kpis && (
         <>
-          <section className="space-y-3">
-            <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
-              Tickets à traiter
-            </h2>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              <ActionTile
-                label="Tickets ouverts"
-                value={isLive ? (openSnap?.total ?? openStock) : openStock}
-                hint={
-                  isLive
-                    ? "Stock live Jira (tous statuts ouverts)"
-                    : "Stock figé en fin de semaine"
-                }
-                tone="accent"
-                cta={isLive ? "Voir la liste" : undefined}
-                onClick={
-                  isLive
-                    ? () =>
-                        setDrill({
-                          query: { scope: "open" },
-                          tickets: openSnap?.tickets,
-                        })
-                    : undefined
-                }
-                disabled={!isLive}
-              />
-              {isLive && (
-                <ActionTile
-                  label="Non attribués"
-                  value={openSnap?.unassigned ?? null}
-                  hint="Ouverts sans assigné — à répartir"
-                  tone={(openSnap?.unassigned ?? 0) > 0 ? "warn" : "default"}
-                  cta="Traiter"
-                  onClick={() =>
-                    setDrill({
-                      query: { scope: "open", assignee: "Non assigné" },
-                      tickets: openSnap?.tickets.filter(
-                        (t) => t.assignee === "Non assigné",
-                      ),
-                    })
-                  }
-                />
-              )}
-              <ActionTile
-                label="Créés cette semaine"
-                value={created}
-                hint="Demandes IT ouvertes dans la semaine ISO"
-                cta="Voir la liste"
-                onClick={() =>
-                  setDrill({
-                    query: {
-                      scope: "created",
-                      weekId: selectedWeekId,
-                    },
-                  })
-                }
-              />
-            </div>
+          <section className="grid grid-cols-3 gap-2 sm:gap-3">
+            <ActionTile
+              label="Tickets ouverts"
+              value={openSnap?.total ?? openStock}
+              hint={openSnap ? "Live Jira" : "Stock semaine"}
+              tone="accent"
+              onClick={
+                openSnap
+                  ? () =>
+                      setDrill({
+                        query: { scope: "open" },
+                        tickets: openSnap.tickets,
+                      })
+                  : undefined
+              }
+            />
+            <ActionTile
+              label="Non attribués"
+              value={openSnap?.unassigned ?? null}
+              hint="Sans assigné"
+              tone={(openSnap?.unassigned ?? 0) > 0 ? "warn" : "default"}
+              onClick={
+                openSnap
+                  ? () =>
+                      setDrill({
+                        query: { scope: "open", assignee: "Non assigné" },
+                        tickets: openSnap.tickets.filter(
+                          (t) => t.assignee === "Non assigné",
+                        ),
+                      })
+                  : undefined
+              }
+            />
+            <ActionTile
+              label="Créés"
+              value={created}
+              hint={weekLabel}
+              onClick={() =>
+                setDrill({
+                  query: {
+                    scope: "created",
+                    weekId: selectedWeekId,
+                  },
+                })
+              }
+            />
           </section>
 
           {openSnap && (
@@ -420,17 +412,16 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
             />
           )}
 
-          <section className="space-y-3">
-            <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
+          <section className="space-y-2">
+            <h2 className="font-[family-name:var(--font-display)] text-base text-[var(--ink)]">
               SLA · {weekLabel}
             </h2>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2 sm:gap-3">
               <ActionTile
                 label="Hors SLA prise en charge"
                 value={slaPec}
-                hint="> 24 h ouvrées avant prise en charge"
+                hint="> 24 h ouvrées"
                 tone={(slaPec ?? 0) > 0 ? "crit" : "default"}
-                cta="Voir la liste"
                 onClick={() =>
                   setDrill({
                     query: {
@@ -443,9 +434,8 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
               <ActionTile
                 label="Hors SLA clôture"
                 value={slaClose}
-                hint="> 48 h ouvrées avant clôture"
+                hint="> 48 h ouvrées"
                 tone={(slaClose ?? 0) > 0 ? "crit" : "default"}
-                cta="Voir la liste"
                 onClick={() =>
                   setDrill({
                     query: {
@@ -458,28 +448,22 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
             </div>
           </section>
 
-          <section className="space-y-3">
+          <section className="space-y-2">
             <div className="flex flex-wrap items-end justify-between gap-2">
-              <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
-                Encodage de la semaine
+              <h2 className="font-[family-name:var(--font-display)] text-base text-[var(--ink)]">
+                Encodage
               </h2>
               <Link
                 href="/saisie"
-                className="text-sm font-medium text-[var(--accent-deep)] hover:underline"
+                className="text-xs font-medium text-[var(--accent-deep)] hover:underline"
               >
                 Formulaire complet
               </Link>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
               <ActionTile
                 label="Automatisations métier"
                 value={metier}
-                hint={
-                  isCurrentWeek
-                    ? "Cliquez pour en ajouter une"
-                    : "Chiffre arrêté pour cette semaine"
-                }
-                cta={isCurrentWeek ? "Encoder" : undefined}
                 onClick={
                   isCurrentWeek ? () => setEncodeKind("metier") : undefined
                 }
@@ -488,13 +472,7 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
               <ActionTile
                 label="Améliorations Odoo"
                 value={odoo}
-                hint={
-                  isCurrentWeek
-                    ? "Cliquez pour en ajouter une"
-                    : "Chiffre arrêté pour cette semaine"
-                }
                 tone="accent"
-                cta={isCurrentWeek ? "Encoder" : undefined}
                 onClick={
                   isCurrentWeek ? () => setEncodeKind("odoo") : undefined
                 }
@@ -503,12 +481,6 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
               <ActionTile
                 label="Maintenances prod"
                 value={maintenance}
-                hint={
-                  isCurrentWeek
-                    ? "Cliquez pour en ajouter une"
-                    : "Chiffre arrêté pour cette semaine"
-                }
-                cta={isCurrentWeek ? "Encoder" : undefined}
                 onClick={
                   isCurrentWeek ? () => setEncodeKind("maintenance") : undefined
                 }
@@ -517,13 +489,7 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
               <ActionTile
                 label="Phishing ratés"
                 value={phishing}
-                hint={
-                  isCurrentWeek
-                    ? "Cliquez pour encoder des échecs"
-                    : "Chiffre arrêté pour cette semaine"
-                }
                 tone={(phishing ?? 0) > 0 ? "warn" : "default"}
-                cta={isCurrentWeek ? "Encoder" : undefined}
                 onClick={
                   isCurrentWeek ? () => setEncodeKind("phishing") : undefined
                 }
@@ -532,7 +498,9 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
             </div>
           </section>
 
-          <WeekKpiGrid kpis={list} />
+          <WeekKpiGrid
+            kpis={list.filter((k) => !WEEK_KPI_EXCLUDE.has(k.id))}
+          />
 
           <WeekNotesSection
             informations={kpis.week.informations}
