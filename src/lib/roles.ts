@@ -212,7 +212,7 @@ export function canAccessAdminPages(user: AppUser | null | undefined): boolean {
   return isAdmin(user);
 }
 
-/** Onglet Encodage → Retour */
+/** Retour sur la semaine (accueil). */
 export function canEditWeekRetour(user: AppUser | null | undefined): boolean {
   return isKpiResponsible(user);
 }

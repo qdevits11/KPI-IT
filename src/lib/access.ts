@@ -17,7 +17,7 @@ export async function requireAdminUser(): Promise<AppUser> {
 export async function requireKpiResponsible(): Promise<AppUser> {
   const user = await resolveCurrentUser();
   if (!canEditWeekRetour(user)) {
-    redirect("/saisie?forbidden=retour");
+    redirect("/?forbidden=retour");
   }
   return user!;
 }

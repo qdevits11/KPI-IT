@@ -502,7 +502,7 @@ export function Dashboard({
                 data.events.phishing.length === 0 && (
                   <p className="text-sm text-[var(--muted)]">
                     Aucun événement encodé pour cette semaine.{" "}
-                    <Link href="/saisie" className="text-[var(--accent-deep)] hover:underline">
+                    <Link href="/" className="text-[var(--accent-deep)] hover:underline">
                       Encoder →
                     </Link>
                   </p>

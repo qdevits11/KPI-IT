@@ -134,7 +134,7 @@ export function ConfigPanel() {
             <strong className="font-medium text-[var(--ink-soft)]">
               Responsable KPI
             </strong>{" "}
-            — Encodage → Retour sur la semaine.
+            — peut saisir le retour sur la semaine (accueil).
           </p>
           <p>
             <strong className="font-medium text-[var(--ink-soft)]">
@@ -251,9 +251,10 @@ export function ConfigPanel() {
         )}
 
         <p className="text-xs text-[var(--muted)]">
-          Les responsables d&apos;encodage alimentent le formulaire{" "}
-          <Link href="/saisie" className="text-[var(--accent)] hover:underline">
-            Encodage
+          Les responsables d&apos;encodage alimentent l&apos;encodage manuel
+          depuis l&apos;{" "}
+          <Link href="/" className="text-[var(--accent)] hover:underline">
+            Accueil
           </Link>
           .
         </p>

@@ -1,8 +1,8 @@
-import { ManualEntryForm } from "@/components/ManualEntryForm";
-import { currentWeekId } from "@/lib/store";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
+/** Ancienne page Encodage — tout se fait depuis l’accueil. */
 export default function SaisiePage() {
-  return <ManualEntryForm initialWeek={currentWeekId()} />;
+  redirect("/");
 }

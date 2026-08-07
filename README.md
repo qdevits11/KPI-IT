@@ -9,9 +9,7 @@ Tableau de bord des KPI du service IT (Jira + encodage manuel).
 | Menu | Route | Contenu |
 |------|-------|---------|
 | **Accueil** | `/` | Tableau de bord (semaine, ouverts live par personne, SLA, encodage) · macaron En cours · live |
-| **Semaine** | `/semaine` | KPI hebdo détaillé, sélecteur de semaine, sync, ventilations |
 | **Analyse** | `/analyse` | KPI année + stats tickets (assigné / demandeur / type) |
-| **Encodage** | `/saisie` | Formulaire d’encodage complet |
 
 ### Admin
 
@@ -23,7 +21,7 @@ Tableau de bord des KPI du service IT (Jira + encodage manuel).
 | Opérations données | `/admin/operations` | Sync semaine, import ventilations |
 | Documentation | `/admin/documentation` | Formules & sources des KPI |
 
-Anciennes URLs (`/`, `/vue`, `/statistiques`, `/configuration`, `/jira`, `/formules`, `/tickets-ouverts`) redirigent vers les nouvelles.
+Anciennes URLs (`/semaine`, `/saisie`, `/vue`, `/statistiques`, `/configuration`, `/jira`, `/formules`, `/tickets-ouverts`) redirigent vers l’accueil ou les nouvelles routes.
 
 ## Modèle de données
 

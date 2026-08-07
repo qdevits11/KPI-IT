@@ -18,7 +18,6 @@ const SIDEBAR_COLLAPSED_KEY = "kpi-sidebar-collapsed";
 const LINKS = [
   { href: "/", label: "Accueil", short: "Ac" },
   { href: "/analyse", label: "Analyse", short: "An" },
-  { href: "/saisie", label: "Encodage", short: "En" },
   { href: "/admin", label: "Admin", short: "Ad" },
 ];
 
