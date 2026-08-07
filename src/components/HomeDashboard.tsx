@@ -265,9 +265,18 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
   const maintenance = kpiValue(list, "maintenances_production");
 
   const busy = pending || syncing;
-  const weekLabel = week
-    ? `S${String(week.week).padStart(2, "0")} — ${week.year}`
-    : "…";
+  const weekParts = (() => {
+    try {
+      return week
+        ? { year: week.year, week: week.week }
+        : parseWeekId(selectedWeekId);
+    } catch {
+      return null;
+    }
+  })();
+  const weekLabel = weekParts
+    ? `S${String(weekParts.week).padStart(2, "0")} — ${weekParts.year}`
+    : selectedWeekId;
 
   return (
     <div className="space-y-10">
