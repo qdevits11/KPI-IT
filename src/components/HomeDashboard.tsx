@@ -408,7 +408,7 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
             />
           </section>
 
-          {isLive && openSnap && (
+          {isCurrentWeek && openSnap && (
             <OpenTicketsByPerson
               data={openSnap}
               onDrill={(query, tickets) => setDrill({ query, tickets })}
