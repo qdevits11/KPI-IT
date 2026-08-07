@@ -3,7 +3,10 @@ import {
   brusselsWallToUtc,
   toBrusselsDateStr,
 } from "./business-hours";
-import type { JiraConnection } from "./jira-auth";
+import {
+  resolveJiraConnection,
+  type JiraConnection,
+} from "./jira-auth";
 import {
   currentIsoWeek,
   isoWeekDateRange,
@@ -139,7 +142,7 @@ export type OpenAssigneeFreezeResult = {
 
 /**
  * Fige le stock ouvert (+ ventilation par assigné) pour une semaine ISO terminée.
- * - `live` : snapshot Jira courant (cron dimanche / force)
+ * - `live` : snapshot Jira courant (fenêtre dimanche soir / force admin)
  * - `historical` : JQL `status WAS … ON` dimanche de fin de semaine
  */
 export async function freezeOpenAssigneeForWeek(
@@ -260,9 +263,8 @@ export async function weekNeedsOpenFreeze(
 }
 
 /**
- * Rattrapage cron : fige (mode historique) les semaines ISO terminées récentes
+ * Rattrapage : fige (mode historique) les semaines ISO terminées récentes
  * encore sans `openFrozenAt` / `open_assignee`.
- * Couvre un dimanche raté ou un déploiement entre deux figements.
  */
 export async function healUnfrozenCompletedWeeks(
   conn: JiraConnection,
@@ -308,4 +310,142 @@ export async function healUnfrozenCompletedWeeks(
   }
 
   return { processed, skipped };
+}
+
+
+export type InAppFreezeResult = {
+  ok: boolean;
+  /** true si un appel Jira / écriture a eu lieu */
+  ran: boolean;
+  reason?: string;
+  live?: OpenAssigneeFreezeResult | null;
+  healed?: OpenAssigneeFreezeResult[];
+  error?: string;
+};
+
+let ensureInflight: Promise<InAppFreezeResult> | null = null;
+let ensureLastDoneAt = 0;
+const ENSURE_THROTTLE_MS = 45_000;
+
+async function anyCompletedWeekNeedsFreeze(
+  lookback: number,
+  now: Date,
+  exclude?: { year: number; week: number },
+): Promise<boolean> {
+  for (const target of listCompletedWeeksToBackfill(lookback, now)) {
+    if (
+      exclude &&
+      exclude.year === target.year &&
+      exclude.week === target.week
+    ) {
+      continue;
+    }
+    if (await weekNeedsOpenFreeze(target.year, target.week)) return true;
+  }
+  return false;
+}
+
+/**
+ * Figement **dans l’app** (pas d’appel HTTP externe / cron Vercel).
+ * Déclenché au chargement des KPI : fige la semaine qui se termine (fenêtre
+ * dimanche soir) et rattrape les semaines terminées encore ouvertes.
+ *
+ * Débouncé : une seule exécution concurrente + throttle ~45s.
+ * Les erreurs Jira sont renvoyées sans faire planter la page.
+ */
+export async function ensureWeeklyOpenFreezeInApp(options?: {
+  now?: Date;
+  lookback?: number;
+  force?: boolean;
+}): Promise<InAppFreezeResult> {
+  if (ensureInflight) return ensureInflight;
+  if (
+    !options?.force &&
+    Date.now() - ensureLastDoneAt < ENSURE_THROTTLE_MS
+  ) {
+    return { ok: true, ran: false, reason: "throttled" };
+  }
+
+  ensureInflight = runEnsureWeeklyOpenFreezeInApp(options).finally(() => {
+    ensureInflight = null;
+  });
+  return ensureInflight;
+}
+
+async function runEnsureWeeklyOpenFreezeInApp(options?: {
+  now?: Date;
+  lookback?: number;
+}): Promise<InAppFreezeResult> {
+  const now = options?.now ?? new Date();
+  const lookback = Math.max(1, Math.min(26, options?.lookback ?? 6));
+
+  try {
+    const liveTarget = weekToFreezeOpenSnapshot(now);
+    const needsHeal = await anyCompletedWeekNeedsFreeze(
+      lookback,
+      now,
+      liveTarget
+        ? { year: liveTarget.year, week: liveTarget.week }
+        : undefined,
+    );
+
+    if (!liveTarget && !needsHeal) {
+      ensureLastDoneAt = Date.now();
+      return { ok: true, ran: false, reason: "nothing-to-freeze" };
+    }
+
+    const conn = await resolveJiraConnection();
+    if (!conn) {
+      ensureLastDoneAt = Date.now();
+      return {
+        ok: false,
+        ran: false,
+        reason: "jira-unconfigured",
+        error: "Jira non configuré — figement reporté.",
+      };
+    }
+
+    let live: OpenAssigneeFreezeResult | null = null;
+    if (liveTarget) {
+      // Dimanche 23:50+ / lundi 00:00–00:14 : snapshot live de fin de semaine
+      live = await freezeOpenAssigneeForWeek(
+        liveTarget.year,
+        liveTarget.week,
+        conn,
+        { mode: "live", frozenAt: now },
+      );
+    }
+
+    const healed = needsHeal
+      ? await healUnfrozenCompletedWeeks(conn, {
+          lookback,
+          now,
+          exclude: liveTarget
+            ? { year: liveTarget.year, week: liveTarget.week }
+            : undefined,
+        })
+      : { processed: [], skipped: [] };
+
+    ensureLastDoneAt = Date.now();
+    return {
+      ok: true,
+      ran: Boolean(live) || healed.processed.length > 0,
+      reason: liveTarget?.reason,
+      live,
+      healed: healed.processed,
+    };
+  } catch (err) {
+    ensureLastDoneAt = Date.now();
+    return {
+      ok: false,
+      ran: true,
+      error: err instanceof Error ? err.message : "Figement échoué",
+    };
+  }
+}
+
+/** Remise à zéro du throttle (tests). */
+export function resetEnsureWeeklyOpenFreezeStateForTests(): void {
+  ensureInflight = null;
+  ensureLastDoneAt = 0;
 }

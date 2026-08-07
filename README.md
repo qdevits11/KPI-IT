@@ -80,16 +80,13 @@ Heures ouvrées = hors week-ends et jours fériés belges, fuseau **Europe/Bruss
 
 Les « non résolues » :
 - **semaine en cours** → snapshot live à chaque sync
-- **semaines passées** → figées le **dimanche 23:59 Europe/Brussels** par cron Vercel (`/api/jira/cron/snapshot-open`), puis conservées
+- **semaines passées** → figées **dans l’app** au premier chargement KPI / sync après la fin de semaine (stock au dimanche de clôture via JQL historique), puis conservées
 
-Le cron fige à chaque fin de semaine :
+Données figées automatiquement :
 - stock `demandesNonResoluesHebdo` + marqueur `openFrozenAt`
 - ventilation `open_assignee` (ouverts par responsable)
-- sync KPI hebdo + ventilations créés (type / assigné / demandeur)
 
-Le 2ᵉ créneau UTC (hors fenêtre selon CET/CEST) rattrape les semaines terminées encore non figées. Historique long : `?backfill=1&weeks=40&skipExisting=1`.
-
-Définir `CRON_SECRET` + credentials Jira (`JIRA_*`) sur Vercel. Cron UTC : `55 21 * * 0` et `55 22 * * 0` (couvre CET/CEST).
+Pas de cron HTTP externe ni de `CRON_SECRET` : le figement part du code serveur de l’app (`ensureWeeklyOpenFreezeInApp`). Rattrapage manuel admin : `GET /api/jira/freeze-open?backfill=1&weeks=40&skipExisting=1` (session admin).
 
 Variables d'env optionnelles : voir `.env.example`. Sur Vercel, définir `JIRA_COOKIE_SECRET` (chiffrement) + `SUPABASE_*`. Le compte Jira (email + token ou OAuth) est stocké chiffré dans Supabase (`kpi_jira_connection`), partagé entre périphériques.
 

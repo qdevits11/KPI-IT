@@ -126,14 +126,3 @@ export function parseJsonBody<T>(
   }
   return { data: parsed.data };
 }
-
-/** Cron : Bearer CRON_SECRET uniquement (pas de contournement header). */
-export function authorizeCron(request: Request): boolean {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) {
-    return process.env.NODE_ENV !== "production";
-  }
-  const auth = request.headers.get("authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  return token === secret;
-}

@@ -7,7 +7,11 @@ import {
 } from "@/lib/store";
 import { buildWeekDashboard } from "@/lib/formulas";
 import { weekId, parseWeekId } from "@/lib/types";
-import { isIsoWeekCompleted, describeBrusselsNow } from "@/lib/open-snapshot";
+import {
+  isIsoWeekCompleted,
+  describeBrusselsNow,
+  ensureWeeklyOpenFreezeInApp,
+} from "@/lib/open-snapshot";
 import { isoWeekDateRange } from "@/lib/jira";
 import { clampWeekIdToCurrent, formatWeekRangeLabel } from "@/lib/dates";
 import { requireSessionApi } from "@/lib/api";
@@ -15,6 +19,9 @@ import { requireSessionApi } from "@/lib/api";
 export async function GET(request: Request) {
   const gate = await requireSessionApi();
   if ("response" in gate) return gate.response;
+
+  // Figement fin de semaine dans l’app (pas de cron HTTP externe).
+  await ensureWeeklyOpenFreezeInApp();
 
   const { searchParams } = new URL(request.url);
   const currentId = currentWeekId();

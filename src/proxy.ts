@@ -8,7 +8,6 @@ import {
 function isPublicPath(pathname: string): boolean {
   if (pathname === "/login" || pathname.startsWith("/login/")) return true;
   if (pathname.startsWith("/api/jira/oauth/")) return true;
-  if (pathname.startsWith("/api/jira/cron/")) return true;
   if (pathname === "/api/me" || pathname === "/api/login") return true;
   if (pathname.startsWith("/_next")) return true;
   if (pathname === "/favicon.ico") return true;

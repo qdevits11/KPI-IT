@@ -211,7 +211,7 @@ function CurrentWeekStatus({
   if (meta.isLive) {
     statusLabel = "En cours · live";
     statusHint =
-      "Actualiser relance une sync Jira complète (créés, non résolus, SLA, ventilations). Figement dimanche 23:59 Bruxelles.";
+      "Actualiser relance une sync Jira complète (créés, non résolus, SLA, ventilations). Figement automatique dans l’app en fin de semaine.";
     statusClass =
       "border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent-deep)]";
   } else if (meta.isCurrentWeek && meta.openFrozenAt) {

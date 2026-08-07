@@ -1030,7 +1030,7 @@ export function JiraSyncPanel({
             <KpiTile
               label="Non résolus"
               value={values.demandesNonResoluesHebdo}
-              hint="Live si semaine en cours · figé dimanche 23:59 sinon"
+              hint="Live si semaine en cours · figé en fin de semaine sinon"
             />
             <KpiTile
               label="Hors SLA clôture"

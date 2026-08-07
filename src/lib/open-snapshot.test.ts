@@ -7,7 +7,6 @@ import {
 } from "./open-snapshot";
 import { brusselsWallToUtc } from "./business-hours";
 
-/** Couverture UTC → Bruxelles des deux crons Vercel (CET / CEST). */
 function brusselsLabel(isoUtc: string): string {
   const fmt = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Brussels",
@@ -68,23 +67,21 @@ describe("listCompletedWeeksToBackfill", () => {
   });
 });
 
-describe("vercel cron UTC ↔ fenêtre Bruxelles", () => {
-  it("21:55 UTC dimanche tombe dans la fenêtre en CEST", () => {
-    // 2026-08-02 dimanche CEST
+describe("fenêtre de figement Europe/Brussels", () => {
+  it("dimanche 23:55 CEST est dans la fenêtre live", () => {
     const now = new Date("2026-08-02T21:55:00.000Z");
     expect(brusselsLabel("2026-08-02T21:55:00.000Z")).toContain("23:55");
     expect(isOpenSnapshotWindow(now)).toBe(true);
     expect(weekToFreezeOpenSnapshot(now)?.week).toBe(31);
   });
 
-  it("22:55 UTC dimanche tombe dans la fenêtre en CET", () => {
-    // 2026-01-04 dimanche CET
+  it("dimanche 23:55 CET est dans la fenêtre live", () => {
     const now = new Date("2026-01-04T22:55:00.000Z");
     expect(isOpenSnapshotWindow(now)).toBe(true);
     expect(weekToFreezeOpenSnapshot(now)).not.toBeNull();
   });
 
-  it("22:55 UTC dimanche est hors fenêtre live en CEST (filet heal)", () => {
+  it("lundi 00:55 CEST est hors fenêtre (heal historique au chargement)", () => {
     const now = new Date("2026-08-02T22:55:00.000Z");
     expect(isOpenSnapshotWindow(now)).toBe(false);
     expect(weekToFreezeOpenSnapshot(now)).toBeNull();

@@ -214,7 +214,7 @@ async function readCookieCipher(): Promise<string | null> {
     const jar = await cookies();
     return jar.get(JIRA_COOKIE)?.value ?? null;
   } catch {
-    // Hors contexte requête (cron, scripts)
+    // Hors contexte requête (figement in-app, scripts)
     return null;
   }
 }

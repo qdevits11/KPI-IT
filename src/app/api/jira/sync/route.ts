@@ -22,7 +22,10 @@ import {
 } from "@/lib/store";
 import { buildWeekDashboard } from "@/lib/formulas";
 import { weekId, parseWeekId } from "@/lib/types";
-import { isIsoWeekCompleted } from "@/lib/open-snapshot";
+import {
+  ensureWeeklyOpenFreezeInApp,
+  isIsoWeekCompleted,
+} from "@/lib/open-snapshot";
 import type { WeeklyRow } from "@/lib/types";
 import {
   describeSaveFields,
@@ -85,7 +88,7 @@ function applyOpenSnapshotPolicy(
 
   if (!completed) {
     warnings.push(
-      "Non résolus = snapshot live (semaine en cours). Figement auto dimanche 23:59 Europe/Brussels via cron.",
+      "Non résolus = snapshot live (semaine en cours). Figement auto dans l’app après fin de semaine (Europe/Brussels).",
     );
     return { patch, openMode: "live", warnings };
   }
@@ -96,7 +99,7 @@ function applyOpenSnapshotPolicy(
     existing.demandesNonResoluesHebdo != null
   ) {
     warnings.push(
-      `Non résolus conservés (figés ${existing.openFrozenAt}) = ${existing.demandesNonResoluesHebdo}. Live Jira maintenant = ${liveOpen}. Cron dimanche 23:59 Bruxelles.`,
+      `Non résolus conservés (figés ${existing.openFrozenAt}) = ${existing.demandesNonResoluesHebdo}. Live Jira maintenant = ${liveOpen}.`,
     );
     return {
       patch: {
@@ -132,7 +135,7 @@ function applyOpenSnapshotPolicy(
   warnings.push(
     forceOpenLive
       ? `Non résolus écrasés par le live Jira (${liveOpen}) — forceOpenLive.`
-      : `Non résolus = live Jira (${liveOpen}) — pas encore de figement cron pour cette semaine.`,
+      : `Non résolus = live Jira (${liveOpen}) — pas encore de figement pour cette semaine.`,
   );
   return { patch, openMode: forceOpenLive ? "live" : "live", warnings };
 }
@@ -230,6 +233,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const gate = await requireAdminApi();
   if ("response" in gate) return gate.response;
+
+  await ensureWeeklyOpenFreezeInApp();
 
   const body = (await request.json().catch(() => ({}))) as {
     action?: string;
