@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link";
 import type { YearOverviewRow } from "@/lib/types";
 import { AnalysePeriodFilter } from "./AnalysePeriodFilter";
+import { ExportXlsxButton } from "./ExportXlsxButton";
+import { downloadXlsx, type ExportColumnDef } from "@/lib/export-xlsx";
 import { weekRangeQuery, type WeekRange } from "@/lib/week-range";
 
 type ColumnGroup =
@@ -133,6 +135,40 @@ export function YearOverview({ initialYear }: { initialYear: number }) {
     });
   }
 
+  async function exportExcel() {
+    const columns: ExportColumnDef<YearOverviewRow>[] = [
+      {
+        header: "Semaine",
+        value: (r) => `S${String(r.week).padStart(2, "0")}`,
+        width: 10,
+      },
+      { header: "Clé", value: (r) => r.weekKey, width: 12 },
+      { header: "Mois", value: (r) => r.month, width: 8 },
+      ...visibleCols.map(
+        (c): ExportColumnDef<YearOverviewRow> => ({
+          header: c.label,
+          value: (r) => {
+            const v = r[c.key];
+            if (typeof v === "number") return v;
+            if (typeof v === "string") return v;
+            return null;
+          },
+          width: c.numeric ? 12 : 28,
+        }),
+      ),
+    ];
+    const rangeSuffix =
+      weekFrom || weekTo
+        ? `_S${String(weekFrom ?? 1).padStart(2, "0")}-S${String(weekTo ?? 53).padStart(2, "0")}`
+        : "";
+    await downloadXlsx({
+      filename: `chiffres_${year}${rangeSuffix}`,
+      sheetName: `Chiffres ${year}`,
+      columns,
+      rows,
+    });
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -157,15 +193,21 @@ export function YearOverview({ initialYear }: { initialYear: number }) {
             onYearChange={handleYearChange}
             onRangeChange={handleRangeChange}
           />
-          <label className="flex items-center gap-2 text-sm text-[var(--ink-soft)]">
-            <input
-              type="checkbox"
-              checked={onlyWithRemarks}
-              onChange={(e) => setOnlyWithRemarks(e.target.checked)}
-              className="accent-[var(--accent)]"
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-[var(--ink-soft)]">
+              <input
+                type="checkbox"
+                checked={onlyWithRemarks}
+                onChange={(e) => setOnlyWithRemarks(e.target.checked)}
+                className="accent-[var(--accent)]"
+              />
+              Avec remarques seulement
+            </label>
+            <ExportXlsxButton
+              onExport={exportExcel}
+              disabled={!data || rows.length === 0}
             />
-            Avec remarques seulement
-          </label>
+          </div>
         </div>
       </div>
 

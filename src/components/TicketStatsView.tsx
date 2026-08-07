@@ -11,6 +11,12 @@ import {
 import { PersonLabel } from "./PersonAvatar";
 import { usePeopleAvatars } from "./PeopleProvider";
 import { AnalysePeriodFilter } from "./AnalysePeriodFilter";
+import { ExportXlsxButton } from "./ExportXlsxButton";
+import {
+  downloadXlsxSheet,
+  type SheetData,
+  type SheetRow,
+} from "@/lib/export-xlsx";
 import { weekRangeQuery, type WeekRange } from "@/lib/week-range";
 
 interface StatsResponse {
@@ -134,6 +140,51 @@ export function TicketStatsView({
     setDrill({ scope: "created", year });
   }
 
+  async function exportExcel() {
+    if (!data) return;
+    const weeks = data.stats.weeks;
+    const header: SheetRow = [
+      { value: "Nom", fontWeight: "bold" },
+      ...weeks.map((wk) => ({
+        value: weekLabel(wk),
+        fontWeight: "bold" as const,
+      })),
+      { value: "Total", fontWeight: "bold" },
+      { value: "Part (%)", fontWeight: "bold" },
+    ];
+    const body: SheetData = filtered.map((row) => [
+      row.name,
+      ...weeks.map((wk) => row.byWeek[wk] ?? 0),
+      row.total,
+      Number((row.share * 100).toFixed(1)),
+    ]);
+    const totals: SheetRow = [
+      { value: "Total", fontWeight: "bold" },
+      ...weeks.map((wk) => ({
+        value: data.stats.weekTotals[wk] ?? 0,
+        fontWeight: "bold" as const,
+      })),
+      { value: data.stats.grandTotal, fontWeight: "bold" },
+      { value: 100, fontWeight: "bold" },
+    ];
+    const rangeSuffix =
+      weekFrom || weekTo
+        ? `_S${String(weekFrom ?? 1).padStart(2, "0")}-S${String(weekTo ?? 53).padStart(2, "0")}`
+        : "";
+    const dimLabel =
+      dimension === "assignee"
+        ? "assigne"
+        : dimension === "requester"
+          ? "demandeur"
+          : "type";
+    await downloadXlsxSheet({
+      filename: `stats_${dimLabel}_${year}${rangeSuffix}`,
+      sheetName: data.stats.label.slice(0, 31),
+      data: [header, ...body, totals],
+      columnWidths: [24, ...weeks.map(() => 8), 10, 10],
+    });
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -187,6 +238,10 @@ export function TicketStatsView({
                 </button>
               ))}
             </div>
+            <ExportXlsxButton
+              onExport={exportExcel}
+              disabled={!data || filtered.length === 0}
+            />
           </div>
         </div>
       </div>

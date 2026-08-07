@@ -10,6 +10,8 @@ import { TicketActionsPanel } from "./TicketActionsPanel";
 import { PersonLabel } from "./PersonAvatar";
 import { usePeopleAvatars } from "./PeopleProvider";
 import { ModalPortal } from "./ModalPortal";
+import { ExportXlsxButton } from "./ExportXlsxButton";
+import { downloadXlsx, type ExportColumnDef } from "@/lib/export-xlsx";
 
 export type DrilldownQuery = TicketSearchFilter;
 
@@ -169,6 +171,32 @@ export function TicketDrilldown({
 
   const title = describeFilters(query);
 
+  async function exportExcel() {
+    const columns: ExportColumnDef<TicketListItem>[] = [
+      { header: "Clé", value: (t) => t.key, width: 12 },
+      { header: "Résumé", value: (t) => t.summary, width: 48 },
+      { header: "Type", value: (t) => t.type, width: 16 },
+      { header: "Assigné", value: (t) => t.assignee, width: 20 },
+      { header: "Demandeur", value: (t) => t.requester, width: 20 },
+      {
+        header: "Créé",
+        value: (t) => formatCreated(t.created),
+        width: 12,
+      },
+      { header: "Âge (jours)", value: (t) => t.ageDays, width: 12 },
+      { header: "Statut", value: (t) => t.status, width: 14 },
+      { header: "URL", value: (t) => t.browseUrl, width: 40 },
+    ];
+    const scopeBit = query.scope ?? "tickets";
+    const periodBit = query.weekId ?? (query.year != null ? String(query.year) : "filtre");
+    await downloadXlsx({
+      filename: `tickets_${scopeBit}_${periodBit}`,
+      sheetName: "Tickets",
+      columns,
+      rows: filtered,
+    });
+  }
+
   return (
     <ModalPortal>
       <div
@@ -200,13 +228,19 @@ export function TicketDrilldown({
               {truncated ? " (liste potentiellement tronquée)" : ""}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md border border-[var(--line)] px-2.5 py-1 text-sm text-[var(--muted)] hover:text-[var(--ink)]"
-          >
-            Fermer
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <ExportXlsxButton
+              onExport={exportExcel}
+              disabled={filtered.length === 0 || (pending && !presetTickets)}
+            />
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md border border-[var(--line)] px-2.5 py-1 text-sm text-[var(--muted)] hover:text-[var(--ink)]"
+            >
+              Fermer
+            </button>
+          </div>
         </header>
 
         <div className="flex flex-wrap gap-2 border-b border-[var(--line)] bg-[var(--wash)]/40 px-4 py-3 sm:px-5">
