@@ -318,6 +318,7 @@ export type InAppFreezeResult = {
   /** true si un appel Jira / écriture a eu lieu */
   ran: boolean;
   reason?: string;
+  /** Figement de la semaine cible (live dim. soir, sinon historique). */
   live?: OpenAssigneeFreezeResult | null;
   healed?: OpenAssigneeFreezeResult[];
   error?: string;
@@ -405,14 +406,17 @@ async function runEnsureWeeklyOpenFreezeInApp(options?: {
       };
     }
 
-    let live: OpenAssigneeFreezeResult | null = null;
+    let primary: OpenAssigneeFreezeResult | null = null;
     if (liveTarget) {
-      // Dimanche 23:50+ / lundi 00:00–00:14 : snapshot live de fin de semaine
-      live = await freezeOpenAssigneeForWeek(
+      const p = brusselsParts(now);
+      // Live uniquement dimanche 23:50–23:59 (vrai instant de fin de semaine).
+      // Lundi / plus tard → historique WAS NOT IN ON dimanche (pas le stock « maintenant »).
+      const useLive = p.weekday === 0 && p.hour === 23 && p.minute >= 50;
+      primary = await freezeOpenAssigneeForWeek(
         liveTarget.year,
         liveTarget.week,
         conn,
-        { mode: "live", frozenAt: now },
+        { mode: useLive ? "live" : "historical", frozenAt: now },
       );
     }
 
@@ -429,9 +433,9 @@ async function runEnsureWeeklyOpenFreezeInApp(options?: {
     ensureLastDoneAt = Date.now();
     return {
       ok: true,
-      ran: Boolean(live) || healed.processed.length > 0,
+      ran: Boolean(primary) || healed.processed.length > 0,
       reason: liveTarget?.reason,
-      live,
+      live: primary,
       healed: healed.processed,
     };
   } catch (err) {
