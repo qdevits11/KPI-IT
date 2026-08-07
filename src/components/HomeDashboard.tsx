@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { KpiValue, LogEvent, PhishingEvent, WeeklyRow } from "@/lib/types";
 import { parseWeekId } from "@/lib/types";
 import type { OpenTicketsSnapshot, TicketListItem } from "@/lib/jira-tickets";
-import { openSnapshotFromAssigneeCounts } from "@/lib/jira-tickets";
+import { openSnapshotFromAssigneeCounts } from "@/lib/open-assignee";
 import { clampWeekIdToCurrent } from "@/lib/dates";
 import { WeekSelector } from "./WeekSelector";
 import {
