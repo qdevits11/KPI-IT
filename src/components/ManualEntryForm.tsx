@@ -246,8 +246,8 @@ export function ManualEntryForm({ initialWeek }: { initialWeek: string }) {
   }
 
   async function submitRetour() {
-    if (!fluctuation.trim() && !recommendations.trim()) {
-      setError("Saisissez au moins une remarque ou une recommandation.");
+    if (!fluctuation.trim()) {
+      setError("La remarque (fluctuation des chiffres) est obligatoire.");
       return;
     }
     setSaving(true);

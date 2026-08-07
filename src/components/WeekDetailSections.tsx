@@ -204,8 +204,7 @@ export function WeekNotesSection({
   const info = (informations ?? "").trim();
   const reco = (reaction ?? "").trim();
   const missingInfo = !info;
-  const missingReco = !reco;
-  const incomplete = missingInfo || missingReco;
+  const incomplete = missingInfo;
 
   const [canEdit, setCanEdit] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -244,8 +243,8 @@ export function WeekNotesSection({
   }, [info, reco, editing]);
 
   async function save() {
-    if (!draftInfo.trim() && !draftReco.trim()) {
-      setError("Saisissez au moins une remarque ou une recommandation.");
+    if (!draftInfo.trim()) {
+      setError("La remarque (fluctuation des chiffres) est obligatoire.");
       return;
     }
     setSaving(true);
@@ -296,7 +295,7 @@ export function WeekNotesSection({
             Retour sur la semaine
           </h2>
           <p className="mt-0.5 text-xs text-[var(--muted)]">
-            Attendu chaque semaine · responsable KPI
+            Remarque attendue chaque semaine · responsable KPI
           </p>
         </div>
         {canEdit && !editing && (
@@ -316,15 +315,11 @@ export function WeekNotesSection({
 
       {incomplete && !editing && (
         <p className="text-sm text-[var(--ink)]">
-          {missingInfo && missingReco
-            ? "Aucune remarque ni recommandation pour cette semaine."
-            : missingInfo
-              ? "Remarque (fluctuation) manquante pour cette semaine."
-              : "Recommandation manquante pour cette semaine."}
+          Remarque (fluctuation) manquante pour cette semaine.
           {!canEdit && (
             <span className="text-[var(--muted)]">
               {" "}
-              Seul le responsable KPI peut les ajouter.
+              Seul le responsable KPI peut l’ajouter.
             </span>
           )}
         </p>
@@ -344,11 +339,12 @@ export function WeekNotesSection({
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">
-              Recommandations
+              Recommandations{" "}
+              <span className="normal-case tracking-normal">(optionnel)</span>
             </p>
             <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--ink-soft)]">
               {reco || (
-                <span className="italic text-[var(--muted)]">Non renseigné</span>
+                <span className="italic text-[var(--muted)]">—</span>
               )}
             </p>
           </div>
@@ -363,12 +359,14 @@ export function WeekNotesSection({
               value={draftInfo}
               onChange={(e) => setDraftInfo(e.target.value)}
               rows={3}
+              required
               className="w-full rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--ink)] outline-none focus:border-[var(--accent)]"
               placeholder="Ce qui explique les variations de la semaine…"
             />
           </label>
           <label className="block space-y-1 text-xs text-[var(--muted)]">
-            Recommandations
+            Recommandations{" "}
+            <span className="text-[var(--muted)]">(optionnel)</span>
             <textarea
               value={draftReco}
               onChange={(e) => setDraftReco(e.target.value)}
