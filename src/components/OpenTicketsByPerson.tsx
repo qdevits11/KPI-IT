@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type {
   OpenTicketsSnapshot,
   TicketListItem,
+  TicketSearchScope,
 } from "@/lib/jira-tickets";
 import {
   TicketDrilldown,
@@ -27,25 +28,40 @@ type DrillState = {
 };
 
 /**
- * Classement compact des tickets ouverts par personne (cliquable → drilldown).
- * Mode `frozen` : stock figé fin de semaine (pas de drill live).
+ * Classement compact des tickets par personne (cliquable → drilldown).
+ * Modes :
+ * - live : stock ouvert courant
+ * - historical : stock ouvert fin de semaine (liste reconstituée)
+ * - frozen : counts figés (drill possible si weekId fourni)
+ * - closed : tickets clôturés dans la semaine
  */
 export function OpenTicketsByPerson({
   data,
   onDrill,
   mode = "live",
   frozenAt,
+  weekId,
+  kind = "open",
 }: {
   data: OpenTicketsSnapshot;
   /** Si fourni, le parent gère le drilldown (sinon modal interne). */
   onDrill?: (query: DrilldownQuery, tickets?: TicketListItem[]) => void;
-  mode?: "live" | "frozen";
+  mode?: "live" | "historical" | "frozen" | "closed";
   frozenAt?: string | null;
+  /** Semaine pour le drill historique / clôturés. */
+  weekId?: string;
+  kind?: "open" | "closed";
 }) {
   const [filterName, setFilterName] = useState("");
   const [internalDrill, setInternalDrill] = useState<DrillState | null>(null);
   const { avatarUrl } = usePeopleAvatars();
-  const interactive = mode === "live";
+  const hasTicketLists = data.tickets.length > 0;
+  const interactive =
+    Boolean(onDrill) &&
+    (mode === "live" ||
+      mode === "historical" ||
+      mode === "closed" ||
+      (mode === "frozen" && Boolean(weekId)));
 
   const groups = useMemo(() => {
     const q = filterName.trim().toLowerCase();
@@ -57,13 +73,29 @@ export function OpenTicketsByPerson({
 
   const maxCount = Math.max(...groups.map((g) => g.count), 1);
 
+  function drillQueryFor(assignee: string): DrilldownQuery {
+    const scope: TicketSearchScope = kind === "closed" ? "closed" : "open";
+    if (kind === "closed" || mode === "historical" || mode === "frozen") {
+      return { scope, weekId, assignee };
+    }
+    return { scope: "open", assignee };
+  }
+
   function openDrill(query: DrilldownQuery, tickets?: TicketListItem[]) {
     if (!interactive) return;
+    const preset =
+      tickets && tickets.length > 0
+        ? tickets
+        : hasTicketLists
+          ? data.tickets.filter(
+              (t) => !query.assignee || t.assignee === query.assignee,
+            )
+          : undefined;
     if (onDrill) {
-      onDrill(query, tickets);
+      onDrill(query, preset);
       return;
     }
-    setInternalDrill({ query, tickets });
+    setInternalDrill({ query, tickets: preset });
   }
 
   const frozenLabel = frozenAt
@@ -73,18 +105,33 @@ export function OpenTicketsByPerson({
       })
     : null;
 
+  const title =
+    kind === "closed" ? "Clôturés par personne" : "Ouverts par personne";
+  const subtitle =
+    kind === "closed"
+      ? "Tickets résolus pendant la semaine · assigné actuel"
+      : mode === "frozen"
+        ? `Stock figé fin de semaine${frozenLabel ? ` · ${frozenLabel}` : ""}`
+        : mode === "historical"
+          ? `Stock à la fin de la semaine${frozenLabel ? ` · ${frozenLabel}` : ""}`
+          : null;
+
+  const emptyLabel =
+    kind === "closed"
+      ? "Aucun ticket clôturé cette semaine."
+      : mode === "frozen"
+        ? "Aucun stock ouvert figé pour cette semaine."
+        : "Aucun ticket ouvert pour ces filtres.";
+
   return (
     <section className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="font-[family-name:var(--font-display)] text-base text-[var(--ink)]">
-            Ouverts par personne
+            {title}
           </h2>
-          {mode === "frozen" && (
-            <p className="mt-0.5 text-[11px] text-[var(--muted)]">
-              Stock figé fin de semaine
-              {frozenLabel ? ` · ${frozenLabel}` : ""}
-            </p>
+          {subtitle && (
+            <p className="mt-0.5 text-[11px] text-[var(--muted)]">{subtitle}</p>
           )}
         </div>
         <label className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
@@ -100,11 +147,7 @@ export function OpenTicketsByPerson({
       </div>
 
       {groups.length === 0 ? (
-        <p className="text-sm text-[var(--muted)]">
-          {mode === "frozen"
-            ? "Aucun stock ouvert figé pour cette semaine."
-            : "Aucun ticket ouvert pour ces filtres."}
-        </p>
+        <p className="text-sm text-[var(--muted)]">{emptyLabel}</p>
       ) : (
         <ol className="overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface)]">
           {groups.map((g, index) => {
@@ -118,6 +161,10 @@ export function OpenTicketsByPerson({
                 ? "transition-colors hover:bg-[var(--wash)]"
                 : "cursor-default"
             }`;
+            const showAge =
+              (mode === "live" || mode === "historical") &&
+              kind === "open" &&
+              (g.avgAgeDays > 0 || g.oldestAgeDays > 0 || hasTicketLists);
             const body = (
               <>
                 <span
@@ -147,12 +194,14 @@ export function OpenTicketsByPerson({
                       className={`h-full rounded ${
                         isUnassigned
                           ? "bg-[var(--warn)]"
-                          : "bg-[var(--accent)]"
+                          : kind === "closed"
+                            ? "bg-[var(--ok)]"
+                            : "bg-[var(--accent)]"
                       }`}
                       style={{ width: `${pct}%` }}
                     />
                   </div>
-                  {mode === "live" && (
+                  {showAge && (
                     <p className="mt-0.5 text-[10px] text-[var(--muted)]">
                       moy. {formatAge(g.avgAgeDays)} · max{" "}
                       {formatAge(g.oldestAgeDays)}
@@ -163,7 +212,9 @@ export function OpenTicketsByPerson({
                   className={`tabular-nums text-sm font-medium ${
                     isUnassigned
                       ? "text-[var(--warn)]"
-                      : "text-[var(--accent-deep)]"
+                      : kind === "closed"
+                        ? "text-[var(--ok)]"
+                        : "text-[var(--accent-deep)]"
                   }`}
                 >
                   {g.count}
@@ -176,10 +227,7 @@ export function OpenTicketsByPerson({
                   <button
                     type="button"
                     onClick={() =>
-                      openDrill(
-                        { scope: "open", assignee: g.name },
-                        g.tickets,
-                      )
+                      openDrill(drillQueryFor(g.name), g.tickets)
                     }
                     className={rowClass}
                   >
@@ -194,7 +242,7 @@ export function OpenTicketsByPerson({
         </ol>
       )}
 
-      {data.warnings.length > 0 && mode === "live" && (
+      {data.warnings.length > 0 && mode !== "frozen" && (
         <ul className="space-y-1 text-xs text-[var(--muted)]">
           {data.warnings.slice(0, 3).map((w) => (
             <li key={w}>{w}</li>

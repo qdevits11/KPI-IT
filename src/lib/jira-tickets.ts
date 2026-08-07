@@ -63,6 +63,7 @@ export interface OpenTicketsSnapshot {
 export type TicketSearchScope =
   | "open"
   | "created"
+  | "closed"
   | "sla_pec"
   | "sla_cloture";
 
@@ -252,8 +253,29 @@ function weekJqlForScope(
   const { year, week } = parseWeekId(weekId);
   const bundle = buildWeekJql(conn, year, week);
   if (scope === "sla_pec") return bundle.priseEnCharge;
-  if (scope === "sla_cloture") return bundle.resolved;
+  if (scope === "sla_cloture" || scope === "closed") return bundle.resolved;
+  if (scope === "open") return buildOpenAsOfJql(conn, bundle.endInclusive);
   return bundle.created;
+}
+
+function appendPersonFilters(
+  jql: string,
+  filter: Pick<TicketSearchFilter, "assignee" | "requester">,
+): string {
+  if (!filter.assignee && !filter.requester) return jql;
+  const stripped = jql.replace(/\s+ORDER BY\s+.+$/i, "").trim();
+  const parts: string[] = [stripped];
+  if (filter.assignee === "Non assigné") {
+    parts.push("assignee is EMPTY");
+  } else if (filter.assignee) {
+    parts.push(`assignee = "${escapeJqlString(filter.assignee)}"`);
+  }
+  if (filter.requester === "Inconnu") {
+    parts.push("reporter is EMPTY");
+  } else if (filter.requester) {
+    parts.push(`reporter = "${escapeJqlString(filter.requester)}"`);
+  }
+  return `${parts.join(" AND ")} ORDER BY created ASC`;
 }
 
 /** Construit le JQL de base (sans filtre catégorie — appliqué ensuite). */
@@ -262,10 +284,16 @@ export function buildTicketSearchJql(
   filter: TicketSearchFilter,
 ): string {
   if (
-    (filter.scope === "sla_pec" || filter.scope === "sla_cloture") &&
+    (filter.scope === "sla_pec" ||
+      filter.scope === "sla_cloture" ||
+      filter.scope === "closed" ||
+      (filter.scope === "open" && filter.weekId)) &&
     filter.weekId
   ) {
-    return weekJqlForScope(conn, filter.scope, filter.weekId);
+    return appendPersonFilters(
+      weekJqlForScope(conn, filter.scope, filter.weekId),
+      filter,
+    );
   }
 
   const parts: string[] = [conn.jqlBase.trim()];
@@ -452,11 +480,16 @@ export async function searchTickets(
 
   const warnings: string[] = [];
   if (
-    (filter.scope === "sla_pec" || filter.scope === "sla_cloture") &&
+    (filter.scope === "sla_pec" ||
+      filter.scope === "sla_cloture" ||
+      filter.scope === "closed" ||
+      (filter.scope === "open" && Boolean(filter.weekId))) &&
     !filter.weekId
   ) {
     throw new Error(
-      "Pour les listes hors SLA, indiquez la semaine (week, ex. 2026-S32).",
+      filter.scope === "closed" || filter.scope === "open"
+        ? "Pour les listes ouvertes/clôturées historiques, indiquez la semaine (week, ex. 2026-S32)."
+        : "Pour les listes hors SLA, indiquez la semaine (week, ex. 2026-S32).",
     );
   }
 
@@ -507,7 +540,17 @@ export async function searchTickets(
     }
   }
 
-  const mapped = await issuesToTickets(connection, issues, warnings);
+  let ageAsOf = new Date();
+  if (filter.scope === "open" && filter.weekId) {
+    const { year, week } = parseWeekId(filter.weekId);
+    const { endInclusive } = isoWeekDateRange(year, week);
+    ageAsOf = new Date(`${endInclusive}T23:59:59.000Z`);
+    warnings.push(
+      `Stock ouvert au ${endInclusive} — assigné = responsable actuel des tickets alors ouverts.`,
+    );
+  }
+
+  const mapped = await issuesToTickets(connection, issues, warnings, ageAsOf);
   const tickets = filterTicketList(mapped, filter);
   const truncated = issues.length >= 5000;
 
@@ -521,16 +564,45 @@ export async function searchTickets(
   };
 }
 
+/**
+ * Tickets clôturés pendant une semaine ISO, agrégés comme un snapshot « par personne ».
+ */
+export async function fetchClosedTicketsForWeek(
+  weekIdValue: string,
+  conn?: JiraConnection | null,
+): Promise<OpenTicketsSnapshot> {
+  const result = await searchTickets(
+    { scope: "closed", weekId: weekIdValue },
+    conn,
+  );
+  const byAssignee = aggregateByAssignee(result.tickets);
+  const unassigned =
+    byAssignee.find((g) => g.name === "Non assigné")?.count ?? 0;
+  return {
+    fetchedAt: new Date().toISOString(),
+    jql: result.jql,
+    total: result.tickets.length,
+    unassigned,
+    tickets: result.tickets,
+    byAssignee,
+    warnings: result.warnings,
+  };
+}
+
 /** Aide tests / UI : libellé lisible des filtres actifs. */
 export function describeTicketFilters(filter: TicketSearchFilter): string {
   const scopeLabel =
     filter.scope === "open"
-      ? "ouverts (live)"
-      : filter.scope === "sla_pec"
-        ? "hors SLA prise en charge"
-        : filter.scope === "sla_cloture"
-          ? "hors SLA clôture"
-          : "créés";
+      ? filter.weekId
+        ? "ouverts (fin de semaine)"
+        : "ouverts (live)"
+      : filter.scope === "closed"
+        ? "clôturés"
+        : filter.scope === "sla_pec"
+          ? "hors SLA prise en charge"
+          : filter.scope === "sla_cloture"
+            ? "hors SLA clôture"
+            : "créés";
   const bits: string[] = [scopeLabel];
   if (filter.weekId) bits.push(`semaine ${filter.weekId}`);
   else if (filter.year) bits.push(`année ${filter.year}`);

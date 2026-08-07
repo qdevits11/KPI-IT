@@ -16,12 +16,16 @@ export type DrilldownQuery = TicketSearchFilter;
 function describeFilters(filter: TicketSearchFilter): string {
   const scopeLabel =
     filter.scope === "open"
-      ? "ouverts (live)"
-      : filter.scope === "sla_pec"
-        ? "hors SLA prise en charge"
-        : filter.scope === "sla_cloture"
-          ? "hors SLA clôture"
-          : "créés";
+      ? filter.weekId
+        ? "ouverts (fin de semaine)"
+        : "ouverts (live)"
+      : filter.scope === "closed"
+        ? "clôturés"
+        : filter.scope === "sla_pec"
+          ? "hors SLA prise en charge"
+          : filter.scope === "sla_cloture"
+            ? "hors SLA clôture"
+            : "créés";
   const bits: string[] = [scopeLabel];
   if (filter.weekId) bits.push(`semaine ${filter.weekId}`);
   else if (filter.year) bits.push(`année ${filter.year}`);

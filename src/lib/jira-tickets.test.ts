@@ -79,13 +79,26 @@ describe("jira-tickets helpers", () => {
     ]);
   });
 
-  it("construit un JQL open / created / SLA", () => {
+  it("construit un JQL open / created / closed / SLA", () => {
     expect(buildTicketSearchJql(conn, { scope: "open" })).toContain(
       "status NOT IN",
     );
     expect(buildTicketSearchJql(conn, { scope: "open", assignee: "Non assigné" })).toContain(
       "assignee is EMPTY",
     );
+    const openAsOf = buildTicketSearchJql(conn, {
+      scope: "open",
+      weekId: "2026-S31",
+    });
+    expect(openAsOf).toContain('WAS NOT IN (Partenaire, Canceled, Done) ON "2026-08-02"');
+    expect(
+      buildTicketSearchJql(conn, {
+        scope: "open",
+        weekId: "2026-S31",
+        assignee: "Marie",
+      }),
+    ).toContain('assignee = "Marie"');
+
     const weekJql = buildTicketSearchJql(conn, {
       scope: "created",
       weekId: "2026-S32",
@@ -93,6 +106,13 @@ describe("jira-tickets helpers", () => {
     });
     expect(weekJql).toContain('created >= "2026-08-03');
     expect(weekJql).toContain('assignee = "Marie Dupont"');
+
+    const closedJql = buildTicketSearchJql(conn, {
+      scope: "closed",
+      weekId: "2026-S31",
+    });
+    expect(closedJql).toContain('resolutiondate >= "2026-07-27 00:00"');
+    expect(closedJql).toContain('resolutiondate < "2026-08-03 00:00"');
 
     const slaPecJql = buildTicketSearchJql(conn, {
       scope: "sla_pec",
@@ -108,7 +128,7 @@ describe("jira-tickets helpers", () => {
     expect(slaCloseJql).toContain("resolutiondate >=");
   });
 
-  it("décrit les filtres SLA", () => {
+  it("décrit les filtres SLA / historique / clôturés", () => {
     expect(
       describeTicketFilters({
         scope: "sla_pec",
@@ -121,6 +141,19 @@ describe("jira-tickets helpers", () => {
         weekId: "2026-S32",
       }),
     ).toBe("hors SLA clôture · semaine 2026-S32");
+    expect(
+      describeTicketFilters({
+        scope: "open",
+        weekId: "2026-S31",
+      }),
+    ).toBe("ouverts (fin de semaine) · semaine 2026-S31");
+    expect(
+      describeTicketFilters({
+        scope: "closed",
+        weekId: "2026-S31",
+        assignee: "Marie",
+      }),
+    ).toBe("clôturés · semaine 2026-S31 · assigné : Marie");
   });
 
   it("demande tous les champs Jira pour les listes tickets", () => {

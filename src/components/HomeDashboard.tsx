@@ -136,8 +136,12 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
 
   const [kpis, setKpis] = useState<KpisPayload | null>(null);
   const [openSnap, setOpenSnap] = useState<OpenTicketsSnapshot | null>(null);
+  const [closedSnap, setClosedSnap] = useState<OpenTicketsSnapshot | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
+  const [closedError, setClosedError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [drill, setDrill] = useState<{
@@ -149,6 +153,7 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
   const load = useCallback(async (weekId: string) => {
     setError(null);
     setOpenError(null);
+    setClosedError(null);
 
     const kpisRes = await fetch(`/api/kpis?week=${encodeURIComponent(weekId)}`);
     if (!kpisRes.ok) {
@@ -160,8 +165,12 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
     const payload = (await kpisRes.json()) as KpisPayload;
     setKpis(payload);
 
-    // Stock live toujours chargé (section Par personne + tuiles live).
-    const openRes = await fetch("/api/jira/open");
+    const pastWeek = !payload.meta.isCurrentWeek;
+    const openUrl = pastWeek
+      ? `/api/jira/open?week=${encodeURIComponent(weekId)}`
+      : "/api/jira/open";
+
+    const openRes = await fetch(openUrl);
     if (openRes.ok) {
       setOpenSnap((await openRes.json()) as OpenTicketsSnapshot);
       setOpenError(null);
@@ -174,6 +183,27 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
           "Tickets ouverts indisponibles — vérifiez la connexion Jira.",
       );
       setOpenSnap(null);
+    }
+
+    if (pastWeek) {
+      const closedRes = await fetch(
+        `/api/jira/closed?week=${encodeURIComponent(weekId)}`,
+      );
+      if (closedRes.ok) {
+        setClosedSnap((await closedRes.json()) as OpenTicketsSnapshot);
+        setClosedError(null);
+      } else {
+        const body = (await closedRes.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setClosedError(
+          body?.error ??
+            "Tickets clôturés indisponibles — vérifiez la connexion Jira.",
+        );
+        setClosedSnap(null);
+      }
+    } else {
+      setClosedSnap(null);
     }
   }, []);
 
@@ -267,6 +297,11 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
           {openError}
         </p>
       )}
+      {closedError && (
+        <p className="rounded-md border border-[var(--warn)]/30 bg-[var(--warn)]/10 px-3 py-2 text-sm text-[var(--warn)]">
+          {closedError}
+        </p>
+      )}
 
       {pending && !kpis && (
         <p className="text-sm text-[var(--muted)]">Chargement…</p>
@@ -290,21 +325,37 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
             />
             <ActionTile
               label="Tickets ouverts"
-              value={openStock ?? (isLive ? (openSnap?.total ?? null) : null)}
+              value={
+                openStock ??
+                openSnap?.total ??
+                (Object.keys(kpis.openByAssignee ?? {}).length
+                  ? Object.values(kpis.openByAssignee).reduce((a, b) => a + b, 0)
+                  : null)
+              }
               hint={
                 isLive
                   ? "Stock de la semaine en cours"
-                  : "Stock figé de la semaine"
+                  : "Stock à la fin de la semaine"
               }
               tone="accent"
               onClick={
-                isLive && openSnap
+                openSnap
                   ? () =>
                       setDrill({
-                        query: { scope: "open" },
+                        query: isCurrentWeek
+                          ? { scope: "open" }
+                          : { scope: "open", weekId: selectedWeekId },
                         tickets: openSnap.tickets,
                       })
-                  : undefined
+                  : !isCurrentWeek
+                    ? () =>
+                        setDrill({
+                          query: {
+                            scope: "open",
+                            weekId: selectedWeekId,
+                          },
+                        })
+                    : undefined
               }
             />
             <ActionTile
@@ -335,6 +386,31 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
                 })
               }
             />
+            {!isCurrentWeek && (
+              <ActionTile
+                label="Tickets clôturés"
+                value={closedSnap?.total ?? null}
+                hint="Résolus pendant la semaine"
+                onClick={
+                  closedSnap
+                    ? () =>
+                        setDrill({
+                          query: {
+                            scope: "closed",
+                            weekId: selectedWeekId,
+                          },
+                          tickets: closedSnap.tickets,
+                        })
+                    : () =>
+                        setDrill({
+                          query: {
+                            scope: "closed",
+                            weekId: selectedWeekId,
+                          },
+                        })
+                }
+              />
+            )}
           </section>
 
           {isCurrentWeek && openSnap && (
@@ -345,8 +421,19 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
             />
           )}
 
+          {!isCurrentWeek && openSnap && (
+            <OpenTicketsByPerson
+              data={openSnap}
+              mode="historical"
+              weekId={selectedWeekId}
+              frozenAt={meta?.openFrozenAt}
+              onDrill={(query, tickets) => setDrill({ query, tickets })}
+            />
+          )}
+
           {!isCurrentWeek &&
-            kpis?.openByAssignee &&
+            !openSnap &&
+            kpis.openByAssignee &&
             Object.keys(kpis.openByAssignee).length > 0 && (
               <OpenTicketsByPerson
                 data={openSnapshotFromAssigneeCounts(kpis.openByAssignee, {
@@ -354,9 +441,21 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
                   warnings: [],
                 })}
                 mode="frozen"
+                weekId={selectedWeekId}
                 frozenAt={meta?.openFrozenAt}
+                onDrill={(query, tickets) => setDrill({ query, tickets })}
               />
             )}
+
+          {!isCurrentWeek && closedSnap && (
+            <OpenTicketsByPerson
+              data={closedSnap}
+              mode="closed"
+              kind="closed"
+              weekId={selectedWeekId}
+              onDrill={(query, tickets) => setDrill({ query, tickets })}
+            />
+          )}
 
           <section className="space-y-2">
             <h2 className="font-[family-name:var(--font-display)] text-base text-[var(--ink)]">
