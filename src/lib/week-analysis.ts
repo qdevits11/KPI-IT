@@ -146,13 +146,6 @@ function pushKpiSignal(
 
   const vsPrev =
     previous != null ? formatDelta(current, previous) : String(current);
-  let vsBase = "";
-  if (baseline != null && baseline > 0) {
-    const d = pctDelta(current, baseline);
-    if (d != null && Math.abs(d) >= KPI_DELTA_PCT) {
-      vsBase = ` · vs moy. ${BASELINE_WEEKS} sem. ${formatPct(d)}`;
-    }
-  }
 
   const up = previous != null ? current > previous : baseline != null && current > baseline;
   const severity: WeekAnalysisSeverity =
@@ -162,7 +155,8 @@ function pushKpiSignal(
         ? "warn"
         : "info";
 
-  const observation = `${label} : ${vsPrev}${vsBase}`;
+  const trend = up ? "en hausse" : "en baisse";
+  const observation = `${label.toLowerCase()} ${trend} (${vsPrev})`;
   const recommendation = up ? opts?.recommendUp : opts?.recommendDown;
 
   signals.push({
@@ -189,15 +183,14 @@ export function generateWeekAnalysis(
     return {
       weekId: id,
       fluctuation:
-        "Aucune donnée pour cette semaine. Lancez une synchronisation Jira avant de générer l’analyse.",
-      recommandations:
-        "Synchroniser la semaine depuis Admin → Opérations, puis régénérer l’analyse.",
+        "Aucune donnée pour cette semaine — synchroniser Jira avant de générer l’analyse.",
+      recommandations: "Synchroniser la semaine puis régénérer l’analyse.",
       signals: [
         {
           kind: "data",
           severity: "critical",
-          observation: "Semaine absente de la base.",
-          recommendation: "Synchroniser Jira pour cette semaine.",
+          observation: "semaine absente de la base",
+          recommendation: "synchroniser Jira pour cette semaine",
         },
       ],
     };
@@ -256,10 +249,8 @@ export function generateWeekAnalysis(
     signals.push({
       kind: "data",
       severity: "warn",
-      observation:
-        "Peu de chiffres disponibles pour cette semaine (KPI non synchronisés).",
-      recommendation:
-        "Lancer une sync Jira de la semaine pour enrichir fluctuation et recommandations.",
+      observation: "peu de chiffres disponibles (KPI non synchronisés)",
+      recommendation: "lancer une sync Jira de la semaine",
     });
   }
 
@@ -271,10 +262,8 @@ export function generateWeekAnalysis(
     baseDemandes,
     {
       higherIsWorse: true,
-      recommendUp:
-        "Identifier la cause du pic de demandes (type, demandeur) et arbitrer la capacité.",
-      recommendDown:
-        "Capitaliser sur la baisse de volume pour absorber le backlog ou avancer les sujets structurants.",
+      recommendUp: "identifier la cause du pic de demandes",
+      recommendDown: "profiter de la baisse pour absorber le backlog",
     },
   );
 
@@ -287,8 +276,7 @@ export function generateWeekAnalysis(
     {
       higherIsWorse: false,
       recommendUp: undefined,
-      recommendDown:
-        "Vérifier la capacité de clôture et les éventuels bloqueurs (attente métier, dépendances).",
+      recommendDown: "vérifier les bloqueurs de clôture",
     },
   );
 
@@ -299,49 +287,59 @@ export function generateWeekAnalysis(
     signals.push({
       kind: "stock",
       severity: up ? "warn" : "info",
-      observation: `Stock non résolu : ${formatDelta(curOpen, prevOpen)}${
-        baseOpen != null && baseOpen > 0
-          ? ` · vs moy. ${formatPct(pctDelta(curOpen, baseOpen) ?? 0)}`
-          : ""
-      }`,
+      observation: `stock non résolu ${up ? "en hausse" : "en baisse"} (${formatDelta(curOpen, prevOpen)})`,
       recommendation: up
-        ? "Prioriser le désendettement du stock (tri, redistribution, clôture des plus anciens)."
-        : "Maintenir le rythme qui a permis de faire baisser le stock.",
+        ? "prioriser le désendettement du stock"
+        : "maintenir le rythme de baisse du stock",
     });
   }
 
-  if (
+  // SLA : un seul signal combiné si les deux bougent
+  const slaCloseUp =
     curSlaClose != null &&
-    significantDelta(curSlaClose, prevSlaClose ?? baseSlaClose)
-  ) {
-    const up =
-      (prevSlaClose != null && curSlaClose > prevSlaClose) ||
-      (baseSlaClose != null && curSlaClose > baseSlaClose);
-    signals.push({
-      kind: "sla",
-      severity: up ? "critical" : "info",
-      observation: `Hors SLA clôture : ${formatDelta(curSlaClose, prevSlaClose)}`,
-      recommendation: up
-        ? "Analyser les tickets hors SLA clôture et les causes (charge, complexité, attente)."
-        : undefined,
-    });
-  }
-
-  if (
+    significantDelta(curSlaClose, prevSlaClose ?? baseSlaClose) &&
+    ((prevSlaClose != null && curSlaClose > prevSlaClose) ||
+      (baseSlaClose != null && curSlaClose > baseSlaClose));
+  const slaPickupUp =
     curSlaPickup != null &&
-    significantDelta(curSlaPickup, prevSlaPickup ?? baseSlaPickup)
-  ) {
-    const up =
-      (prevSlaPickup != null && curSlaPickup > prevSlaPickup) ||
-      (baseSlaPickup != null && curSlaPickup > baseSlaPickup);
+    significantDelta(curSlaPickup, prevSlaPickup ?? baseSlaPickup) &&
+    ((prevSlaPickup != null && curSlaPickup > prevSlaPickup) ||
+      (baseSlaPickup != null && curSlaPickup > baseSlaPickup));
+  if (slaCloseUp || slaPickupUp) {
+    const bits: string[] = [];
+    if (slaCloseUp && curSlaClose != null) {
+      bits.push(`clôture ${formatDelta(curSlaClose, prevSlaClose)}`);
+    }
+    if (slaPickupUp && curSlaPickup != null) {
+      bits.push(`prise en charge ${formatDelta(curSlaPickup, prevSlaPickup)}`);
+    }
     signals.push({
       kind: "sla",
-      severity: up ? "critical" : "info",
-      observation: `Hors SLA prise en charge : ${formatDelta(curSlaPickup, prevSlaPickup)}`,
-      recommendation: up
-        ? "Revoir la prise en charge initiale (astreinte, file d’attente, règles d’assignation)."
-        : undefined,
+      severity: "critical",
+      observation: `hors SLA en hausse (${bits.join(", ")})`,
+      recommendation: "analyser les dépassements de SLA",
     });
+  } else {
+    if (
+      curSlaClose != null &&
+      significantDelta(curSlaClose, prevSlaClose ?? baseSlaClose)
+    ) {
+      signals.push({
+        kind: "sla",
+        severity: "info",
+        observation: `hors SLA clôture en baisse (${formatDelta(curSlaClose, prevSlaClose)})`,
+      });
+    }
+    if (
+      curSlaPickup != null &&
+      significantDelta(curSlaPickup, prevSlaPickup ?? baseSlaPickup)
+    ) {
+      signals.push({
+        kind: "sla",
+        severity: "info",
+        observation: `hors SLA prise en charge en baisse (${formatDelta(curSlaPickup, prevSlaPickup)})`,
+      });
+    }
   }
 
   // Throughput : créés vs clôturés
@@ -351,88 +349,91 @@ export function generateWeekAnalysis(
       signals.push({
         kind: "throughput",
         severity: "warn",
-        observation: `Écart création / clôture : +${gap} (créés ${curDemandes}, clôturés ${curClosed})`,
-        recommendation:
-          "Rééquilibrer : freiner les nouvelles prises ou accélérer les clôtures sur les sujets à fort volume.",
+        observation: `plus de créations que de clôtures (+${gap})`,
+        recommendation: "rééquilibrer créations et clôtures",
       });
     }
   }
 
-  // Pics par type
+  // Pics par type — garder le pire pic seulement
   const typeBag = db.ticketsByType[id] ?? {};
-  const typeEntries = topEntries(typeBag, 12);
-  for (const { name, count } of typeEntries) {
+  let bestTypeSpike: WeekAnalysisSignal | null = null;
+  for (const { name, count } of topEntries(typeBag, 12)) {
     if (count < TYPE_SPIKE_MIN) continue;
     const base = baselineForLabel(db.ticketsByType, name, priorKeys);
+    let candidate: WeekAnalysisSignal | null = null;
     if (base <= 0) {
       if (count >= Math.max(TYPE_SPIKE_MIN, 5)) {
-        signals.push({
+        candidate = {
           kind: "type_spike",
           severity: "warn",
-          observation: `Nouveau / rare type « ${name} » : ${count} ticket(s) cette semaine`,
-          recommendation: `Clarifier l’origine du sujet « ${name} » (régression, besoin métier, manque de doc).`,
-        });
+          observation: `apparition du type « ${name} » (${count})`,
+          recommendation: `clarifier l’origine de « ${name} »`,
+        };
       }
-      continue;
+    } else {
+      const d = pctDelta(count, base);
+      if (d != null && d >= TYPE_SPIKE_PCT) {
+        candidate = {
+          kind: "type_spike",
+          severity: d >= 2 ? "critical" : "warn",
+          observation: `pic sur « ${name} » (${count}, ${formatPct(d)})`,
+          recommendation: `investiguer le pic « ${name} »`,
+        };
+      }
     }
-    const d = pctDelta(count, base);
-    if (d != null && d >= TYPE_SPIKE_PCT) {
-      signals.push({
-        kind: "type_spike",
-        severity: d >= 2 ? "critical" : "warn",
-        observation: `Pic type « ${name} » : ${count} (moy. ${base.toFixed(1)}, ${formatPct(d)})`,
-        recommendation: `Investiguer le pic « ${name} » et décider : correctif, automatisation ou communication métier.`,
-      });
+    if (
+      candidate &&
+      (!bestTypeSpike ||
+        (candidate.severity === "critical" && bestTypeSpike.severity !== "critical"))
+    ) {
+      bestTypeSpike = candidate;
     }
   }
+  if (bestTypeSpike) signals.push(bestTypeSpike);
 
-  // Charge par personne (stock figé si dispo, sinon créés)
+  // Charge : personne la plus chargée seulement
   const loadBag = db.openByAssignee?.[id] ?? db.ticketsByAssignee[id] ?? {};
-  const loadSource = db.openByAssignee?.[id]
-    ? "stock ouvert"
-    : "tickets créés assignés";
+  const loadSource = db.openByAssignee?.[id] ? "ouverts" : "créés";
   const loads = topEntries(loadBag, 20);
   if (loads.length >= 2) {
     const med = median(loads.map((l) => l.count));
     if (med != null && med > 0) {
-      for (const { name, count } of loads) {
-        if (count < LOAD_MIN) continue;
-        if (count >= med * LOAD_RATIO) {
-          signals.push({
-            kind: "load",
-            severity: count >= med * 2 ? "critical" : "warn",
-            observation: `Charge élevée — ${name} : ${count} (${loadSource}, médiane équipe ${med.toFixed(0)})`,
-            recommendation: `Redistribuer une partie du portefeuille de ${name} ou suspendre les nouvelles assignations.`,
-          });
-        }
+      const overloaded = loads.find(
+        (l) => l.count >= LOAD_MIN && l.count >= med * LOAD_RATIO,
+      );
+      if (overloaded) {
+        signals.push({
+          kind: "load",
+          severity: overloaded.count >= med * 2 ? "critical" : "warn",
+          observation: `surcharge de ${overloaded.name} (${overloaded.count} ${loadSource})`,
+          recommendation: `redistribuer la charge de ${overloaded.name}`,
+        });
       }
     }
   } else if (loads.length === 1 && loads[0].count >= LOAD_MIN) {
     signals.push({
       kind: "load",
       severity: "warn",
-      observation: `Concentration — ${loads[0].name} porte ${loads[0].count} ticket(s) (${loadSource})`,
-      recommendation: `Prévoir un backup / binômage autour de ${loads[0].name}.`,
+      observation: `concentration sur ${loads[0].name} (${loads[0].count} ${loadSource})`,
+      recommendation: `prévoir un backup pour ${loads[0].name}`,
     });
   }
 
   // Si rien de notable : constat neutre
   if (signals.filter((s) => s.kind !== "data").length === 0) {
     const parts: string[] = [];
-    if (curDemandes != null) parts.push(`demandes ${curDemandes}`);
-    if (curClosed != null) parts.push(`clôturés ${curClosed}`);
+    if (curDemandes != null) parts.push(`${curDemandes} demandes`);
+    if (curClosed != null) parts.push(`${curClosed} clôturés`);
     if (curOpen != null) parts.push(`stock ${curOpen}`);
     signals.push({
       kind: "kpi_delta",
       severity: "info",
       observation:
         parts.length > 0
-          ? `Semaine globalement stable (${parts.join(" · ")})${
-              previous ? ` vs S${String(previous.week).padStart(2, "0")}` : ""
-            }.`
-          : "Pas d’écart marquant détecté sur les indicateurs disponibles.",
-      recommendation:
-        "Conserver le rythme actuel et documenter tout point qualitatif utile pour l’historique.",
+          ? `semaine globalement stable (${parts.join(", ")})`
+          : "pas d’écart marquant détecté sur les indicateurs disponibles",
+      recommendation: "conserver le rythme actuel",
     });
   }
 
@@ -445,29 +446,107 @@ export function generateWeekAnalysis(
     (a, b) => severityRank[a.severity] - severityRank[b.severity],
   );
 
-  const fluctuation = signals
-    .map((s) => `• ${s.observation}`)
-    .join("\n");
-
-  const recoSeen = new Set<string>();
-  const recommandations = signals
-    .map((s) => s.recommendation?.trim())
-    .filter((r): r is string => Boolean(r))
-    .filter((r) => {
-      if (recoSeen.has(r)) return false;
-      recoSeen.add(r);
-      return true;
-    })
-    .slice(0, 6)
-    .map((r) => `• ${r}`)
-    .join("\n");
-
   return {
     weekId: id,
-    fluctuation,
-    recommandations:
-      recommandations ||
-      "• Aucune action prioritaire détectée automatiquement — compléter si besoin avec le contexte métier.",
+    fluctuation: composeFluctuation(signals, week),
+    recommandations: composeRecommendations(signals),
     signals,
   };
+}
+
+/** Jointure française courte : « A, B et C ». */
+function joinFr(parts: string[]): string {
+  const clean = parts.map((p) => p.trim()).filter(Boolean);
+  if (clean.length === 0) return "";
+  if (clean.length === 1) return clean[0];
+  if (clean.length === 2) return `${clean[0]} et ${clean[1]}`;
+  return `${clean.slice(0, -1).join(", ")} et ${clean[clean.length - 1]}`;
+}
+
+function ensureSentence(text: string): string {
+  const t = text.trim().replace(/\s+/g, " ");
+  if (!t) return "";
+  const capped = t.charAt(0).toUpperCase() + t.slice(1);
+  return /[.!?…]$/.test(capped) ? capped : `${capped}.`;
+}
+
+/**
+ * Garde les signaux les plus graves en diversifiant les kinds
+ * (ex. 1 SLA + 1 pic + 1 charge + 1 KPI) pour une phrase courte.
+ */
+function pickForProse(
+  signals: WeekAnalysisSignal[],
+  limit: number,
+): WeekAnalysisSignal[] {
+  const picked: WeekAnalysisSignal[] = [];
+  const seenKinds = new Set<string>();
+  for (const s of signals) {
+    if (seenKinds.has(s.kind)) continue;
+    seenKinds.add(s.kind);
+    picked.push(s);
+    if (picked.length >= limit) break;
+  }
+  // Si trop peu de kinds, compléter avec les suivants
+  if (picked.length < limit) {
+    for (const s of signals) {
+      if (picked.includes(s)) continue;
+      picked.push(s);
+      if (picked.length >= limit) break;
+    }
+  }
+  return picked;
+}
+
+/** Une phrase concise de fluctuation (max 4 constats). */
+function composeFluctuation(
+  signals: WeekAnalysisSignal[],
+  weekNum: number,
+): string {
+  const selected = pickForProse(signals, 3);
+  const observations = selected
+    .map((s) => s.observation.trim())
+    .filter(Boolean)
+    .map((o) => o.replace(/[.;]\s*$/, ""));
+
+  if (observations.length === 0) {
+    return "Pas d’écart marquant détecté sur les indicateurs disponibles.";
+  }
+
+  // Cas « semaine stable » / data déjà formulé en phrase
+  if (
+    observations.length === 1 &&
+    /stable|pas d’écart|Aucune donnée|Peu de chiffres/i.test(observations[0])
+  ) {
+    return ensureSentence(observations[0]);
+  }
+
+  const body = joinFr(
+    observations.map((o) => o.charAt(0).toLowerCase() + o.slice(1)),
+  );
+  return ensureSentence(`S${String(weekNum).padStart(2, "0")} : ${body}`);
+}
+
+/** Une phrase concise de recommandations (max 3 actions). */
+function composeRecommendations(signals: WeekAnalysisSignal[]): string {
+  const selected = pickForProse(
+    signals.filter((s) => s.recommendation?.trim()),
+    3,
+  );
+  const recoSeen = new Set<string>();
+  const actions = selected
+    .map((s) => s.recommendation!.trim())
+    .filter((r) => {
+      const key = r.toLowerCase();
+      if (recoSeen.has(key)) return false;
+      recoSeen.add(key);
+      return true;
+    })
+    .map((r) => r.replace(/[.;]\s*$/, ""))
+    .map((r) => r.charAt(0).toLowerCase() + r.slice(1));
+
+  if (actions.length === 0) {
+    return "Aucune action prioritaire détectée — compléter avec le contexte métier si besoin.";
+  }
+
+  return ensureSentence(joinFr(actions));
 }

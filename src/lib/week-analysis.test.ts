@@ -47,15 +47,21 @@ function withTicketData(db: AppDatabase): AppDatabase {
 }
 
 describe("generateWeekAnalysis", () => {
-  it("signale les hausses KPI, pic de type et surcharge", () => {
+  it("signale les hausses KPI, pic de type et surcharge en phrases concises", () => {
     const db = withTicketData(createFormulaTestDatabase());
     const result = generateWeekAnalysis(db, "2026-S31");
 
     expect(result.weekId).toBe("2026-S31");
-    expect(result.fluctuation).toContain("Demandes IT");
+    // Phrase unique, sans puces — couvre les kinds prioritaires
+    expect(result.fluctuation).toMatch(/^S31 :/);
     expect(result.fluctuation).toContain("VPN");
     expect(result.fluctuation).toContain("Paul");
+    expect(result.fluctuation).not.toContain("•");
+    expect(result.fluctuation).not.toContain("\n");
+    expect(result.recommandations).not.toContain("•");
+    expect(result.recommandations).not.toContain("\n");
     expect(result.recommandations.length).toBeGreaterThan(0);
+    expect(result.recommandations.endsWith(".")).toBe(true);
     expect(result.signals.some((s) => s.kind === "type_spike")).toBe(true);
     expect(result.signals.some((s) => s.kind === "load")).toBe(true);
   });
