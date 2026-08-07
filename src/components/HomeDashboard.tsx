@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { KpiValue, LogEvent, PhishingEvent, WeeklyRow } from "@/lib/types";
+import { parseWeekId } from "@/lib/types";
 import type { OpenTicketsSnapshot, TicketListItem } from "@/lib/jira-tickets";
 import { clampWeekIdToCurrent } from "@/lib/dates";
 import { WeekSelector } from "./WeekSelector";
