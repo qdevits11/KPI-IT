@@ -266,7 +266,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <nav
           aria-label="Navigation principale"
-          className={`flex flex-1 flex-col gap-1 p-3 ${collapsed ? "lg:px-2" : ""}`}
+          className={`flex flex-col gap-1 p-3 ${collapsed ? "lg:px-2" : ""}`}
         >
           {visibleLinks.map((link) => {
             const active = linkActive(pathname, link.href);
@@ -300,19 +300,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
-        </nav>
 
-        <div
-          className={`mt-auto border-t border-[var(--line)] p-4 ${
-            collapsed ? "lg:p-2" : ""
-          }`}
-        >
           {user ? (
             <button
               type="button"
               onClick={() => void logoutSession()}
               title="Quitter la session"
-              className={`w-full rounded-lg border border-[var(--line)] text-left text-sm text-[var(--muted)] transition-colors hover:bg-[var(--wash)] hover:text-[var(--ink)] ${
+              className={`mt-2 w-full rounded-lg border border-[var(--line)] text-left text-sm text-[var(--muted)] transition-colors hover:bg-[var(--wash)] hover:text-[var(--ink)] ${
                 collapsed
                   ? "px-3 py-2 lg:flex lg:h-10 lg:items-center lg:justify-center lg:px-0"
                   : "px-3 py-2"
@@ -329,7 +323,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link
               href="/login"
               title="Se connecter"
-              className={`block rounded-lg border border-[var(--line)] text-sm text-[var(--muted)] transition-colors hover:bg-[var(--wash)] hover:text-[var(--ink)] ${
+              className={`mt-2 block rounded-lg border border-[var(--line)] text-sm text-[var(--muted)] transition-colors hover:bg-[var(--wash)] hover:text-[var(--ink)] ${
                 collapsed
                   ? "px-3 py-2 lg:flex lg:h-10 lg:items-center lg:justify-center lg:px-0"
                   : "px-3 py-2"
@@ -341,7 +335,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <LoginGlyph className={`hidden ${collapsed ? "lg:block" : ""}`} />
             </Link>
           )}
-        </div>
+        </nav>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">{children}</div>
