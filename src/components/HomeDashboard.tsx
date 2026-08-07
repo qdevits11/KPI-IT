@@ -358,7 +358,7 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
               <ActionTile
                 label="Améliorations Odoo"
                 value={odoo}
-                tone="accent"
+                tone={(odoo ?? 0) > 0 ? "accent" : "default"}
                 onClick={
                   isCurrentWeek ? () => setEncodeKind("odoo") : undefined
                 }
