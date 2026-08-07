@@ -235,9 +235,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
+        {user ? (
+          <div
+            className={`border-b border-[var(--line)] p-4 ${
+              collapsed ? "lg:p-2" : ""
+            }`}
+          >
+            <div
+              className={`flex items-center gap-2.5 ${
+                collapsed ? "lg:justify-center" : ""
+              }`}
+              title={`${user.displayName || user.email} · ${formatUserBadges(user)}`}
+            >
+              <PersonAvatar
+                name={user.displayName || user.email}
+                avatarUrl={user.avatarUrl}
+                size="sm"
+              />
+              <div className={`min-w-0 ${collapsed ? "lg:hidden" : ""}`}>
+                <p className="truncate text-sm text-[var(--ink)]">
+                  {user.displayName || user.email}
+                </p>
+                <p className="text-[11px] text-[var(--muted)]">
+                  {formatUserBadges(user)}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <nav
           aria-label="Navigation principale"
-          className={`flex flex-col gap-1 p-3 ${collapsed ? "lg:px-2" : ""}`}
+          className={`flex flex-1 flex-col gap-1 p-3 ${collapsed ? "lg:px-2" : ""}`}
         >
           {visibleLinks.map((link) => {
             const active = linkActive(pathname, link.href);
@@ -279,45 +308,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           }`}
         >
           {user ? (
-            <div className={`space-y-3 ${collapsed ? "lg:space-y-2" : ""}`}>
-              <div
-                className={`flex items-center gap-2.5 ${
-                  collapsed ? "lg:justify-center" : ""
-                }`}
-                title={`${user.displayName || user.email} · ${formatUserBadges(user)}`}
-              >
-                <PersonAvatar
-                  name={user.displayName || user.email}
-                  avatarUrl={user.avatarUrl}
-                  size="sm"
-                />
-                <div className={`min-w-0 ${collapsed ? "lg:hidden" : ""}`}>
-                  <p className="truncate text-sm text-[var(--ink)]">
-                    {user.displayName || user.email}
-                  </p>
-                  <p className="text-[11px] text-[var(--muted)]">
-                    {formatUserBadges(user)}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => void logoutSession()}
-                title="Quitter la session"
-                className={`w-full rounded-lg border border-[var(--line)] text-left text-sm text-[var(--muted)] transition-colors hover:bg-[var(--wash)] hover:text-[var(--ink)] ${
-                  collapsed
-                    ? "px-3 py-2 lg:flex lg:h-10 lg:items-center lg:justify-center lg:px-0"
-                    : "px-3 py-2"
-                }`}
-              >
-                <span className={collapsed ? "lg:hidden" : undefined}>
-                  Quitter la session
-                </span>
-                <LogoutGlyph
-                  className={`hidden ${collapsed ? "lg:block" : ""}`}
-                />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => void logoutSession()}
+              title="Quitter la session"
+              className={`w-full rounded-lg border border-[var(--line)] text-left text-sm text-[var(--muted)] transition-colors hover:bg-[var(--wash)] hover:text-[var(--ink)] ${
+                collapsed
+                  ? "px-3 py-2 lg:flex lg:h-10 lg:items-center lg:justify-center lg:px-0"
+                  : "px-3 py-2"
+              }`}
+            >
+              <span className={collapsed ? "lg:hidden" : undefined}>
+                Quitter la session
+              </span>
+              <LogoutGlyph
+                className={`hidden ${collapsed ? "lg:block" : ""}`}
+              />
+            </button>
           ) : (
             <Link
               href="/login"
