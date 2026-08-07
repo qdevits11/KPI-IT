@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { HomeDashboard } from "@/components/HomeDashboard";
-import { currentWeekId } from "@/lib/store";
+import { clampWeekIdToCurrent } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -11,10 +11,7 @@ export default async function HomePage({
   searchParams: Promise<{ week?: string }>;
 }) {
   const params = await searchParams;
-  const week =
-    params.week && /^\d{4}-S\d{2}$/.test(params.week)
-      ? params.week
-      : currentWeekId();
+  const week = clampWeekIdToCurrent(params.week);
   return (
     <Suspense
       fallback={

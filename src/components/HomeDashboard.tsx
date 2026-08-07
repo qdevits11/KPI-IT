@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { KpiValue, LogEvent, PhishingEvent, WeeklyRow } from "@/lib/types";
 import type { OpenTicketsSnapshot } from "@/lib/jira-tickets";
+import { clampWeekIdToCurrent } from "@/lib/dates";
 import { WeekSelector } from "./WeekSelector";
 import {
   TicketDrilldown,
@@ -161,10 +162,7 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const weekFromUrl = searchParams.get("week");
-  const selectedWeekId =
-    weekFromUrl && /^\d{4}-S\d{2}$/.test(weekFromUrl)
-      ? weekFromUrl
-      : initialWeek;
+  const selectedWeekId = clampWeekIdToCurrent(weekFromUrl ?? initialWeek);
 
   const [kpis, setKpis] = useState<KpisPayload | null>(null);
   const [openSnap, setOpenSnap] = useState<OpenTicketsSnapshot | null>(null);

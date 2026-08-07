@@ -1,8 +1,7 @@
 "use client";
 
+import { isoWeekPartsFromDate, todayIsoDate } from "@/lib/dates";
 import { weekOptions, type WeekRange } from "@/lib/week-range";
-
-const WEEKS = weekOptions(53);
 
 type Props = {
   year: number;
@@ -19,6 +18,14 @@ function weekSelectValue(value: number | undefined): string {
   return value == null ? "all" : String(value);
 }
 
+/** Semaines sélectionnables : pas de semaines futures pour l’année en cours. */
+function selectableWeeksForYear(year: number): number[] {
+  const now = isoWeekPartsFromDate(todayIsoDate());
+  if (year > now.year) return [];
+  if (year < now.year) return weekOptions(53);
+  return weekOptions(now.week);
+}
+
 export function AnalysePeriodFilter({
   year,
   years,
@@ -29,6 +36,11 @@ export function AnalysePeriodFilter({
   showReset = true,
 }: Props) {
   const hasRange = weekFrom != null || weekTo != null;
+  const weeks = selectableWeeksForYear(year);
+  const yearsOk = years.filter((y) => {
+    const now = isoWeekPartsFromDate(todayIsoDate());
+    return y <= now.year;
+  });
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -39,7 +51,7 @@ export function AnalysePeriodFilter({
           onChange={(e) => onYearChange(Number(e.target.value))}
           className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 text-[var(--ink)] outline-none focus:border-[var(--accent)]"
         >
-          {years.map((y) => (
+          {yearsOk.map((y) => (
             <option key={y} value={y}>
               {y}
             </option>
@@ -62,7 +74,7 @@ export function AnalysePeriodFilter({
           aria-label="Semaine de début"
         >
           <option value="all">Début</option>
-          {WEEKS.map((w) => (
+          {weeks.map((w) => (
             <option key={w} value={w}>
               S{String(w).padStart(2, "0")}
             </option>
@@ -85,7 +97,7 @@ export function AnalysePeriodFilter({
           aria-label="Semaine de fin"
         >
           <option value="all">Fin</option>
-          {WEEKS.map((w) => (
+          {weeks.map((w) => (
             <option key={w} value={w}>
               S{String(w).padStart(2, "0")}
             </option>

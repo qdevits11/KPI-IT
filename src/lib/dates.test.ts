@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  clampWeekIdToCurrent,
   formatFrDate,
   formatWeekRangeLabel,
+  isFutureWeekId,
   isoWeekPartsFromDate,
   mondayOfIsoWeek,
   sundayOfIsoWeek,
@@ -39,5 +41,15 @@ describe("dates → semaine ISO", () => {
     expect(sundayOfIsoWeek(2026, 31)).toBe("2026-08-02");
     expect(formatWeekRangeLabel(2026, 31)).toBe("27 juillet – 2 août 2026");
     expect(formatWeekRangeLabel(2026, 32)).toBe("3 – 9 août 2026");
+  });
+
+  it("détecte et borne les semaines futures", () => {
+    const now = new Date("2026-08-07T12:00:00Z"); // S32
+    expect(isFutureWeekId("2026-S32", now)).toBe(false);
+    expect(isFutureWeekId("2026-S33", now)).toBe(true);
+    expect(isFutureWeekId("2025-S52", now)).toBe(false);
+    expect(clampWeekIdToCurrent("2026-S40", now)).toBe("2026-S32");
+    expect(clampWeekIdToCurrent("2026-S31", now)).toBe("2026-S31");
+    expect(clampWeekIdToCurrent("nope", now)).toBe("2026-S32");
   });
 });

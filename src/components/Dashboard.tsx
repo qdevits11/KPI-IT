@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { KpiValue, LogEvent, PhishingEvent, WeeklyRow } from "@/lib/types";
+import { clampWeekIdToCurrent } from "@/lib/dates";
 import { CATEGORY_LABELS } from "@/lib/formulas";
 import { WeekSelector } from "./WeekSelector";
 import { KpiCard } from "./KpiCard";
@@ -301,10 +302,7 @@ export function Dashboard({
   const searchParams = useSearchParams();
   const router = useRouter();
   const weekFromUrl = searchParams.get("week");
-  const weekId =
-    weekFromUrl && /^\d{4}-S\d{2}$/.test(weekFromUrl)
-      ? weekFromUrl
-      : initialWeek;
+  const weekId = clampWeekIdToCurrent(weekFromUrl ?? initialWeek);
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);

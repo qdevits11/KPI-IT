@@ -55,6 +55,29 @@ export function weekIdFromDate(isoDate: string): string {
   return `${year}-S${String(week).padStart(2, "0")}`;
 }
 
+/** Semaine ISO courante (Europe/Brussels). */
+export function currentIsoWeekId(now = new Date()): string {
+  return weekIdFromDate(todayIsoDate(now));
+}
+
+/**
+ * Semaine strictement postérieure à la semaine ISO courante.
+ * Les ids `YYYY-Snn` se comparent lexicographiquement.
+ */
+export function isFutureWeekId(id: string, now = new Date()): boolean {
+  return id > currentIsoWeekId(now);
+}
+
+/** Borne un weekId au présent : futur / invalide → semaine courante. */
+export function clampWeekIdToCurrent(
+  id: string | null | undefined,
+  now = new Date(),
+): string {
+  const current = currentIsoWeekId(now);
+  if (!id || !/^\d{4}-S\d{2}$/.test(id) || id > current) return current;
+  return id;
+}
+
 /** Lundi (YYYY-MM-DD) de la semaine ISO donnée. */
 export function mondayOfIsoWeek(year: number, week: number): string {
   // Jeudi de la semaine ISO 1 = 4 janvier ± ajustement
