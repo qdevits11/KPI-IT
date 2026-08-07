@@ -242,15 +242,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         >
           {user ? (
             <div
-              className={`flex items-center gap-2.5 ${
-                collapsed ? "lg:flex-col lg:gap-1.5" : ""
+              className={`flex items-start gap-2.5 ${
+                collapsed ? "lg:flex-col lg:items-center lg:gap-1.5" : ""
               }`}
               title={`${user.displayName || user.email} · ${formatUserBadges(user)}`}
             >
               <PersonAvatar
                 name={user.displayName || user.email}
                 avatarUrl={user.avatarUrl}
-                size="sm"
+                size="lg"
               />
               <div className={`min-w-0 ${collapsed ? "lg:hidden" : ""}`}>
                 <p className="truncate text-sm text-[var(--ink)]">
