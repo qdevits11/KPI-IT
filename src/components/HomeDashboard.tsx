@@ -350,6 +350,7 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
               <ActionTile
                 label="Automatisations métier"
                 value={metier}
+                tone={(metier ?? 0) > 0 ? "accent" : "default"}
                 onClick={
                   isCurrentWeek ? () => setEncodeKind("metier") : undefined
                 }
@@ -367,6 +368,7 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
               <ActionTile
                 label="Maintenances prod"
                 value={maintenance}
+                tone={(maintenance ?? 0) > 0 ? "accent" : "default"}
                 onClick={
                   isCurrentWeek ? () => setEncodeKind("maintenance") : undefined
                 }
@@ -375,7 +377,7 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
               <ActionTile
                 label="Phishing ratés"
                 value={phishing}
-                tone={(phishing ?? 0) > 0 ? "warn" : "default"}
+                tone={(phishing ?? 0) > 0 ? "crit" : "default"}
                 onClick={
                   isCurrentWeek ? () => setEncodeKind("phishing") : undefined
                 }
