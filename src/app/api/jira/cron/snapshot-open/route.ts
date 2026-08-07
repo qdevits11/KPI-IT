@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
-import { countJql, buildWeekJql, weekKey, fetchJiraWeekStats } from "@/lib/jira";
+import { buildWeekJql, fetchJiraWeekStats, weekKey } from "@/lib/jira";
 import { resolveJiraConnection } from "@/lib/jira-auth";
 import {
+  backfillOpenAssigneeHistory,
   describeBrusselsNow,
+  freezeOpenAssigneeForWeek,
   isOpenSnapshotWindow,
   weekToFreezeOpenSnapshot,
 } from "@/lib/open-snapshot";
@@ -16,13 +18,16 @@ import { weekId } from "@/lib/types";
 import { authorizeCron } from "@/lib/api";
 
 /**
- * Figement du stock « non résolus » — dimanche 23:59 Europe/Brussels.
+ * Figement du stock « non résolus » (+ ventilation par assigné) — dimanche 23:59 Europe/Brussels.
  *
  * Vercel cron (UTC) : 21:55 et 22:55 le dimanche
  * → un des deux tombe dans 23:50–23:59 Bruxelles selon l’heure d’été/hiver.
  * Rattrapage lundi 00:00–00:14 aussi accepté.
  *
- * Query: ?force=1 pour forcer hors fenêtre (manuel / test).
+ * Query:
+ * - ?force=1 — figer hors fenêtre (semaine ISO précédente, snapshot live)
+ * - ?backfill=1&weeks=40 — reconstituer les N semaines passées (JQL historique)
+ * - ?skipExisting=1 — (avec backfill) ne pas écraser les semaines déjà figées
  */
 export async function GET(request: Request) {
   if (!authorizeCron(request)) {
@@ -31,12 +36,58 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const force = searchParams.get("force") === "1";
+  const backfill = searchParams.get("backfill") === "1";
   const now = new Date();
   const brussels = describeBrusselsNow(now);
 
+  const conn = await resolveJiraConnection();
+  if (!conn) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "Jira non configuré. Définir JIRA_BASE_URL / JIRA_EMAIL / JIRA_API_TOKEN sur Vercel.",
+      },
+      { status: 401 },
+    );
+  }
+
+  if (backfill) {
+    const weeks = Math.max(
+      1,
+      Math.min(104, Number(searchParams.get("weeks") || 40) || 40),
+    );
+    const skipExisting = searchParams.get("skipExisting") === "1";
+    try {
+      const result = await backfillOpenAssigneeHistory(conn, {
+        weeks,
+        skipExisting,
+        now,
+      });
+      return NextResponse.json({
+        ok: true,
+        backfill: true,
+        brussels,
+        weeksRequested: weeks,
+        skipExisting,
+        processed: result.processed.map((r) => ({
+          weekId: r.weekId,
+          openCount: r.openCount,
+          assignees: Object.keys(r.byAssignee).length,
+          asOfDate: r.asOfDate,
+        })),
+        skipped: result.skipped,
+        processedCount: result.processed.length,
+        skippedCount: result.skipped.length,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Backfill échoué";
+      return NextResponse.json({ ok: false, error: message }, { status: 502 });
+    }
+  }
+
   let target = weekToFreezeOpenSnapshot(now);
   if (!target && force) {
-    // Force : figer la semaine ISO précédente (terminée)
     const { previousIsoWeek } = await import("@/lib/jira");
     target = {
       ...previousIsoWeek(now),
@@ -51,20 +102,8 @@ export async function GET(request: Request) {
       brussels,
       inWindow: isOpenSnapshotWindow(now),
       message:
-        "Hors fenêtre dimanche 23:50–23:59 (ou lundi 00:00–00:14) Europe/Brussels. Relancer avec ?force=1 pour un test.",
+        "Hors fenêtre dimanche 23:50–23:59 (ou lundi 00:00–00:14) Europe/Brussels. Relancer avec ?force=1 pour un test, ou ?backfill=1 pour l’historique.",
     });
-  }
-
-  const conn = await resolveJiraConnection();
-  if (!conn) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error:
-          "Jira non configuré. Définir JIRA_BASE_URL / JIRA_EMAIL / JIRA_API_TOKEN sur Vercel.",
-      },
-      { status: 401 },
-    );
   }
 
   const { year, week, reason } = target;
@@ -72,10 +111,6 @@ export async function GET(request: Request) {
   const jql = buildWeekJql(conn, year, week);
 
   try {
-    // Compteur ouvert live (= stock à figer)
-    const openCount = await countJql(conn, jql.open);
-
-    // Optionnel : sync complète des autres KPI de la semaine qui se termine
     const full = searchParams.get("full") !== "0";
     let extras: Record<string, unknown> = {};
     if (full) {
@@ -83,8 +118,6 @@ export async function GET(request: Request) {
       await ensureWeek(id);
       await updateWeeklyRow(id, {
         ...stats.patch,
-        demandesNonResoluesHebdo: openCount,
-        openFrozenAt: now.toISOString(),
       });
       await setTicketsBreakdown(
         weekKey(year, week),
@@ -97,13 +130,13 @@ export async function GET(request: Request) {
         ticketsHorsSlaCloture: stats.patch.ticketsHorsSlaCloture,
         ticketsHorsSlaPriseEnCharge: stats.patch.ticketsHorsSlaPriseEnCharge,
       };
-    } else {
-      await ensureWeek(id);
-      await updateWeeklyRow(id, {
-        demandesNonResoluesHebdo: openCount,
-        openFrozenAt: now.toISOString(),
-      });
     }
+
+    // Figement stock ouvert + ventilation par responsable (live à l’instant du cron)
+    const frozen = await freezeOpenAssigneeForWeek(year, week, conn, {
+      mode: "live",
+      frozenAt: now,
+    });
 
     const row = await getWeek(id);
 
@@ -113,8 +146,9 @@ export async function GET(request: Request) {
       brussels,
       reason,
       weekId: id,
-      openCount,
-      openFrozenAt: row?.openFrozenAt ?? now.toISOString(),
+      openCount: frozen.openCount,
+      openByAssignee: frozen.byAssignee,
+      openFrozenAt: row?.openFrozenAt ?? frozen.openFrozenAt,
       jqlOpen: jql.open,
       ...extras,
     });

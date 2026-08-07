@@ -124,6 +124,11 @@ export interface AppDatabase {
   ticketsByAssignee: Record<string, Record<string, number>>;
   /** Ventilation par demandeur (reporter Jira). Clé = 2026-S31 */
   ticketsByRequester: Record<string, Record<string, number>>;
+  /**
+   * Stock ouvert figé (fin de semaine) par assigné.
+   * Distinct de ticketsByAssignee (= tickets créés dans la semaine).
+   */
+  openByAssignee: Record<string, Record<string, number>>;
   settings: AppSettings;
 }
 
@@ -170,6 +175,8 @@ export interface WeekDashboard {
   ticketsByType: Record<string, number>;
   ticketsByAssignee: Record<string, number>;
   ticketsByRequester: Record<string, number>;
+  /** Stock ouvert figé par assigné (si disponible). */
+  openByAssignee: Record<string, number>;
 }
 
 /** Dimension d'analyse des tickets. */

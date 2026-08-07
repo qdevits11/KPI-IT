@@ -147,6 +147,40 @@ function stripOrderBy(jql: string): string {
  * n’importe quelle semaine (outil de vérification). Équivalent à
  * startOfWeek(-1) / startOfWeek() quand on est le lundi suivant, fuseau Jira.
  */
+/**
+ * Transforme le filtre « ouvert » courant en clause historique Jira.
+ * Ex. `status NOT IN (Done, Canceled)` → `status WAS NOT IN (Done, Canceled) ON "2026-03-15"`.
+ */
+export function buildOpenStatusAsOfJql(
+  openStatusJql: string,
+  asOfDate: string,
+): string {
+  const trimmed = openStatusJql.trim();
+  const date = asOfDate.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error(`Date as-of invalide: ${asOfDate}`);
+  }
+
+  const replaced = trimmed.replace(
+    /\bstatus\s+NOT\s+IN\s*\(([^)]*)\)/gi,
+    `status WAS NOT IN ($1) ON "${date}"`,
+  );
+  if (replaced !== trimmed) return replaced;
+
+  // Fallback : conserver la clause live + tickets déjà créés à la date
+  return `(${trimmed}) AND created <= "${date} 23:59"`;
+}
+
+/** JQL stock ouvert à une date (dimanche de fin de semaine ISO). */
+export function buildOpenAsOfJql(
+  conn: Pick<JiraConnection, "jqlBase" | "openStatusJql">,
+  asOfDate: string,
+): string {
+  const base = conn.jqlBase.trim();
+  const statusAsOf = buildOpenStatusAsOfJql(conn.openStatusJql, asOfDate);
+  return `${base} AND ${statusAsOf} ORDER BY created ASC`;
+}
+
 export function buildWeekJql(
   conn: JiraConnection,
   year: number,

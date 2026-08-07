@@ -3,7 +3,25 @@ import {
   brusselsWallToUtc,
   toBrusselsDateStr,
 } from "./business-hours";
-import { currentIsoWeek, isoWeekDateRange, previousIsoWeek } from "./jira";
+import type { JiraConnection } from "./jira-auth";
+import {
+  currentIsoWeek,
+  isoWeekDateRange,
+  previousIsoWeek,
+  weekKey,
+} from "./jira";
+import {
+  countsByAssignee,
+  fetchOpenTicketsAsOf,
+  fetchOpenTicketsSnapshot,
+} from "./jira-tickets";
+import {
+  ensureWeek,
+  getOpenByAssignee,
+  setOpenByAssignee,
+  updateWeeklyRow,
+} from "./store";
+import { weekId } from "./types";
 
 /** Parties calendrier Europe/Brussels */
 function brusselsParts(date: Date): {
@@ -103,4 +121,127 @@ export function describeBrusselsNow(now = new Date()): string {
   const p = brusselsParts(now);
   const days = ["dim", "lun", "mar", "mer", "jeu", "ven", "sam"];
   return `${days[p.weekday]} ${toBrusselsDateStr(now)} ${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")} ${BUSINESS_TIMEZONE}`;
+}
+
+export type OpenAssigneeFreezeResult = {
+  weekId: string;
+  year: number;
+  week: number;
+  asOfDate: string;
+  openCount: number;
+  byAssignee: Record<string, number>;
+  openFrozenAt: string;
+  mode: "live" | "historical";
+  jql: string;
+  warnings: string[];
+};
+
+/**
+ * Fige le stock ouvert (+ ventilation par assigné) pour une semaine ISO terminée.
+ * - `live` : snapshot Jira courant (cron dimanche / force)
+ * - `historical` : JQL `status WAS … ON` dimanche de fin de semaine
+ */
+export async function freezeOpenAssigneeForWeek(
+  year: number,
+  week: number,
+  conn: JiraConnection,
+  options?: { mode?: "live" | "historical"; frozenAt?: Date },
+): Promise<OpenAssigneeFreezeResult> {
+  const mode = options?.mode ?? "live";
+  const frozenAt = options?.frozenAt ?? new Date();
+  const { endInclusive } = isoWeekDateRange(year, week);
+  const id = weekId({ year, month: 1, week });
+  const key = weekKey(year, week);
+
+  const snap =
+    mode === "live"
+      ? await fetchOpenTicketsSnapshot(conn)
+      : await fetchOpenTicketsAsOf(endInclusive, conn);
+
+  const byAssignee = countsByAssignee(snap.byAssignee);
+  const openCount = snap.total;
+  const openFrozenAt = frozenAt.toISOString();
+
+  await ensureWeek(id);
+  await updateWeeklyRow(id, {
+    demandesNonResoluesHebdo: openCount,
+    openFrozenAt,
+  });
+  await setOpenByAssignee(key, byAssignee);
+
+  return {
+    weekId: id,
+    year,
+    week,
+    asOfDate: endInclusive,
+    openCount,
+    byAssignee,
+    openFrozenAt,
+    mode,
+    jql: snap.jql,
+    warnings: snap.warnings,
+  };
+}
+
+/** Liste les semaines ISO complétées à backfiller (plus récente d’abord). */
+export function listCompletedWeeksToBackfill(
+  count: number,
+  now = new Date(),
+): { year: number; week: number }[] {
+  const n = Math.max(0, Math.min(104, Math.floor(count)));
+  const out: { year: number; week: number }[] = [];
+  let cursor = previousIsoWeek(now);
+  for (let i = 0; i < n; i++) {
+    if (!isIsoWeekCompleted(cursor.year, cursor.week, now)) break;
+    out.push(cursor);
+    const { start } = isoWeekDateRange(cursor.year, cursor.week);
+    const [y, m, d] = start.split("-").map(Number);
+    // Un jour avant le lundi de la semaine → tombe dans la semaine précédente
+    const prevDay = new Date(Date.UTC(y!, m! - 1, d! - 1));
+    cursor = currentIsoWeek(prevDay);
+  }
+  return out;
+}
+
+/**
+ * Recalcule le stock ouvert figé + open_assignee pour N semaines passées.
+ */
+export async function backfillOpenAssigneeHistory(
+  conn: JiraConnection,
+  options?: {
+    weeks?: number;
+    skipExisting?: boolean;
+    now?: Date;
+  },
+): Promise<{
+  processed: OpenAssigneeFreezeResult[];
+  skipped: string[];
+}> {
+  const weeks = options?.weeks ?? 40;
+  const skipExisting = options?.skipExisting ?? false;
+  const now = options?.now ?? new Date();
+  const targets = listCompletedWeeksToBackfill(weeks, now);
+  const processed: OpenAssigneeFreezeResult[] = [];
+  const skipped: string[] = [];
+
+  for (const target of targets) {
+    const id = weekId({ year: target.year, month: 1, week: target.week });
+    if (skipExisting) {
+      const bag = await getOpenByAssignee(id);
+      if (Object.keys(bag).length > 0) {
+        skipped.push(id);
+        continue;
+      }
+    }
+
+    const result = await freezeOpenAssigneeForWeek(
+      target.year,
+      target.week,
+      conn,
+      { mode: "historical", frozenAt: now },
+    );
+    processed.push(result);
+  }
+
+  return { processed, skipped };
 }

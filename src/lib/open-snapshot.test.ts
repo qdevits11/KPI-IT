@@ -3,6 +3,7 @@ import {
   isOpenSnapshotWindow,
   weekToFreezeOpenSnapshot,
   isIsoWeekCompleted,
+  listCompletedWeeksToBackfill,
 } from "./open-snapshot";
 import { brusselsWallToUtc } from "./business-hours";
 
@@ -39,5 +40,18 @@ describe("isIsoWeekCompleted", () => {
     const after = brusselsWallToUtc(2026, 8, 3, 0, 0, 1);
     expect(isIsoWeekCompleted(2026, 31, before)).toBe(false);
     expect(isIsoWeekCompleted(2026, 31, after)).toBe(true);
+  });
+});
+
+describe("listCompletedWeeksToBackfill", () => {
+  it("renvoie les semaines ISO précédentes complétées", () => {
+    // Mercredi 5 août 2026 → semaine courante S32, précédente S31
+    const now = new Date("2026-08-05T12:00:00.000Z");
+    const list = listCompletedWeeksToBackfill(3, now);
+    expect(list).toEqual([
+      { year: 2026, week: 31 },
+      { year: 2026, week: 30 },
+      { year: 2026, week: 29 },
+    ]);
   });
 });

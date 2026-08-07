@@ -20,7 +20,12 @@ export const TABLES = {
 } as const;
 
 export type LogEventKind = "metier" | "odoo" | "maintenance";
-export type BreakdownDimension = "type" | "assignee" | "requester";
+export type BreakdownDimension =
+  | "type"
+  | "assignee"
+  | "requester"
+  /** Stock ouvert figé fin de semaine, par assigné. */
+  | "open_assignee";
 
 export const LOG_KIND_TO_COLLECTION = {
   metier: "automationsMetier",

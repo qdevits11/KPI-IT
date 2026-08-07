@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { KpiValue, LogEvent, PhishingEvent, WeeklyRow } from "@/lib/types";
 import { parseWeekId } from "@/lib/types";
 import type { OpenTicketsSnapshot, TicketListItem } from "@/lib/jira-tickets";
+import { openSnapshotFromAssigneeCounts } from "@/lib/jira-tickets";
 import { clampWeekIdToCurrent } from "@/lib/dates";
 import { WeekSelector } from "./WeekSelector";
 import {
@@ -49,6 +50,7 @@ type KpisPayload = {
   ticketsByType: Record<string, number>;
   ticketsByAssignee: Record<string, number>;
   ticketsByRequester: Record<string, number>;
+  openByAssignee: Record<string, number>;
 };
 
 function kpiValue(kpis: KpiValue[], id: string): number | null {
@@ -338,9 +340,23 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
           {isCurrentWeek && openSnap && (
             <OpenTicketsByPerson
               data={openSnap}
+              mode="live"
               onDrill={(query, tickets) => setDrill({ query, tickets })}
             />
           )}
+
+          {!isCurrentWeek &&
+            kpis?.openByAssignee &&
+            Object.keys(kpis.openByAssignee).length > 0 && (
+              <OpenTicketsByPerson
+                data={openSnapshotFromAssigneeCounts(kpis.openByAssignee, {
+                  fetchedAt: meta?.openFrozenAt ?? new Date().toISOString(),
+                  warnings: [],
+                })}
+                mode="frozen"
+                frozenAt={meta?.openFrozenAt}
+              />
+            )}
 
           <section className="space-y-2">
             <h2 className="font-[family-name:var(--font-display)] text-base text-[var(--ink)]">

@@ -101,6 +101,7 @@ export function createFormulaTestDatabase(): AppDatabase {
     ticketsByType: {},
     ticketsByAssignee: {},
     ticketsByRequester: {},
+    openByAssignee: {},
     settings: {
       ...emptyAppSettings(),
       responsibles: ["Gary", "Loic", "Quentin", "Dominique"],
