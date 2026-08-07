@@ -235,15 +235,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {user ? (
-          <div
-            className={`border-b border-[var(--line)] p-4 ${
-              collapsed ? "lg:p-2" : ""
-            }`}
-          >
+        <div
+          className={`border-b border-[var(--line)] p-4 ${
+            collapsed ? "lg:p-2" : ""
+          }`}
+        >
+          {user ? (
             <div
               className={`flex items-center gap-2.5 ${
-                collapsed ? "lg:justify-center" : ""
+                collapsed ? "lg:flex-col lg:gap-1.5" : ""
               }`}
               title={`${user.displayName || user.email} · ${formatUserBadges(user)}`}
             >
@@ -259,10 +259,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <p className="text-[11px] text-[var(--muted)]">
                   {formatUserBadges(user)}
                 </p>
+                <button
+                  type="button"
+                  onClick={() => void logoutSession()}
+                  className="mt-0.5 text-left text-[11px] text-[var(--muted)] underline-offset-2 transition-colors hover:text-[var(--ink)] hover:underline"
+                >
+                  Se déconnecter
+                </button>
               </div>
+              <button
+                type="button"
+                onClick={() => void logoutSession()}
+                title="Se déconnecter"
+                aria-label="Se déconnecter"
+                className={`hidden text-[var(--muted)] transition-colors hover:text-[var(--ink)] ${
+                  collapsed ? "lg:inline-flex" : ""
+                }`}
+              >
+                <LogoutGlyph />
+              </button>
             </div>
-          </div>
-        ) : null}
+          ) : (
+            <Link
+              href="/login"
+              title="Se connecter"
+              className={`block text-sm text-[var(--muted)] transition-colors hover:text-[var(--ink)] hover:underline ${
+                collapsed
+                  ? "lg:flex lg:h-10 lg:items-center lg:justify-center"
+                  : ""
+              }`}
+            >
+              <span className={collapsed ? "lg:hidden" : undefined}>
+                Se connecter
+              </span>
+              <LoginGlyph className={`hidden ${collapsed ? "lg:block" : ""}`} />
+            </Link>
+          )}
+        </div>
 
         <nav
           aria-label="Navigation principale"
@@ -300,41 +333,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
-
-          {user ? (
-            <button
-              type="button"
-              onClick={() => void logoutSession()}
-              title="Quitter la session"
-              className={`mt-2 w-full rounded-lg border border-[var(--line)] text-left text-sm text-[var(--muted)] transition-colors hover:bg-[var(--wash)] hover:text-[var(--ink)] ${
-                collapsed
-                  ? "px-3 py-2 lg:flex lg:h-10 lg:items-center lg:justify-center lg:px-0"
-                  : "px-3 py-2"
-              }`}
-            >
-              <span className={collapsed ? "lg:hidden" : undefined}>
-                Quitter la session
-              </span>
-              <LogoutGlyph
-                className={`hidden ${collapsed ? "lg:block" : ""}`}
-              />
-            </button>
-          ) : (
-            <Link
-              href="/login"
-              title="Se connecter"
-              className={`mt-2 block rounded-lg border border-[var(--line)] text-sm text-[var(--muted)] transition-colors hover:bg-[var(--wash)] hover:text-[var(--ink)] ${
-                collapsed
-                  ? "px-3 py-2 lg:flex lg:h-10 lg:items-center lg:justify-center lg:px-0"
-                  : "px-3 py-2"
-              }`}
-            >
-              <span className={collapsed ? "lg:hidden" : undefined}>
-                Se connecter
-              </span>
-              <LoginGlyph className={`hidden ${collapsed ? "lg:block" : ""}`} />
-            </Link>
-          )}
         </nav>
       </aside>
 
