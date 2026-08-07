@@ -61,21 +61,6 @@ function formatCount(value: number | null | undefined): string {
   return value.toLocaleString("fr-BE");
 }
 
-function formatSyncedAt(iso: string | null): string {
-  if (!iso) return "jamais";
-  try {
-    return new Date(iso).toLocaleString("fr-BE", {
-      timeZone: "Europe/Brussels",
-      day: "2-digit",
-      month: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-}
-
 type ActionTileProps = {
   label: string;
   value: number | null | undefined;
@@ -142,16 +127,6 @@ function ActionTile({
   );
 }
 
-const CURRENT_WEEK_SYNC_FIELDS = {
-  demandesItHebdo: true,
-  demandesNonResoluesHebdo: true,
-  ticketsHorsSlaCloture: true,
-  ticketsHorsSlaPriseEnCharge: true,
-  ticketsByType: true,
-  ticketsByAssignee: true,
-  ticketsByRequester: true,
-} as const;
-
 export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -163,7 +138,6 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
   const [error, setError] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [drill, setDrill] = useState<{
     query: DrilldownQuery;
@@ -212,35 +186,6 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
     router.replace(`/?week=${encodeURIComponent(id)}`, { scroll: false });
   }
 
-  async function refreshAll() {
-    if (!kpis?.meta.isCurrentWeek) return;
-    setSyncing(true);
-    setMessage(null);
-    try {
-      const syncRes = await fetch("/api/jira/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          weekId: selectedWeekId,
-          dryRun: false,
-          forceOpenLive: true,
-          saveFields: CURRENT_WEEK_SYNC_FIELDS,
-        }),
-      });
-      if (syncRes.ok) {
-        setMessage("Indicateurs actualisés depuis Jira.");
-      } else if (syncRes.status !== 403) {
-        const body = (await syncRes.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        setMessage(body?.error ?? "Sync Jira partielle — données rechargées.");
-      }
-      await load(selectedWeekId);
-    } finally {
-      setSyncing(false);
-    }
-  }
-
   const list = kpis?.kpis ?? [];
   const week = kpis?.week;
   const meta = kpis?.meta;
@@ -256,7 +201,6 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
   const phishing = kpiValue(list, "echecs_phishing");
   const maintenance = kpiValue(list, "maintenances_production");
 
-  const busy = pending || syncing;
   const weekParts = (() => {
     try {
       return week
@@ -306,22 +250,6 @@ export function HomeDashboard({ initialWeek }: { initialWeek: string }) {
           )}
         </div>
       </header>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <p className="text-xs text-[var(--muted)]">
-          Sync Jira : {formatSyncedAt(meta?.jiraSyncedAt ?? null)}
-        </p>
-        {isCurrentWeek && (
-          <button
-            type="button"
-            onClick={() => void refreshAll()}
-            disabled={busy}
-            className="rounded-md bg-[var(--ink)] px-3 py-1.5 text-sm text-[var(--paper)] transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            {syncing ? "Actualisation…" : "Actualiser"}
-          </button>
-        )}
-      </div>
 
       {message && (
         <p className="rounded-md border border-[var(--ok)]/30 bg-[var(--ok)]/10 px-3 py-2 text-sm text-[var(--ok)]">
