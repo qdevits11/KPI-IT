@@ -431,6 +431,7 @@ export function buildYearOverview(
         maintenances: val("maintenances_production") ?? 0,
         demandesItHebdo: val("demandes_it_hebdo"),
         demandesItYtd: val("demandes_it_ytd") ?? 0,
+        demandesClotureesHebdo: w.demandesClotureesHebdo ?? null,
         nonResoluesHebdo: val("demandes_non_resolues_hebdo"),
         nonResoluesYtd: val("demandes_non_resolues_ytd") ?? 0,
         fluctuation: w.informations ?? "",

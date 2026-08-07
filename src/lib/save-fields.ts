@@ -2,6 +2,7 @@ import type { WeeklyRow } from "./types";
 
 export type SaveFieldKey =
   | "demandesItHebdo"
+  | "demandesClotureesHebdo"
   | "demandesNonResoluesHebdo"
   | "ticketsHorsSlaCloture"
   | "ticketsHorsSlaPriseEnCharge"
@@ -15,6 +16,7 @@ export type SaveFields = Partial<Record<SaveFieldKey, boolean>>;
 
 export const DEFAULT_SAVE_FIELDS: SaveFields = {
   demandesItHebdo: true,
+  demandesClotureesHebdo: true,
   demandesNonResoluesHebdo: false,
   ticketsHorsSlaCloture: true,
   ticketsHorsSlaPriseEnCharge: true,
@@ -53,6 +55,12 @@ export function pickSavePatch(
     patch.demandesItHebdo = full.demandesItHebdo;
   }
   if (
+    flags.demandesClotureesHebdo &&
+    full.demandesClotureesHebdo !== undefined
+  ) {
+    patch.demandesClotureesHebdo = full.demandesClotureesHebdo;
+  }
+  if (
     flags.demandesNonResoluesHebdo &&
     full.demandesNonResoluesHebdo !== undefined
   ) {
@@ -86,6 +94,7 @@ export function pickClearKpiPatch(
     jiraSyncedAt: new Date().toISOString(),
   };
   if (flags.demandesItHebdo) patch.demandesItHebdo = null;
+  if (flags.demandesClotureesHebdo) patch.demandesClotureesHebdo = null;
   if (flags.demandesNonResoluesHebdo) {
     patch.demandesNonResoluesHebdo = null;
     patch.openFrozenAt = null;
@@ -102,6 +111,7 @@ export function describeSaveFields(saveFields?: SaveFields | null): string[] {
   const bd = resolveBreakdownFlags(flags);
   const labels: string[] = [];
   if (flags.demandesItHebdo) labels.push("tickets créés");
+  if (flags.demandesClotureesHebdo) labels.push("tickets clôturés");
   if (flags.demandesNonResoluesHebdo) labels.push("non résolus");
   if (flags.ticketsHorsSlaCloture) labels.push("hors SLA clôture");
   if (flags.ticketsHorsSlaPriseEnCharge) {
@@ -118,6 +128,7 @@ export function anySaveFieldSelected(saveFields?: SaveFields | null): boolean {
   const bd = resolveBreakdownFlags(flags);
   return Boolean(
     flags.demandesItHebdo ||
+      flags.demandesClotureesHebdo ||
       flags.demandesNonResoluesHebdo ||
       flags.ticketsHorsSlaCloture ||
       flags.ticketsHorsSlaPriseEnCharge ||

@@ -14,6 +14,7 @@ function emptyWeek(year: number, month: number, week: number): WeeklyRow {
     ticketsHorsSlaCloture: null,
     ticketsHorsSlaPriseEnCharge: null,
     demandesItHebdo: null,
+    demandesClotureesHebdo: null,
     demandesNonResoluesHebdo: null,
     openFrozenAt: null,
     informations: "",

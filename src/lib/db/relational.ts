@@ -93,6 +93,7 @@ type WeekRow = {
   tickets_hors_sla_cloture: number | null;
   tickets_hors_sla_prise_en_charge: number | null;
   demandes_it_hebdo: number | null;
+  demandes_cloturees_hebdo: number | null;
   demandes_non_resolues_hebdo: number | null;
   open_frozen_at: string | null;
   informations: string;
@@ -173,6 +174,7 @@ function weekRowToWeekly(row: WeekRow): WeeklyRow {
     ticketsHorsSlaCloture: row.tickets_hors_sla_cloture,
     ticketsHorsSlaPriseEnCharge: row.tickets_hors_sla_prise_en_charge,
     demandesItHebdo: row.demandes_it_hebdo,
+    demandesClotureesHebdo: row.demandes_cloturees_hebdo ?? null,
     demandesNonResoluesHebdo: row.demandes_non_resolues_hebdo,
     openFrozenAt: isoOrNull(row.open_frozen_at),
     informations: row.informations ?? "",
@@ -191,6 +193,7 @@ function weeklyToWeekRow(row: WeeklyRow): WeekRow {
     tickets_hors_sla_cloture: row.ticketsHorsSlaCloture,
     tickets_hors_sla_prise_en_charge: row.ticketsHorsSlaPriseEnCharge,
     demandes_it_hebdo: row.demandesItHebdo,
+    demandes_cloturees_hebdo: row.demandesClotureesHebdo,
     demandes_non_resolues_hebdo: row.demandesNonResoluesHebdo,
     open_frozen_at: row.openFrozenAt,
     informations: row.informations ?? "",

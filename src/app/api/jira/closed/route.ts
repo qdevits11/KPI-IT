@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveJiraConnection, sanitizeConnection } from "@/lib/jira-auth";
 import { fetchClosedTicketsForWeek } from "@/lib/jira-tickets";
+import { ensureWeek, updateWeeklyRow } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,15 @@ export async function GET(request: Request) {
 
   try {
     const snapshot = await fetchClosedTicketsForWeek(week, conn);
+    // Persiste le compteur pour la vue Analyse (colonne Clôturés).
+    try {
+      await ensureWeek(week);
+      await updateWeeklyRow(week, {
+        demandesClotureesHebdo: snapshot.total,
+      });
+    } catch {
+      // persistance optionnelle — la liste reste utilisable
+    }
     return NextResponse.json({
       ok: true,
       configured: true,

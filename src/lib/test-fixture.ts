@@ -14,6 +14,7 @@ function week(
     ticketsHorsSlaCloture: null,
     ticketsHorsSlaPriseEnCharge: null,
     demandesItHebdo: null,
+    demandesClotureesHebdo: null,
     demandesNonResoluesHebdo: null,
     openFrozenAt: null,
     informations: "",
@@ -52,6 +53,7 @@ export function createFormulaTestDatabase(): AppDatabase {
       week(2026, month, w, {
         // YTD S31 demandes = 30×35 + 40 = 1090
         demandesItHebdo: w === 31 ? 40 : 35,
+        demandesClotureesHebdo: w === 31 ? 28 : 22,
         // YTD S31 non résolues = 30×52 + 57 = 1617
         demandesNonResoluesHebdo: w === 31 ? 57 : 52,
         openFrozenAt: w < 31 ? "frozen-test" : null,

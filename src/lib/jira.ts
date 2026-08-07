@@ -958,6 +958,7 @@ export interface JiraWeekSyncResult {
   diagnostics: {
     createdCount: number;
     openCount: number;
+    closedCount: number;
     pecCandidates: number;
     resolvedCandidates: number;
     sampleCreatedKeys: string[];
@@ -1072,10 +1073,12 @@ export async function fetchJiraWeekStats(
       );
     }
   }
+  let closedCount = resolvedIssues.length;
   if (resolvedIssues.length === 0) {
     const resolvedCount = await countJql(connection, jql.resolved).catch(
       () => 0,
     );
+    closedCount = resolvedCount;
     if (resolvedCount > 0) {
       warnings.push(
         `${resolvedCount} ticket(s) résolus cette semaine, mais détails absents — SLA clôture non calculable.`,
@@ -1148,6 +1151,7 @@ export async function fetchJiraWeekStats(
   return {
     patch: {
       demandesItHebdo: createdCount,
+      demandesClotureesHebdo: closedCount,
       demandesNonResoluesHebdo: openCount,
       ticketsHorsSlaPriseEnCharge: slaPriseEnCharge,
       ticketsHorsSlaCloture: slaCloture,
@@ -1163,6 +1167,7 @@ export async function fetchJiraWeekStats(
     diagnostics: {
       createdCount,
       openCount,
+      closedCount,
       pecCandidates: pecIssues.length,
       resolvedCandidates: resolvedIssues.length,
       sampleCreatedKeys: createdForBreakdown
@@ -1196,6 +1201,7 @@ export function mockJiraWeekStats(
   return {
     patch: {
       demandesItHebdo: created,
+      demandesClotureesHebdo: 15 + (seed % 20),
       demandesNonResoluesHebdo: open,
       ticketsHorsSlaCloture: seed % 8,
       ticketsHorsSlaPriseEnCharge: seed % 5,
@@ -1234,6 +1240,7 @@ export function mockJiraWeekStats(
     diagnostics: {
       createdCount: created,
       openCount: open,
+      closedCount: 15 + (seed % 20),
       pecCandidates: seed % 10,
       resolvedCandidates: seed % 12,
       sampleCreatedKeys: ["CSD-100", "CSD-101"],

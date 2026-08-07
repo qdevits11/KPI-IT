@@ -174,6 +174,7 @@ function formatSyncedAt(iso: string | null): string {
 /** Sync complète depuis la page Semaine en cours (KPI + non résolus + ventilations). */
 const CURRENT_WEEK_SYNC_FIELDS = {
   demandesItHebdo: true,
+  demandesClotureesHebdo: true,
   demandesNonResoluesHebdo: true,
   ticketsHorsSlaCloture: true,
   ticketsHorsSlaPriseEnCharge: true,

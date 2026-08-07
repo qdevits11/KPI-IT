@@ -37,6 +37,7 @@ interface JqlPreview {
 
 interface WeekValues {
   demandesItHebdo: number;
+  demandesClotureesHebdo: number;
   demandesNonResoluesHebdo: number;
   ticketsHorsSlaCloture: number;
   ticketsHorsSlaPriseEnCharge: number;
@@ -105,6 +106,7 @@ export function JiraSyncPanel({
   const [diagnostics, setDiagnostics] = useState<{
     createdCount: number;
     openCount: number;
+    closedCount?: number;
     pecCandidates: number;
     resolvedCandidates: number;
     sampleCreatedKeys: string[];
@@ -121,6 +123,7 @@ export function JiraSyncPanel({
   const [form, setForm] = useState(DEFAULT_FORM);
   const [saveFields, setSaveFields] = useState({
     demandesItHebdo: true,
+    demandesClotureesHebdo: true,
     demandesNonResoluesHebdo: false,
     ticketsHorsSlaCloture: true,
     ticketsHorsSlaPriseEnCharge: true,
@@ -397,6 +400,7 @@ export function JiraSyncPanel({
   function setAllSaveFields(value: boolean) {
     setSaveFields({
       demandesItHebdo: value,
+      demandesClotureesHebdo: value,
       demandesNonResoluesHebdo: value,
       ticketsHorsSlaCloture: value,
       ticketsHorsSlaPriseEnCharge: value,
@@ -907,6 +911,13 @@ export function JiraSyncPanel({
               }
             />
             <SaveCheck
+              label="Tickets clôturés"
+              checked={saveFields.demandesClotureesHebdo}
+              onChange={(v) =>
+                setSaveFields((f) => ({ ...f, demandesClotureesHebdo: v }))
+              }
+            />
+            <SaveCheck
               label="Hors SLA clôture"
               checked={saveFields.ticketsHorsSlaCloture}
               onChange={(v) =>
@@ -1005,11 +1016,16 @@ export function JiraSyncPanel({
         {error && <p className="text-sm text-[var(--crit)]">{error}</p>}
 
         {values && (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <KpiTile
               label="Tickets créés"
               value={values.demandesItHebdo}
               hint="Demandes IT — Hebdo"
+            />
+            <KpiTile
+              label="Tickets clôturés"
+              value={values.demandesClotureesHebdo}
+              hint="resolutiondate ∈ semaine"
             />
             <KpiTile
               label="Non résolus"

@@ -175,6 +175,7 @@ function resolveTargetWeek(body: {
 function valuesFromPatch(result: JiraWeekSyncResult) {
   return {
     demandesItHebdo: result.patch.demandesItHebdo ?? 0,
+    demandesClotureesHebdo: result.patch.demandesClotureesHebdo ?? 0,
     demandesNonResoluesHebdo: result.patch.demandesNonResoluesHebdo ?? 0,
     ticketsHorsSlaCloture: result.patch.ticketsHorsSlaCloture ?? 0,
     ticketsHorsSlaPriseEnCharge: result.patch.ticketsHorsSlaPriseEnCharge ?? 0,
@@ -266,6 +267,7 @@ export async function POST(request: Request) {
   // Defaults only for missing keys — allow explicit false
   const mergedFields: SaveFields = {
     demandesItHebdo: saveFields.demandesItHebdo ?? true,
+    demandesClotureesHebdo: saveFields.demandesClotureesHebdo ?? true,
     demandesNonResoluesHebdo: saveFields.demandesNonResoluesHebdo ?? false,
     ticketsHorsSlaCloture: saveFields.ticketsHorsSlaCloture ?? true,
     ticketsHorsSlaPriseEnCharge: saveFields.ticketsHorsSlaPriseEnCharge ?? true,
@@ -286,7 +288,7 @@ export async function POST(request: Request) {
       if (kpiKeys.length > 0) {
         await updateWeeklyRow(id, kpiPatch);
         cleared.push(...describeSaveFields(mergedFields).filter((l) =>
-          ["tickets créés", "non résolus", "hors SLA clôture", "hors SLA prise en charge"].includes(l),
+          ["tickets créés", "tickets clôturés", "non résolus", "hors SLA clôture", "hors SLA prise en charge"].includes(l),
         ));
       }
       const bd = resolveBreakdownFlags(mergedFields);

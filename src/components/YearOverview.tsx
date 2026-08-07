@@ -217,6 +217,12 @@ export function YearOverview({ initialYear }: { initialYear: number }) {
                 <th className="sticky left-0 z-10 bg-[var(--wash)] px-3 py-2.5 font-medium text-[var(--muted)]">
                   Sem.
                 </th>
+                <th
+                  title="Tickets clôturés cette semaine"
+                  className="px-3 py-2.5 text-right font-medium tabular-nums text-[var(--muted)]"
+                >
+                  Clôturés
+                </th>
                 <th className="px-3 py-2.5 font-medium text-[var(--muted)]">
                   Mois
                 </th>
@@ -237,7 +243,7 @@ export function YearOverview({ initialYear }: { initialYear: number }) {
               {rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={2 + visibleCols.length}
+                    colSpan={3 + visibleCols.length}
                     className="px-3 py-6 text-center text-[var(--muted)]"
                   >
                     Aucune semaine à afficher
@@ -262,6 +268,9 @@ export function YearOverview({ initialYear }: { initialYear: number }) {
                       >
                         S{String(row.week).padStart(2, "0")}
                       </Link>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-[var(--ink)]">
+                      {cell(row.demandesClotureesHebdo)}
                     </td>
                     <td className="px-3 py-2 tabular-nums text-[var(--ink-soft)]">
                       {row.month}

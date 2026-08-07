@@ -16,6 +16,7 @@ describe("vue annuelle", () => {
     const row = buildYearOverview(db, 2026).find((r) => r.week === 31)!;
     expect(row.demandesItHebdo).toBe(40);
     expect(row.demandesItYtd).toBe(1090);
+    expect(row.demandesClotureesHebdo).toBe(28);
     expect(row.automationsMetier).toBe(1);
   });
 

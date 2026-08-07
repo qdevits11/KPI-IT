@@ -29,6 +29,8 @@ export interface WeeklyRow extends WeekRef {
   ticketsHorsSlaPriseEnCharge: number | null;
   /** # Demandes IT — Hebdo */
   demandesItHebdo: number | null;
+  /** # Tickets clôturés — Hebdo (resolutiondate ∈ semaine) */
+  demandesClotureesHebdo: number | null;
   /** # Demandes non résolues — Hebdo (stock en fin de semaine) */
   demandesNonResoluesHebdo: number | null;
   /**
@@ -216,6 +218,8 @@ export interface YearOverviewRow {
   maintenances: number;
   demandesItHebdo: number | null;
   demandesItYtd: number;
+  /** Tickets clôturés pendant la semaine. */
+  demandesClotureesHebdo: number | null;
   nonResoluesHebdo: number | null;
   nonResoluesYtd: number;
   fluctuation: string;

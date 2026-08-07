@@ -10,15 +10,17 @@ import {
 describe("pickSavePatch", () => {
   const full = {
     demandesItHebdo: 15,
+    demandesClotureesHebdo: 9,
     demandesNonResoluesHebdo: 48,
     ticketsHorsSlaCloture: 7,
     ticketsHorsSlaPriseEnCharge: 1,
     jiraSyncedAt: "2026-08-05T10:00:00.000Z",
   };
 
-  it("par défaut enregistre créés + SLA, pas les non résolus", () => {
+  it("par défaut enregistre créés + clôturés + SLA, pas les non résolus", () => {
     const patch = pickSavePatch(full, {});
     expect(patch.demandesItHebdo).toBe(15);
+    expect(patch.demandesClotureesHebdo).toBe(9);
     expect(patch.ticketsHorsSlaCloture).toBe(7);
     expect(patch.ticketsHorsSlaPriseEnCharge).toBe(1);
     expect(patch.demandesNonResoluesHebdo).toBeUndefined();
@@ -27,6 +29,7 @@ describe("pickSavePatch", () => {
   it("permet de n’enregistrer que les créés", () => {
     const patch = pickSavePatch(full, {
       demandesItHebdo: true,
+      demandesClotureesHebdo: false,
       demandesNonResoluesHebdo: false,
       ticketsHorsSlaCloture: false,
       ticketsHorsSlaPriseEnCharge: false,
@@ -45,6 +48,7 @@ describe("describeSaveFields", () => {
   it("liste les libellés cochés", () => {
     const labels = describeSaveFields({
       demandesItHebdo: true,
+      demandesClotureesHebdo: false,
       ticketsHorsSlaCloture: true,
       ticketsHorsSlaPriseEnCharge: false,
       demandesNonResoluesHebdo: false,
@@ -58,6 +62,7 @@ describe("describeSaveFields", () => {
   it("sépare assignés, demandeurs et types", () => {
     const labels = describeSaveFields({
       demandesItHebdo: false,
+      demandesClotureesHebdo: false,
       ticketsHorsSlaCloture: false,
       ticketsHorsSlaPriseEnCharge: false,
       demandesNonResoluesHebdo: false,
@@ -98,11 +103,13 @@ describe("pickClearKpiPatch", () => {
   it("remet à null les KPI cochés", () => {
     const patch = pickClearKpiPatch({
       demandesItHebdo: true,
+      demandesClotureesHebdo: false,
       ticketsHorsSlaCloture: true,
       ticketsHorsSlaPriseEnCharge: false,
       demandesNonResoluesHebdo: false,
     });
     expect(patch.demandesItHebdo).toBeNull();
+    expect(patch.demandesClotureesHebdo).toBeUndefined();
     expect(patch.ticketsHorsSlaCloture).toBeNull();
     expect(patch.ticketsHorsSlaPriseEnCharge).toBeUndefined();
   });
@@ -113,6 +120,7 @@ describe("anySaveFieldSelected", () => {
     expect(
       anySaveFieldSelected({
         demandesItHebdo: false,
+        demandesClotureesHebdo: false,
         demandesNonResoluesHebdo: false,
         ticketsHorsSlaCloture: false,
         ticketsHorsSlaPriseEnCharge: false,
