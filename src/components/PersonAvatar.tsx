@@ -7,7 +7,16 @@ const SIZE_CLASS = {
   sm: "size-6 text-[10px]",
   md: "size-8 text-xs",
   lg: "size-10 text-sm",
+  xl: "size-14 text-base",
 } as const;
+
+const SIZE_PX: Record<keyof typeof SIZE_CLASS, number> = {
+  xs: 20,
+  sm: 24,
+  md: 32,
+  lg: 40,
+  xl: 56,
+};
 
 export function PersonAvatar({
   name,
@@ -30,8 +39,8 @@ export function PersonAvatar({
         src={avatarUrl}
         alt=""
         title={name}
-        width={size === "lg" ? 40 : size === "md" ? 32 : size === "sm" ? 24 : 20}
-        height={size === "lg" ? 40 : size === "md" ? 32 : size === "sm" ? 24 : 20}
+        width={SIZE_PX[size]}
+        height={SIZE_PX[size]}
         className={`shrink-0 rounded-full object-cover ring-1 ring-[var(--line)] ${dim} ${className}`}
         referrerPolicy="no-referrer"
       />

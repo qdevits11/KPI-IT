@@ -250,7 +250,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <PersonAvatar
                 name={user.displayName || user.email}
                 avatarUrl={user.avatarUrl}
-                size="lg"
+                size="xl"
               />
               <div className={`min-w-0 ${collapsed ? "lg:hidden" : ""}`}>
                 <p className="truncate text-sm text-[var(--ink)]">
