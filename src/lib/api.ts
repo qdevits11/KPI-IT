@@ -100,7 +100,7 @@ export async function requireKpiRetourApi(): Promise<
   if (!canEditWeekRetour(session.user)) {
     return {
       response: apiError(
-        "Seul le responsable KPI peut enregistrer le retour sur la semaine.",
+        "Seul le responsable KPI peut gérer le retour sur la semaine.",
         403,
         "forbidden",
       ),

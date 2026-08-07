@@ -211,6 +211,7 @@ export function WeekNotesSection({
   const [draftInfo, setDraftInfo] = useState(info);
   const [draftReco, setDraftReco] = useState(reco);
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -241,6 +242,51 @@ export function WeekNotesSection({
       setDraftReco(reco);
     }
   }, [info, reco, editing]);
+
+  async function generateAnalysis() {
+    const hasContent =
+      draftInfo.trim().length > 0 ||
+      draftReco.trim().length > 0 ||
+      info.length > 0 ||
+      reco.length > 0;
+    if (hasContent) {
+      const ok = window.confirm(
+        "Remplacer le brouillon actuel par l’analyse générée ?\n(Vous pourrez encore modifier avant d’enregistrer.)",
+      );
+      if (!ok) return;
+    }
+
+    setGenerating(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/week-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weekId }),
+      });
+      const data = (await res.json().catch(() => null)) as {
+        error?: string;
+        fluctuation?: string;
+        recommandations?: string;
+      } | null;
+      if (!res.ok) {
+        setError(
+          data?.error ??
+            "Génération impossible — réservé au responsable KPI.",
+        );
+        return;
+      }
+      setDraftInfo((data?.fluctuation ?? "").trim());
+      setDraftReco((data?.recommandations ?? "").trim());
+      setEditing(true);
+      setMessage(
+        "Analyse générée — relisez, ajustez si besoin, puis enregistrez.",
+      );
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   async function save() {
     if (!draftInfo.trim()) {
@@ -295,21 +341,35 @@ export function WeekNotesSection({
             Retour sur la semaine
           </h2>
           <p className="mt-0.5 text-xs text-[var(--muted)]">
-            Remarque attendue chaque semaine · responsable KPI
+            Remarque attendue chaque semaine · responsable KPI peut générer
+            l’analyse à partir des chiffres
           </p>
         </div>
-        {canEdit && !editing && (
-          <button
-            type="button"
-            onClick={() => {
-              setEditing(true);
-              setError(null);
-              setMessage(null);
-            }}
-            className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 text-xs font-medium text-[var(--accent-deep)] hover:bg-[var(--wash)]"
-          >
-            {incomplete ? "Compléter" : "Modifier"}
-          </button>
+        {canEdit && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={generating || saving}
+              onClick={() => void generateAnalysis()}
+              className="rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2.5 py-1 text-xs font-medium text-[var(--accent-deep)] hover:bg-[var(--accent)]/15 disabled:opacity-50"
+            >
+              {generating ? "Génération…" : "Générer l’analyse"}
+            </button>
+            {!editing && (
+              <button
+                type="button"
+                disabled={generating}
+                onClick={() => {
+                  setEditing(true);
+                  setError(null);
+                  setMessage(null);
+                }}
+                className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 text-xs font-medium text-[var(--accent-deep)] hover:bg-[var(--wash)] disabled:opacity-50"
+              >
+                {incomplete ? "Compléter" : "Modifier"}
+              </button>
+            )}
+          </div>
         )}
       </div>
 
